@@ -61,6 +61,9 @@ APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://mg-plastic.com
 
+# Obscure admin login — save this URL privately; /admin will return 404
+ADMIN_PANEL_PATH=mg-cp-change-me
+
 DB_CONNECTION=mysql
 DB_HOST=localhost
 DB_DATABASE=mgplasti_xxxxx

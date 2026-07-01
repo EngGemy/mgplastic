@@ -162,7 +162,7 @@ class QuickAccessWidget extends Widget
             return [
                 'invoices' => Invoice::where('status', 'pending_review')->count(),
                 'distributions' => InvoiceDistribution::where('status', 'draft')->count(),
-                'withdrawals' => WithdrawalRequest::where('status', 'pending')->count(),
+                'withdrawals' => WithdrawalRequest::pendingCount(),
             ];
         }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\AdminPanelPath;
 use Closure;
 use Illuminate\Http\Request;
 
@@ -16,7 +17,7 @@ class EnsureWholesaleDistributorAccess
         }
 
         if (in_array($user->role, ['super_admin', 'admin'], true)) {
-            return redirect('/admin');
+            return redirect(AdminPanelPath::url());
         }
 
         if ($user->role === 'retail_trader') {

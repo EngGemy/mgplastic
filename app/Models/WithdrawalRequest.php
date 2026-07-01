@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class WithdrawalRequest extends Model
 {
@@ -20,6 +22,20 @@ class WithdrawalRequest extends Model
     public function wallet(){ return $this->belongsTo(WalletAccount::class,'wallet_account_id'); }
     public function plumber(){ return $this->belongsTo(User::class,'plumber_id'); }
     public function reviewer(){ return $this->belongsTo(User::class,'reviewed_by'); }
+
+    public function scopePending(Builder $query): Builder
+    {
+        return $query->where('status', 'pending');
+    }
+
+    public static function pendingCount(): int
+    {
+        if (! Schema::hasTable('withdrawal_requests') || ! Schema::hasColumn('withdrawal_requests', 'status')) {
+            return 0;
+        }
+
+        return static::query()->pending()->count();
+    }
 
     public function isPending(): bool
     {

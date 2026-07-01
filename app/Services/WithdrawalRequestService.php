@@ -6,6 +6,7 @@ use App\Models\WalletAccount;
 use App\Models\WithdrawalRequest;
 use App\Filament\Support\WithdrawalPaymentForm;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class WithdrawalRequestService
 {
@@ -105,12 +106,16 @@ class WithdrawalRequestService
     public static function stats(): array
     {
         return [
-            'pending' => WithdrawalRequest::query()->where('status', 'pending')->count(),
-            'paid' => WithdrawalRequest::query()->where('status', 'paid')->count(),
-            'rejected' => WithdrawalRequest::query()->where('status', 'rejected')->count(),
-            'total_amount_pending' => (int) WithdrawalRequest::query()
-                ->where('status', 'pending')
-                ->sum('amount_cents'),
+            'pending' => WithdrawalRequest::pendingCount(),
+            'paid' => Schema::hasColumn('withdrawal_requests', 'status')
+                ? WithdrawalRequest::query()->where('status', 'paid')->count()
+                : 0,
+            'rejected' => Schema::hasColumn('withdrawal_requests', 'status')
+                ? WithdrawalRequest::query()->where('status', 'rejected')->count()
+                : 0,
+            'total_amount_pending' => Schema::hasColumn('withdrawal_requests', 'status')
+                ? (int) WithdrawalRequest::query()->pending()->sum('amount_cents')
+                : 0,
         ];
     }
 }

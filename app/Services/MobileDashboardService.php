@@ -21,7 +21,10 @@ class MobileDashboardService
             ],
             'pending_withdrawals' => WithdrawalRequest::query()
                 ->where('plumber_id', $user->id)
-                ->where('status', 'pending')
+                ->when(
+                    \Illuminate\Support\Facades\Schema::hasColumn('withdrawal_requests', 'status'),
+                    fn ($q) => $q->where('status', 'pending'),
+                )
                 ->count(),
             'received_distributions' => InvoiceDistribution::query()
                 ->where('to_user_id', $user->id)

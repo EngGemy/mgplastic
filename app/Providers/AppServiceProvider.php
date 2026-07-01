@@ -24,6 +24,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->environment('production')) {
+            config(['app.debug' => false]);
+        }
+
         Gate::policy(InvoiceDistribution::class, InvoiceDistributionPolicy::class);
 
         LanguageSwitch::configureUsing(function (LanguageSwitch $switch) {
