@@ -48,7 +48,7 @@
         <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px">الشبكة</div>
             <ul class="footer-links">
-                <li><a href="/admin">لوحة الأدمن</a></li>
+                <li><a href="{{ route('portal') }}">دخول النظام</a></li>
                 <li><a href="/distributor">بوابة الموزع</a></li>
                 <li><a href="/trader">بوابة التاجر</a></li>
                 <li><a href="#register">التسجيل</a></li>

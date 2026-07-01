@@ -14,7 +14,7 @@
         <li><a href="#contact">التواصل</a></li>
         <li><a href="#register">انضم</a></li>
     </ul>
-    <a href="/admin" class="nav-cta">دخول النظام</a>
+    <a href="{{ route('portal') }}" class="nav-cta">دخول النظام</a>
     <div class="burger" onclick="toggleNav()" id="burger">
         <span></span><span></span><span></span>
     </div>
@@ -26,5 +26,5 @@
     <a href="#points" onclick="closeNav()">نظام النقاط</a>
     <a href="#contact" onclick="closeNav()">التواصل</a>
     <a href="#register" onclick="closeNav()">انضم للشبكة</a>
-    <a href="/admin" style="color:var(--blue);font-weight:700">دخول النظام</a>
+    <a href="{{ route('portal') }}" style="color:var(--blue);font-weight:700">دخول النظام</a>
 </div>

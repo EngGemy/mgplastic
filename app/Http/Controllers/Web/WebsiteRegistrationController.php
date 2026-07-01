@@ -61,7 +61,7 @@ class WebsiteRegistrationController extends Controller
         $panelLinks = [
             'wholesale_distributor' => '/distributor',
             'retail_trader' => '/trader',
-            'plumber' => '/mobile-app',
+            'plumber' => config('portal.plumber_app_url') ?: route('portal'),
         ];
 
         return response()->json([
@@ -70,7 +70,7 @@ class WebsiteRegistrationController extends Controller
             'data' => [
                 'user_id' => $user->id,
                 'role' => $user->role,
-                'panel_url' => $panelLinks[$user->role] ?? '/admin',
+                'panel_url' => $panelLinks[$user->role] ?? route('portal'),
             ],
         ], 201);
     }

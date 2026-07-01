@@ -130,7 +130,7 @@
         ✓ SMS على رقمك عند الموافقة<br>
         <span id="fps-msg">✓ دخول لوحة التحكم الخاصة بك</span>
     </div>
-    <a id="fps-link" href="/admin" class="btn-primary" style="justify-content:center;width:100%;text-decoration:none">
+    <a id="fps-link" href="{{ route('portal') }}" class="btn-primary" style="justify-content:center;width:100%;text-decoration:none">
         دخول بوابتي <i class="ti ti-arrow-left"></i>
     </a>
 </div>

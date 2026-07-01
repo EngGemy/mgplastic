@@ -172,7 +172,7 @@ let fStep = 1;
 const FPANELS = {
   wholesale_distributor: { link: '/distributor', msg: 'يمكنك الدخول للوحة تحكم الموزع بعد الموافقة' },
   retail_trader: { link: '/trader', msg: 'يمكنك الدخول للوحة تحكم التاجر بعد الموافقة' },
-  plumber: { link: '/mobile-app', msg: 'حمّل التطبيق وابدأ كسب النقاط بعد الموافقة' },
+  plumber: { link: window.MG_PORTAL_URL || '/portal', msg: 'حمّل التطبيق وابدأ كسب النقاط بعد الموافقة' },
 };
 
 function fSelectRole(el) {
