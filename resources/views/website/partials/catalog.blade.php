@@ -3,7 +3,7 @@
         <div style="text-align:center;margin-bottom:36px" class="reveal">
             <span class="sec-eyebrow">Product Catalog</span>
             <h2 class="sec-h2" style="font-family:'Amiri',serif">كتالوج منتجاتنا</h2>
-            <div class="sec-en">// browse_filter_download_catalog</div>
+            <div class="sec-en">// premium_carousel_browse_500_products</div>
         </div>
 
         <div class="cat-tabs reveal" id="cat-tabs">
@@ -13,7 +13,33 @@
             @endforeach
         </div>
 
-        <div class="prod-grid" id="prod-grid"></div>
+        <div class="prod-carousel-wrap reveal" id="prod-carousel-wrap">
+            <div class="prod-carousel-head">
+                <div class="prod-carousel-count" id="catalog-counter">جاري التحميل...</div>
+                <div class="prod-carousel-arrows">
+                    <button type="button" class="pc-arrow" id="pc-prev" aria-label="السابق" onclick="catalogPrev()">
+                        <i class="ti ti-chevron-right"></i>
+                    </button>
+                    <button type="button" class="pc-arrow" id="pc-next" aria-label="التالي" onclick="catalogNext()">
+                        <i class="ti ti-chevron-left"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="prod-carousel-stage">
+                <div class="prod-carousel-fade prod-carousel-fade-right"></div>
+                <div class="prod-carousel-fade prod-carousel-fade-left"></div>
+                <div class="prod-carousel-viewport" id="prod-carousel-viewport">
+                    <div class="prod-carousel-track" id="prod-carousel-track"></div>
+                </div>
+            </div>
+
+            <div class="prod-carousel-dots" id="pc-dots"></div>
+            <div class="catalog-loading" id="catalog-loading" hidden>
+                <span class="catalog-loading-spin"></span>
+                <span>تحميل المزيد من المنتجات...</span>
+            </div>
+        </div>
 
         @if($settings->catalog_pdf_url)
             <div style="text-align:center;margin-top:32px" class="reveal">

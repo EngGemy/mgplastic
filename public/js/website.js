@@ -85,46 +85,230 @@ if (document.readyState === 'loading') {
   initHeroSlider();
 }
 
-/* PRODUCTS */
-const products = window.MG_PRODUCTS || [];
+/* PRODUCTS CAROUSEL */
 const categoryLabels = window.MG_CATEGORY_LABELS || {};
+const catalogState = {
+  category: 'all',
+  page: 1,
+  lastPage: 1,
+  total: 0,
+  items: [],
+  slide: 0,
+  perView: 4,
+  loading: false,
+  timer: null,
+};
 
-function renderProducts(cat = 'all') {
-  const grid = document.getElementById('prod-grid');
-  if (!grid) return;
-  const filtered = cat === 'all' ? products : products.filter(p => p.cat === cat);
-  if (!filtered.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">لا توجد منتجات في هذا التصنيف حالياً.</div>';
-    return;
-  }
-  grid.innerHTML = filtered.map(p => `
-    <div class="prod-card" onclick="openModal(${p.id})">
-      <div class="prod-img" style="background:${p.color}22">
-        ${p.image ? `<img src="${p.image}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<div class="prod-initials" style="color:${p.color}">${p.initials}</div>`}
-        <div class="prod-cat-badge">${p.catName || categoryLabels[p.cat] || ''}</div>
+const productsById = new Map();
+
+function catalogPerView() {
+  const w = window.innerWidth;
+  if (w < 560) return 1;
+  if (w < 900) return 2;
+  if (w < 1200) return 3;
+  return 4;
+}
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function productCardHtml(p) {
+  const imgBlock = p.image
+    ? `<img src="${escapeHtml(p.image)}" alt="" loading="lazy" decoding="async" onerror="this.closest('.prod-img')?.classList.add('no-img')">`
+    : '';
+  const initialsClass = p.image ? 'prod-initials' : 'prod-initials show';
+
+  return `
+    <article class="prod-card" onclick="openModal(${p.id})">
+      <div class="prod-img" style="background:linear-gradient(145deg,${p.color}33,${p.color}11)">
+        ${imgBlock}
+        <div class="${initialsClass}" style="color:${p.color}">${escapeHtml(p.initials)}</div>
+        <div class="prod-cat-badge">${escapeHtml(p.catName || categoryLabels[p.cat] || '')}</div>
       </div>
       <div class="prod-body">
-        <div class="prod-name">${p.name}</div>
-        <div class="prod-en fm">${p.en || ''}</div>
+        <div class="prod-name">${escapeHtml(p.name)}</div>
+        <div class="prod-en fm">${escapeHtml(p.en || '')}</div>
         <div><span class="prod-pts"><i class="ti ti-star" style="font-size:10px"></i> ${p.pts} نقطة/وحدة</span></div>
         <div class="prod-action">
           <span class="prod-btn prod-btn-blue">عرض التفاصيل</span>
-          ${p.pdf ? `<a href="${p.pdf}" class="prod-btn prod-btn-out" onclick="event.stopPropagation()" target="_blank"><i class="ti ti-download" style="font-size:11px"></i> PDF</a>` : ''}
+          ${p.pdf ? `<a href="${escapeHtml(p.pdf)}" class="prod-btn prod-btn-out" onclick="event.stopPropagation()" target="_blank" rel="noopener"><i class="ti ti-download" style="font-size:11px"></i> PDF</a>` : ''}
         </div>
       </div>
-    </div>
-  `).join('');
+    </article>
+  `;
 }
-renderProducts();
+
+function updateCatalogCounter() {
+  const el = document.getElementById('catalog-counter');
+  if (!el) return;
+  if (!catalogState.total) {
+    el.textContent = 'لا توجد منتجات';
+    return;
+  }
+  const from = catalogState.slide + 1;
+  const to = Math.min(catalogState.slide + catalogState.perView, catalogState.total);
+  el.textContent = `عرض ${from}–${to} من ${catalogState.total} منتج`;
+}
+
+function updateCatalogDots() {
+  const dots = document.getElementById('pc-dots');
+  const track = document.getElementById('prod-carousel-track');
+  if (!dots || !track) return;
+
+  const maxSlide = Math.max(0, catalogState.items.length - catalogState.perView);
+  const groups = Math.min(12, Math.max(1, Math.ceil((maxSlide + 1) / catalogState.perView)));
+
+  dots.innerHTML = Array.from({ length: groups }, (_, i) => {
+    const target = i * catalogState.perView;
+    const active = catalogState.slide >= target && catalogState.slide < target + catalogState.perView;
+    return `<button type="button" class="pc-dot ${active ? 'active' : ''}" onclick="catalogGo(${target})" aria-label="صفحة ${i + 1}"></button>`;
+  }).join('');
+}
+
+function renderCatalogTrack(animate = true) {
+  const track = document.getElementById('prod-carousel-track');
+  if (!track) return;
+
+  catalogState.perView = catalogPerView();
+
+  const viewport = document.getElementById('prod-carousel-viewport');
+  const gap = 20;
+  const viewportWidth = viewport?.clientWidth || track.clientWidth;
+  const cardWidth = (viewportWidth - gap * (catalogState.perView - 1)) / catalogState.perView;
+
+  track.style.setProperty('--pc-per-view', String(catalogState.perView));
+  track.innerHTML = catalogState.items.map(productCardHtml).join('');
+
+  const offset = catalogState.slide * (cardWidth + gap);
+  track.classList.toggle('pc-animate', animate);
+  track.style.transform = `translate3d(${-offset}px, 0, 0)`;
+
+  updateCatalogCounter();
+  updateCatalogDots();
+
+  const maxSlide = Math.max(0, catalogState.items.length - catalogState.perView);
+  if (catalogState.slide > maxSlide) {
+    catalogState.slide = maxSlide;
+    renderCatalogTrack(false);
+  }
+}
+
+async function fetchCatalogPage(page = 1, append = false) {
+  if (catalogState.loading) return;
+  const url = new URL(window.MG_CATALOG_URL || '/catalog/products', window.location.origin);
+  url.searchParams.set('category', catalogState.category);
+  url.searchParams.set('page', String(page));
+  url.searchParams.set('per_page', '24');
+
+  catalogState.loading = true;
+  document.getElementById('catalog-loading')?.removeAttribute('hidden');
+
+  try {
+    const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+    const json = await res.json();
+    const rows = json.data || [];
+
+    catalogState.page = json.meta?.current_page || page;
+    catalogState.lastPage = json.meta?.last_page || 1;
+    catalogState.total = json.meta?.total || rows.length;
+
+    rows.forEach(p => productsById.set(p.id, p));
+    catalogState.items = append ? [...catalogState.items, ...rows] : rows;
+
+    if (!append) catalogState.slide = 0;
+    renderCatalogTrack(!append);
+  } catch (e) {
+    const track = document.getElementById('prod-carousel-track');
+    if (track && !append) {
+      track.innerHTML = '<div class="catalog-empty">تعذر تحميل المنتجات. حدّث الصفحة وحاول مرة أخرى.</div>';
+    }
+  } finally {
+    catalogState.loading = false;
+    document.getElementById('catalog-loading')?.setAttribute('hidden', '');
+  }
+}
+
+function maybeLoadMoreCatalog() {
+  const maxSlide = Math.max(0, catalogState.items.length - catalogState.perView);
+  if (
+    catalogState.page < catalogState.lastPage
+    && catalogState.slide >= maxSlide - catalogState.perView
+    && !catalogState.loading
+  ) {
+    fetchCatalogPage(catalogState.page + 1, true);
+  }
+}
+
+function catalogGo(index) {
+  catalogState.slide = Math.max(0, index);
+  renderCatalogTrack();
+  maybeLoadMoreCatalog();
+  resetCatalogTimer();
+}
+
+function catalogNext() {
+  const maxSlide = Math.max(0, catalogState.items.length - catalogState.perView);
+  catalogState.slide = catalogState.slide >= maxSlide ? 0 : catalogState.slide + 1;
+  renderCatalogTrack();
+  maybeLoadMoreCatalog();
+  resetCatalogTimer();
+}
+
+function catalogPrev() {
+  const maxSlide = Math.max(0, catalogState.items.length - catalogState.perView);
+  catalogState.slide = catalogState.slide <= 0 ? maxSlide : catalogState.slide - 1;
+  renderCatalogTrack();
+  resetCatalogTimer();
+}
+
+function resetCatalogTimer() {
+  clearInterval(catalogState.timer);
+  catalogState.timer = setInterval(catalogNext, 4500);
+}
 
 function filterCat(el, cat) {
   document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  renderProducts(cat);
+  catalogState.category = cat;
+  catalogState.page = 1;
+  catalogState.lastPage = 1;
+  catalogState.items = [];
+  fetchCatalogPage(1, false);
+  resetCatalogTimer();
 }
 
+function initCatalogCarousel() {
+  const wrap = document.getElementById('prod-carousel-wrap');
+  if (!wrap || !window.MG_CATALOG_URL) return;
+
+  fetchCatalogPage(1, false);
+  resetCatalogTimer();
+
+  wrap.addEventListener('mouseenter', () => clearInterval(catalogState.timer));
+  wrap.addEventListener('mouseleave', resetCatalogTimer);
+
+  let touchX = 0;
+  wrap.addEventListener('touchstart', e => { touchX = e.changedTouches[0].screenX; }, { passive: true });
+  wrap.addEventListener('touchend', e => {
+    const diff = e.changedTouches[0].screenX - touchX;
+    if (Math.abs(diff) > 40) diff > 0 ? catalogPrev() : catalogNext();
+  }, { passive: true });
+
+  window.addEventListener('resize', () => renderCatalogTrack(false));
+}
+
+window.catalogNext = catalogNext;
+window.catalogPrev = catalogPrev;
+window.catalogGo = catalogGo;
+window.filterCat = filterCat;
+
 function openModal(id) {
-  const p = products.find(x => x.id === id);
+  const p = productsById.get(id);
   if (!p) return;
   const img = document.getElementById('modal-img');
   const initials = document.getElementById('modal-initials');
@@ -166,6 +350,8 @@ document.addEventListener('keydown', e => {
 
 /* MAP */
 document.addEventListener('DOMContentLoaded', () => {
+  initCatalogCarousel();
+
   const mapEl = document.getElementById('map');
   if (!mapEl || typeof L === 'undefined') return;
   const cfg = window.MG_MAP || { lat: 32.8872, lng: 13.1913, zoom: 12 };

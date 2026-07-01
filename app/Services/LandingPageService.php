@@ -13,6 +13,7 @@ use App\Models\TermsCondition;
 use App\Models\WebsiteService;
 use App\Models\WebsiteSetting;
 use App\Models\WebsiteStat;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
 
 class LandingPageService
@@ -30,7 +31,6 @@ class LandingPageService
                 ->whereNull('parent_id')
                 ->orderBy('id')
                 ->get(),
-            'products' => $this->productsPayload(),
             'socialLinks' => SocialMedia::query()->orderBy('id')->get(),
             'cities' => City::query()
                 ->when($this->libyaCountryId(), fn ($q, $id) => $q->where('country_id', $id))
@@ -60,6 +60,47 @@ class LandingPageService
             ->value('id');
     }
 
+    public function paginatedProducts(string $category = 'all', int $page = 1, int $perPage = 24): LengthAwarePaginator
+    {
+        $query = Product::query()
+            ->with(['category.translations', 'translations', 'standard', 'color'])
+            ->whereHas('category');
+
+        if ($category !== 'all') {
+            $query->whereHas('category', fn ($q) => $q->where('slug', $category));
+        }
+
+        return $query
+            ->latest('id')
+            ->paginate($perPage, ['*'], 'page', $page)
+            ->through(fn (Product $product) => $this->productCardPayload($product));
+    }
+
+    /** @return array<string, mixed> */
+    public function productCardPayload(Product $product): array
+    {
+        $nameAr = optional($product->translate('ar'))->name ?? 'منتج';
+        $nameEn = optional($product->translate('en'))->name ?? '';
+        $desc = optional($product->translate('ar'))->description ?? '';
+        $catSlug = $product->category?->slug ?? 'all';
+        $catName = $product->category?->name ?? '';
+
+        return [
+            'id' => $product->id,
+            'cat' => $catSlug,
+            'catName' => $catName,
+            'name' => $nameAr,
+            'en' => Str::upper($nameEn ?: Str::ascii($nameAr)),
+            'desc' => $desc,
+            'pts' => (float) $product->points_per_unit,
+            'image' => $product->display_image_url,
+            'pdf' => $product->catalog_pdf_url,
+            'initials' => $this->initials($nameAr),
+            'color' => $this->colorForCategory($catSlug),
+            'specs' => $this->specsFor($product),
+        ];
+    }
+
     protected function productsPayload(): array
     {
         return Product::query()
@@ -68,28 +109,7 @@ class LandingPageService
             ->latest('id')
             ->limit(48)
             ->get()
-            ->map(function (Product $product) {
-                $nameAr = optional($product->translate('ar'))->name ?? 'منتج';
-                $nameEn = optional($product->translate('en'))->name ?? '';
-                $desc = optional($product->translate('ar'))->description ?? '';
-                $catSlug = $product->category?->slug ?? 'all';
-                $catName = $product->category?->name ?? '';
-
-                return [
-                    'id' => $product->id,
-                    'cat' => $catSlug,
-                    'catName' => $catName,
-                    'name' => $nameAr,
-                    'en' => Str::upper($nameEn ?: Str::ascii($nameAr)),
-                    'desc' => $desc,
-                    'pts' => (float) $product->points_per_unit,
-                    'image' => $product->catalog_image_url,
-                    'pdf' => $product->catalog_pdf_url,
-                    'initials' => $this->initials($nameAr),
-                    'color' => $this->colorForCategory($catSlug),
-                    'specs' => $this->specsFor($product),
-                ];
-            })
+            ->map(fn (Product $product) => $this->productCardPayload($product))
             ->values()
             ->all();
     }

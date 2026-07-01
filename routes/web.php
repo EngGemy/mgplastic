@@ -11,6 +11,7 @@ Route::get('/portal', [PortalController::class, 'index'])->name('portal');
 Route::get('/terms', [LandingController::class, 'terms'])->name('terms');
 Route::get('/privacy', [LandingController::class, 'privacy'])->name('privacy');
 Route::post('/register', [WebsiteRegistrationController::class, 'store'])->name('website.register');
+Route::get('/catalog/products', [\App\Http\Controllers\Web\CatalogController::class, 'products'])->name('website.catalog');
 
 Route::middleware(['web', 'auth'])
     ->prefix(AdminPanelPath::segment().'/invoices')

@@ -18,8 +18,8 @@
 
 @push('scripts')
 <script>
-    window.MG_PRODUCTS = @json($products);
     window.MG_CATEGORY_LABELS = @json($categories->mapWithKeys(fn ($c) => [$c->slug => $c->name]));
+    window.MG_CATALOG_URL = @json(route('website.catalog'));
     window.MG_MAP = {
         lat: {{ $settings->map_latitude }},
         lng: {{ $settings->map_longitude }},

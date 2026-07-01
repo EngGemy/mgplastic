@@ -194,12 +194,24 @@ class Product extends Model
     /** ✅ URLs جاهزة */
     public function getCatalogImageUrlAttribute(): ?string
     {
-        return $this->toPublicUrl($this->catalog_image_path);
+        return $this->resolveExistingPublicUrl($this->catalog_image_path);
+    }
+
+    public function getDisplayImageUrlAttribute(): ?string
+    {
+        foreach ([$this->catalog_image_path, $this->main_image] as $raw) {
+            $url = $this->resolveExistingPublicUrl($raw);
+            if ($url) {
+                return $url;
+            }
+        }
+
+        return null;
     }
 
     public function getCatalogPdfUrlAttribute(): ?string
     {
-        return $this->toPublicUrl($this->catalog_pdf_path);
+        return $this->resolveExistingPublicUrl($this->catalog_pdf_path);
     }
 
     /** ✅ فلاغات للواجهة */
@@ -217,6 +229,7 @@ class Product extends Model
     protected $appends = [
         'catalog_image_url',
         'catalog_pdf_url',
+        'display_image_url',
         'has_catalog_image',
         'has_catalog_pdf',
     ];
@@ -233,16 +246,38 @@ class Product extends Model
         return $value !== '' ? $value : null;
     }
 
-    private function toPublicUrl(?string $path): ?string
+    private function resolveExistingPublicUrl(mixed $raw): ?string
     {
-        if (!$path) return null;
-        // لو هو URL كامل، رجّعه زي ما هو
+        $path = $this->normalizePathStringOrArray($raw);
+        if (! $path) {
+            return null;
+        }
+
         if (Str::startsWith($path, ['http://', 'https://', '//'])) {
             return $path;
         }
-        // لو بدأ بـ / شيله علشان Storage ما يكرر /
+
         $path = ltrim($path, '/');
-        return Storage::disk('public')->url($path);
+        $path = preg_replace('#^storage/#', '', $path);
+
+        $candidates = array_values(array_unique(array_filter([
+            $path,
+            ! str_contains($path, '/') ? 'products/catalog/images/'.$path : null,
+            ! str_contains($path, '/') ? 'products/main/'.$path : null,
+        ])));
+
+        foreach ($candidates as $candidate) {
+            if (Storage::disk('public')->exists($candidate)) {
+                return Storage::disk('public')->url($candidate);
+            }
+        }
+
+        return null;
+    }
+
+    private function toPublicUrl(?string $path): ?string
+    {
+        return $this->resolveExistingPublicUrl($path);
     }
 
     /** الحجم باللتر من الملي */
