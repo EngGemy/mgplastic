@@ -1,0 +1,221 @@
+name: CI / Deploy Production
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: mgplastic-production
+  cancel-in-progress: false
+
+env:
+  PHP_VERSION: '8.3'
+  NODE_VERSION: '20'
+  DEFAULT_CPANEL_APP_PATH: /home/mgplasti/mgplastic_app
+  DEFAULT_CPANEL_PUBLIC_PATH: /home/mgplasti/public_html
+
+jobs:
+  ci:
+    name: CI — tests & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: bcmath, ctype, curl, dom, fileinfo, json, mbstring, openssl, pdo, pdo_sqlite, sqlite3, tokenizer, xml, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+
+      - name: Install Composer (dev)
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader --no-progress
+
+      - name: Validate Laravel boot
+        run: |
+          php artisan config:clear
+          php artisan view:cache
+
+      - name: Run tests
+        run: php artisan test
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Build frontend assets
+        run: |
+          npm ci
+          npm run build
+
+  deploy:
+    name: Deploy → cPanel (mg-plastic.com)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: ci
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: bcmath, ctype, curl, dom, fileinfo, json, mbstring, openssl, pdo, tokenizer, xml, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install production dependencies
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress
+          npm ci
+          npm run build
+
+      - name: Generate public_html index.php (split deploy)
+        env:
+          CPANEL_APP_PATH: ${{ secrets.CPANEL_APP_PATH }}
+          CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
+        run: |
+          set -euo pipefail
+          APP_PATH="${CPANEL_APP_PATH:-$DEFAULT_CPANEL_APP_PATH}"
+          PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
+          APP_REL="$(python3 -c "import os; print(os.path.relpath('${APP_PATH}', '${PUBLIC_PATH}'))")"
+          echo "Bootstrap path: ${APP_REL}"
+          sed "s|__APP_BASE__|${APP_REL}|g" deploy/templates/public-index.php.stub > public/index.php.cpanel
+
+      - name: Validate deployment secrets
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_SSH_KEY: ${{ secrets.CPANEL_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -z "${CPANEL_HOST:-}" ] && missing+=("CPANEL_HOST")
+          [ -z "${CPANEL_USER:-}" ] && missing+=("CPANEL_USER")
+          [ -z "${CPANEL_SSH_KEY:-}" ] && missing+=("CPANEL_SSH_KEY")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing GitHub secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.CPANEL_SSH_KEY }}
+
+      - name: Add server to known_hosts
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+        run: |
+          PORT="${CPANEL_PORT:-22}"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${PORT}" -H "${CPANEL_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Ensure remote directories
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_APP_PATH: ${{ secrets.CPANEL_APP_PATH }}
+          CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
+        run: |
+          PORT="${CPANEL_PORT:-22}"
+          APP_PATH="${CPANEL_APP_PATH:-$DEFAULT_CPANEL_APP_PATH}"
+          PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
+          ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
+            "mkdir -p '${APP_PATH}' '${PUBLIC_PATH}' '${APP_PATH}/storage' '${APP_PATH}/bootstrap/cache'"
+
+      - name: Deploy application (with vendor)
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_APP_PATH: ${{ secrets.CPANEL_APP_PATH }}
+        run: |
+          PORT="${CPANEL_PORT:-22}"
+          APP_PATH="${CPANEL_APP_PATH:-$DEFAULT_CPANEL_APP_PATH}"
+          tar --exclude='.git' \
+              --exclude='node_modules' \
+              --exclude='.env' \
+              --exclude='storage/framework/cache' \
+              --exclude='storage/framework/sessions' \
+              --exclude='storage/framework/views' \
+              --exclude='storage/logs' \
+              --exclude='public' \
+              --exclude='tests' \
+              -czf - . | ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
+            "tar -xzf - -C '${APP_PATH}'"
+
+      - name: Deploy public assets
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
+        run: |
+          PORT="${CPANEL_PORT:-22}"
+          PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
+          tar --exclude='storage/' -czf - -C public . | ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
+            "tar -xzf - -C '${PUBLIC_PATH}'"
+
+      - name: Deploy bootstrap index.php
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
+        run: |
+          PORT="${CPANEL_PORT:-22}"
+          PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
+          scp -P "${PORT}" -o BatchMode=yes public/index.php.cpanel \
+            "${CPANEL_USER}@${CPANEL_HOST}:${PUBLIC_PATH}/index.php"
+
+      - name: Post-deploy (migrate, cache, storage link)
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_APP_PATH: ${{ secrets.CPANEL_APP_PATH }}
+          CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
+        run: |
+          PORT="${CPANEL_PORT:-22}"
+          APP_PATH="${CPANEL_APP_PATH:-$DEFAULT_CPANEL_APP_PATH}"
+          PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
+          scp -P "${PORT}" -o BatchMode=yes deploy/scripts/post-deploy.sh \
+            "${CPANEL_USER}@${CPANEL_HOST}:/tmp/mgplastic-post-deploy.sh"
+          ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
+            "bash /tmp/mgplastic-post-deploy.sh '${APP_PATH}' '${PUBLIC_PATH}' && rm -f /tmp/mgplastic-post-deploy.sh"

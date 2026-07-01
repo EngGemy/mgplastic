@@ -1,0 +1,36 @@
+# Secrets & VCS
+.env
+.env.*
+.git/
+.gitattributes
+.github/
+
+# Build tooling (assets pre-built in CI → public/build)
+node_modules/
+package.json
+package-lock.json
+vite.config.js
+
+# Dev / test
+tests/
+phpunit.xml
+.phpunit.result.cache
+.editorconfig
+*.md
+!storage/**/*.md
+
+# Split deploy: public synced separately
+public/
+
+# Preserve server writable paths
+storage/logs/
+storage/framework/cache/data/
+storage/framework/sessions/
+storage/framework/views/
+storage/app/public/
+bootstrap/cache/*.php
+
+# Local artifacts
+.idea/
+.vscode/
+error_log

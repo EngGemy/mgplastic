@@ -1,0 +1,42 @@
+<?php
+
+use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Http\Request;
+
+define('LARAVEL_START', microtime(true));
+
+/*
+|--------------------------------------------------------------------------
+| cPanel split deployment bootstrap (MG Plastic)
+|--------------------------------------------------------------------------
+|
+| Deployed to public_html. Laravel app lives in sibling directory
+| (default: ../mgplastic_app). CI replaces __APP_BASE__ with the relative
+| path from public_html to the application directory.
+|
+*/
+
+$appBase = realpath(__DIR__ . '/__APP_BASE__');
+
+if ($appBase === false) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Application path not found. Check CPANEL_APP_PATH / CPANEL_PUBLIC_PATH.';
+    exit(1);
+}
+
+if (file_exists($maintenance = $appBase . '/storage/framework/maintenance.php')) {
+    require $maintenance;
+}
+
+require $appBase . '/vendor/autoload.php';
+
+$app = require_once $appBase . '/bootstrap/app.php';
+
+$kernel = $app->make(Kernel::class);
+
+$response = $kernel->handle(
+    $request = Request::capture()
+)->send();
+
+$kernel->terminate($request, $response);

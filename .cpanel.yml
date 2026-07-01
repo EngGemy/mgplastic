@@ -1,0 +1,16 @@
+---
+# cPanel Git™ fallback (use when GitHub Actions SSH is unavailable).
+# Preferred: GitHub Actions → .github/workflows/deploy-production.yml
+
+deployment:
+  tasks:
+    - export DEPLOY_PATH=/home/mgplasti/mgplastic_app
+    - export PUBLIC_PATH=/home/mgplasti/public_html
+    - export PHP=/usr/local/bin/php
+
+    - /bin/mkdir -p $DEPLOY_PATH $PUBLIC_PATH
+    - /bin/rsync -a --exclude='.env' --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='public' ./ $DEPLOY_PATH/
+    - /bin/rsync -a ./public/ $PUBLIC_PATH/
+
+    - /bin/chmod -R 775 $DEPLOY_PATH/storage $DEPLOY_PATH/bootstrap/cache
+    - /bin/bash $DEPLOY_PATH/deploy/scripts/post-deploy.sh $DEPLOY_PATH $PUBLIC_PATH
