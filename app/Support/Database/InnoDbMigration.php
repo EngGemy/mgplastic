@@ -103,4 +103,30 @@ class InnoDbMigration
     {
         return self::referenceIdColumnDefinition('users', 'id');
     }
+
+    public static function foreignKeyName(string $table, string $column): string
+    {
+        return "{$table}_{$column}_foreign";
+    }
+
+    public static function hasForeignKey(string $table, string $column): bool
+    {
+        if (! self::isMysql() || ! Schema::hasTable($table)) {
+            return false;
+        }
+
+        $name = self::foreignKeyName($table, $column);
+
+        $row = DB::selectOne('
+            SELECT CONSTRAINT_NAME AS constraint_name
+            FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+              AND CONSTRAINT_NAME = ?
+              AND CONSTRAINT_TYPE = ?
+            LIMIT 1
+        ', [$table, $name, 'FOREIGN KEY']);
+
+        return $row !== null;
+    }
 }

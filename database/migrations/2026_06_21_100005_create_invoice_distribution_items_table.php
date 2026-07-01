@@ -14,45 +14,51 @@ return new class extends Migration
             'invoice_items',
         ]);
 
-        $distributionIdColumn = InnoDbMigration::referenceIdColumnDefinition('invoice_distributions', 'id');
-        $invoiceItemIdColumn = InnoDbMigration::referenceIdColumnDefinition('invoice_items', 'id');
+        if (! Schema::hasTable('invoice_distribution_items')) {
+            $distributionIdColumn = InnoDbMigration::referenceIdColumnDefinition('invoice_distributions', 'id');
+            $invoiceItemIdColumn = InnoDbMigration::referenceIdColumnDefinition('invoice_items', 'id');
 
-        Schema::create('invoice_distribution_items', function (Blueprint $table) use ($distributionIdColumn, $invoiceItemIdColumn) {
-            $table->id();
+            Schema::create('invoice_distribution_items', function (Blueprint $table) use ($distributionIdColumn, $invoiceItemIdColumn) {
+                $table->id();
 
-            if ($distributionIdColumn === 'unsignedInteger') {
-                $table->unsignedInteger('distribution_id');
-            } else {
-                $table->unsignedBigInteger('distribution_id');
-            }
+                if ($distributionIdColumn === 'unsignedInteger') {
+                    $table->unsignedInteger('distribution_id');
+                } else {
+                    $table->unsignedBigInteger('distribution_id');
+                }
 
-            if ($invoiceItemIdColumn === 'unsignedInteger') {
-                $table->unsignedInteger('invoice_item_id');
-            } else {
-                $table->unsignedBigInteger('invoice_item_id');
-            }
+                if ($invoiceItemIdColumn === 'unsignedInteger') {
+                    $table->unsignedInteger('invoice_item_id');
+                } else {
+                    $table->unsignedBigInteger('invoice_item_id');
+                }
 
-            $table->unsignedInteger('quantity');
-            $table->unsignedInteger('points_value');
-            $table->timestamps();
+                $table->unsignedInteger('quantity');
+                $table->unsignedInteger('points_value');
+                $table->timestamps();
 
-            $table->index(['distribution_id']);
-            $table->index(['invoice_item_id']);
-            $table->unique(['distribution_id', 'invoice_item_id'], 'idi_dist_item_uniq');
-        });
+                $table->index(['distribution_id']);
+                $table->index(['invoice_item_id']);
+                $table->unique(['distribution_id', 'invoice_item_id'], 'idi_dist_item_uniq');
+            });
+        }
 
         InnoDbMigration::convertTableToInnoDb('invoice_distribution_items');
 
         Schema::table('invoice_distribution_items', function (Blueprint $table) {
-            $table->foreign('distribution_id')
-                ->references('id')
-                ->on('invoice_distributions')
-                ->cascadeOnDelete();
+            if (! InnoDbMigration::hasForeignKey('invoice_distribution_items', 'distribution_id')) {
+                $table->foreign('distribution_id')
+                    ->references('id')
+                    ->on('invoice_distributions')
+                    ->cascadeOnDelete();
+            }
 
-            $table->foreign('invoice_item_id')
-                ->references('id')
-                ->on('invoice_items')
-                ->restrictOnDelete();
+            if (! InnoDbMigration::hasForeignKey('invoice_distribution_items', 'invoice_item_id')) {
+                $table->foreign('invoice_item_id')
+                    ->references('id')
+                    ->on('invoice_items')
+                    ->restrictOnDelete();
+            }
         });
     }
 
