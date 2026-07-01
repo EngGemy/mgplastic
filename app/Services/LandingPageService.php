@@ -27,10 +27,7 @@ class LandingPageService
             'sliders' => Slider::forHome()->active()->ordered()->get(),
             'stats' => WebsiteStat::active()->ordered()->get(),
             'services' => WebsiteService::active()->ordered()->get(),
-            'categories' => ProductCategory::with('translations')
-                ->whereNull('parent_id')
-                ->orderBy('id')
-                ->get(),
+            'categories' => $this->categoriesTree(),
             'socialLinks' => SocialMedia::query()->orderBy('id')->get(),
             'cities' => City::query()
                 ->when($this->libyaCountryId(), fn ($q, $id) => $q->where('country_id', $id))
@@ -60,14 +57,41 @@ class LandingPageService
             ->value('id');
     }
 
-    public function paginatedProducts(string $category = 'all', int $page = 1, int $perPage = 24): LengthAwarePaginator
+    /** @return list<array<string, mixed>> */
+    public function categoriesTree(): array
+    {
+        $all = ProductCategory::with('translations')->orderBy('id')->get();
+
+        return $all
+            ->whereNull('parent_id')
+            ->map(function (ProductCategory $parent) use ($all) {
+                return [
+                    'id' => $parent->id,
+                    'slug' => $parent->slug,
+                    'name' => $parent->name,
+                    'children' => $all
+                        ->where('parent_id', $parent->id)
+                        ->map(fn (ProductCategory $child) => [
+                            'id' => $child->id,
+                            'slug' => $child->slug,
+                            'name' => $child->name,
+                        ])
+                        ->values()
+                        ->all(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    public function paginatedProducts(?int $categoryId, int $page = 1, int $perPage = 24): LengthAwarePaginator
     {
         $query = Product::query()
-            ->with(['category.translations', 'translations', 'standard', 'color'])
+            ->with(['category.translations', 'category.parent.translations', 'translations', 'standard', 'color'])
             ->whereHas('category');
 
-        if ($category !== 'all') {
-            $query->whereHas('category', fn ($q) => $q->where('slug', $category));
+        if ($categoryId) {
+            $query->whereIn('product_category_id', $this->categoryFilterIds($categoryId));
         }
 
         return $query
@@ -76,23 +100,64 @@ class LandingPageService
             ->through(fn (Product $product) => $this->productCardPayload($product));
     }
 
+    /** @return list<int> */
+    protected function categoryFilterIds(int $categoryId): array
+    {
+        $all = ProductCategory::query()->get(['id', 'parent_id']);
+
+        if (! $all->contains('id', $categoryId)) {
+            return [$categoryId];
+        }
+
+        $ids = [$categoryId];
+        $queue = [$categoryId];
+
+        while ($queue !== []) {
+            $parentId = array_shift($queue);
+
+            foreach ($all->where('parent_id', $parentId) as $child) {
+                if (! in_array($child->id, $ids, true)) {
+                    $ids[] = $child->id;
+                    $queue[] = $child->id;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
     /** @return array<string, mixed> */
     public function productCardPayload(Product $product): array
     {
         $nameAr = optional($product->translate('ar'))->name ?? 'منتج';
         $nameEn = optional($product->translate('en'))->name ?? '';
-        $desc = optional($product->translate('ar'))->description ?? '';
-        $catSlug = $product->category?->slug ?? 'all';
-        $catName = $product->category?->name ?? '';
+        $descAr = optional($product->translate('ar'))->description ?? '';
+        $usageAr = optional($product->translate('ar'))->usage ?? '';
+        $category = $product->category;
+        $parentCat = $category?->parent;
+        $catSlug = $category?->slug ?? 'all';
+        $catName = $category?->name ?? '';
+        $parentCatName = $parentCat?->name ?? '';
+
+        $breadcrumb = collect([$parentCatName, $catName])->filter()->implode(' › ');
 
         return [
             'id' => $product->id,
             'cat' => $catSlug,
+            'catId' => $category?->id,
             'catName' => $catName,
+            'parentCatId' => $parentCat?->id,
+            'parentCatName' => $parentCatName,
+            'breadcrumb' => $breadcrumb,
             'name' => $nameAr,
             'en' => Str::upper($nameEn ?: Str::ascii($nameAr)),
-            'desc' => $desc,
+            'desc' => $descAr,
+            'usage' => $usageAr,
+            'classification' => $product->classification,
+            'notes' => $product->notes,
             'pts' => (float) $product->points_per_unit,
+            'pointType' => $product->pointValueTypeLabel(),
+            'pointConversion' => $product->pointConversionSummary(),
             'image' => $product->display_image_url,
             'pdf' => $product->catalog_pdf_url,
             'initials' => $this->initials($nameAr),
@@ -138,6 +203,9 @@ class LandingPageService
     {
         $specs = [];
 
+        if ($product->classification) {
+            $specs[] = ['l' => 'التصنيف', 'v' => $product->classification];
+        }
         if ($product->length_m) {
             $specs[] = ['l' => 'الطول', 'v' => $product->length_m.' متر'];
         }

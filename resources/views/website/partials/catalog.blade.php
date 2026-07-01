@@ -3,15 +3,19 @@
         <div style="text-align:center;margin-bottom:36px" class="reveal">
             <span class="sec-eyebrow">Product Catalog</span>
             <h2 class="sec-h2" style="font-family:'Amiri',serif">كتالوج منتجاتنا</h2>
-            <div class="sec-en">// premium_carousel_browse_500_products</div>
+            <div class="sec-en">تصفّح حسب القسم والتصنيف الفرعي</div>
         </div>
 
-        <div class="cat-tabs reveal" id="cat-tabs">
-            <button class="cat-tab active" data-cat="all" onclick="filterCat(this,'all')">الكل</button>
+        <div class="cat-tabs reveal" id="cat-tabs-main">
+            <button type="button" class="cat-tab active" data-id="all" onclick="filterCatMain(this, 'all')">الكل</button>
             @foreach($categories as $category)
-                <button class="cat-tab" data-cat="{{ $category->slug }}" onclick="filterCat(this,'{{ $category->slug }}')">{{ $category->name }}</button>
+                <button type="button" class="cat-tab" data-id="{{ $category['id'] }}" onclick="filterCatMain(this, {{ $category['id'] }})">
+                    {{ $category['name'] }}
+                </button>
             @endforeach
         </div>
+
+        <div class="cat-subtabs reveal" id="cat-subtabs" hidden></div>
 
         <div class="prod-carousel-wrap reveal" id="prod-carousel-wrap">
             <div class="prod-carousel-head">

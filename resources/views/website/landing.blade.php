@@ -18,7 +18,7 @@
 
 @push('scripts')
 <script>
-    window.MG_CATEGORY_LABELS = @json($categories->mapWithKeys(fn ($c) => [$c->slug => $c->name]));
+    window.MG_CATEGORIES = @json($categories);
     window.MG_CATALOG_URL = @json(route('website.catalog'));
     window.MG_MAP = {
         lat: {{ $settings->map_latitude }},

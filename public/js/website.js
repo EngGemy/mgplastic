@@ -86,9 +86,9 @@ if (document.readyState === 'loading') {
 }
 
 /* PRODUCTS CAROUSEL */
-const categoryLabels = window.MG_CATEGORY_LABELS || {};
+const catalogCategories = window.MG_CATEGORIES || [];
 const catalogState = {
-  category: 'all',
+  categoryId: 'all',
   page: 1,
   lastPage: 1,
   total: 0,
@@ -100,6 +100,50 @@ const catalogState = {
 };
 
 const productsById = new Map();
+
+function findCategoryById(id) {
+  const num = Number(id);
+  for (const parent of catalogCategories) {
+    if (parent.id === num) return parent;
+    const child = (parent.children || []).find(c => c.id === num);
+    if (child) return { ...child, parentName: parent.name };
+  }
+  return null;
+}
+
+function renderSubCategoryTabs(parentId) {
+  const sub = document.getElementById('cat-subtabs');
+  if (!sub) return;
+
+  if (parentId === 'all') {
+    sub.hidden = true;
+    sub.innerHTML = '';
+    return;
+  }
+
+  const parent = catalogCategories.find(c => c.id === Number(parentId));
+  const children = parent?.children || [];
+
+  if (!children.length) {
+    sub.hidden = true;
+    sub.innerHTML = '';
+    return;
+  }
+
+  sub.hidden = false;
+  sub.innerHTML = `
+    <button type="button" class="cat-tab cat-sub active" data-id="${parent.id}" onclick="filterCatSub(this, ${parent.id})">كل ${escapeHtml(parent.name)}</button>
+    ${children.map(ch => `
+      <button type="button" class="cat-tab cat-sub" data-id="${ch.id}" onclick="filterCatSub(this, ${ch.id})">${escapeHtml(ch.name)}</button>
+    `).join('')}
+  `;
+}
+
+function setActiveTab(containerId, id) {
+  document.querySelectorAll(`#${containerId} .cat-tab`).forEach(btn => {
+    btn.classList.toggle('active', String(btn.dataset.id) === String(id) || (id === 'all' && btn.dataset.id === 'all'));
+  });
+}
 
 function catalogPerView() {
   const w = window.innerWidth;
@@ -122,20 +166,29 @@ function productCardHtml(p) {
     ? `<img src="${escapeHtml(p.image)}" alt="" loading="lazy" decoding="async" onerror="this.closest('.prod-img')?.classList.add('no-img')">`
     : '';
   const initialsClass = p.image ? 'prod-initials' : 'prod-initials show';
+  const specsPreview = (p.specs || []).slice(0, 2).map(s =>
+    `<span class="prod-spec-chip">${escapeHtml(s.l)}: ${escapeHtml(s.v)}</span>`
+  ).join('');
+  const descPreview = p.desc ? `<p class="prod-desc-preview">${escapeHtml(p.desc).slice(0, 90)}${p.desc.length > 90 ? '…' : ''}</p>` : '';
 
   return `
     <article class="prod-card" onclick="openModal(${p.id})">
       <div class="prod-img" style="background:linear-gradient(145deg,${p.color}33,${p.color}11)">
         ${imgBlock}
         <div class="${initialsClass}" style="color:${p.color}">${escapeHtml(p.initials)}</div>
-        <div class="prod-cat-badge">${escapeHtml(p.catName || categoryLabels[p.cat] || '')}</div>
+        <div class="prod-cat-badge">${escapeHtml(p.breadcrumb || p.catName || '')}</div>
       </div>
       <div class="prod-body">
         <div class="prod-name">${escapeHtml(p.name)}</div>
         <div class="prod-en fm">${escapeHtml(p.en || '')}</div>
-        <div><span class="prod-pts"><i class="ti ti-star" style="font-size:10px"></i> ${p.pts} نقطة/وحدة</span></div>
+        ${descPreview}
+        ${specsPreview ? `<div class="prod-specs-preview">${specsPreview}</div>` : ''}
+        <div class="prod-meta-row">
+          <span class="prod-pts"><i class="ti ti-star" style="font-size:10px"></i> ${p.pts} نقطة/وحدة</span>
+          ${p.classification ? `<span class="prod-class-badge">${escapeHtml(p.classification)}</span>` : ''}
+        </div>
         <div class="prod-action">
-          <span class="prod-btn prod-btn-blue">عرض التفاصيل</span>
+          <span class="prod-btn prod-btn-blue">عرض كل التفاصيل</span>
           ${p.pdf ? `<a href="${escapeHtml(p.pdf)}" class="prod-btn prod-btn-out" onclick="event.stopPropagation()" target="_blank" rel="noopener"><i class="ti ti-download" style="font-size:11px"></i> PDF</a>` : ''}
         </div>
       </div>
@@ -182,6 +235,15 @@ function renderCatalogTrack(animate = true) {
   const cardWidth = (viewportWidth - gap * (catalogState.perView - 1)) / catalogState.perView;
 
   track.style.setProperty('--pc-per-view', String(catalogState.perView));
+
+  if (!catalogState.items.length) {
+    track.innerHTML = '<div class="catalog-empty">لا توجد منتجات في هذا التصنيف حالياً.</div>';
+    track.style.transform = 'none';
+    updateCatalogCounter();
+    updateCatalogDots();
+    return;
+  }
+
   track.innerHTML = catalogState.items.map(productCardHtml).join('');
 
   const offset = catalogState.slide * (cardWidth + gap);
@@ -201,7 +263,9 @@ function renderCatalogTrack(animate = true) {
 async function fetchCatalogPage(page = 1, append = false) {
   if (catalogState.loading) return;
   const url = new URL(window.MG_CATALOG_URL || '/catalog/products', window.location.origin);
-  url.searchParams.set('category', catalogState.category);
+  if (catalogState.categoryId !== 'all') {
+    url.searchParams.set('category_id', String(catalogState.categoryId));
+  }
   url.searchParams.set('page', String(page));
   url.searchParams.set('per_page', '24');
 
@@ -271,13 +335,26 @@ function resetCatalogTimer() {
   catalogState.timer = setInterval(catalogNext, 4500);
 }
 
-function filterCat(el, cat) {
-  document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  catalogState.category = cat;
+function filterCatMain(el, id) {
+  setActiveTab('cat-tabs-main', id);
+  catalogState.categoryId = id;
   catalogState.page = 1;
   catalogState.lastPage = 1;
   catalogState.items = [];
+  catalogState.slide = 0;
+  renderSubCategoryTabs(id);
+  fetchCatalogPage(1, false);
+  resetCatalogTimer();
+}
+
+function filterCatSub(el, id) {
+  document.querySelectorAll('#cat-subtabs .cat-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  catalogState.categoryId = id;
+  catalogState.page = 1;
+  catalogState.lastPage = 1;
+  catalogState.items = [];
+  catalogState.slide = 0;
   fetchCatalogPage(1, false);
   resetCatalogTimer();
 }
@@ -305,7 +382,8 @@ function initCatalogCarousel() {
 window.catalogNext = catalogNext;
 window.catalogPrev = catalogPrev;
 window.catalogGo = catalogGo;
-window.filterCat = filterCat;
+window.filterCatMain = filterCatMain;
+window.filterCatSub = filterCatSub;
 
 function openModal(id) {
   const p = productsById.get(id);
@@ -320,11 +398,38 @@ function openModal(id) {
     initials.style.display = 'flex';
     initials.textContent = p.initials;
   }
-  document.getElementById('modal-tag').textContent = p.catName || categoryLabels[p.cat] || '';
+  document.getElementById('modal-tag').textContent = p.breadcrumb || p.catName || '';
   document.getElementById('modal-title').textContent = p.name;
-  document.getElementById('modal-desc').textContent = p.desc || '';
-  const specs = (p.specs || []).map(s => `<div class="spec-item"><div class="spec-label">${s.l}</div><div class="spec-val">${s.v}</div></div>`).join('');
-  document.getElementById('modal-specs').innerHTML = specs + `<div class="spec-item"><div class="spec-label">النقاط</div><div class="spec-val" style="color:#d97706">⭐ ${p.pts}/وحدة</div></div>`;
+  const modalEn = document.getElementById('modal-en');
+  if (modalEn) modalEn.textContent = p.en || '';
+  document.getElementById('modal-desc').textContent = p.desc || '—';
+
+  const usageEl = document.getElementById('modal-usage');
+  if (usageEl) {
+    if (p.usage) {
+      usageEl.hidden = false;
+      usageEl.innerHTML = `<strong>الاستخدام:</strong> ${escapeHtml(p.usage)}`;
+    } else {
+      usageEl.hidden = true;
+      usageEl.innerHTML = '';
+    }
+  }
+
+  const specs = (p.specs || []).map(s => `<div class="spec-item"><div class="spec-label">${escapeHtml(s.l)}</div><div class="spec-val">${escapeHtml(s.v)}</div></div>`).join('');
+  document.getElementById('modal-specs').innerHTML = specs
+    + `<div class="spec-item"><div class="spec-label">النقاط</div><div class="spec-val" style="color:#d97706">⭐ ${p.pts}/وحدة</div></div>`
+    + `<div class="spec-item"><div class="spec-label">تحويل النقاط</div><div class="spec-val">${escapeHtml(p.pointConversion || '—')}</div></div>`;
+
+  const notesEl = document.getElementById('modal-notes');
+  if (notesEl) {
+    if (p.notes) {
+      notesEl.hidden = false;
+      notesEl.innerHTML = `<strong>ملاحظات:</strong> ${escapeHtml(p.notes)}`;
+    } else {
+      notesEl.hidden = true;
+      notesEl.innerHTML = '';
+    }
+  }
   const pdfBtn = document.getElementById('modal-pdf-btn');
   if (pdfBtn) {
     pdfBtn.href = p.pdf || '#';

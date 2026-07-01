@@ -12,11 +12,12 @@ class CatalogController extends Controller
 
     public function products(Request $request)
     {
-        $category = (string) $request->query('category', 'all');
+        $categoryId = $request->query('category_id');
+        $categoryId = is_numeric($categoryId) ? (int) $categoryId : null;
         $page = max(1, (int) $request->query('page', 1));
         $perPage = min(48, max(12, (int) $request->query('per_page', 24)));
 
-        $paginator = $this->landing->paginatedProducts($category, $page, $perPage);
+        $paginator = $this->landing->paginatedProducts($categoryId, $page, $perPage);
 
         return response()->json([
             'data' => $paginator->getCollection()->values()->all(),
