@@ -99,7 +99,7 @@ trait HasProductPointsForm
     }
 
     /** تحضير حقول النقاط قبل الحفظ */
-    protected static function mergeProductPointsIntoData(array $data): array
+    public static function mergeProductPointsIntoData(array $data): array
     {
         if (($data['point_value_type'] ?? null) === 'percent') {
             $dinars = (float) ($data['reference_unit_price_dinars'] ?? 0);
