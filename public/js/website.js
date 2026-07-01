@@ -48,21 +48,42 @@ document.querySelectorAll('.stat-num[data-target]').forEach(el => cntObs.observe
 
 /* HERO SLIDER */
 let curSlide = 0;
-let slides = document.querySelectorAll('.slide').length || 1;
+let slides = 1;
 let sliderTimer;
+
 function showSlide(n) {
-  document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === n));
-  document.querySelectorAll('.sdot').forEach((d, i) => d.classList.toggle('active', i === n));
+  document.querySelectorAll('#slider .slide').forEach((s, i) => s.classList.toggle('active', i === n));
+  document.querySelectorAll('#slider .sdot').forEach((d, i) => d.classList.toggle('active', i === n));
   curSlide = n;
 }
-function nextSlide() { showSlide((curSlide + 1) % slides); resetTimer(); }
-function prevSlide() { showSlide((curSlide - 1 + slides) % slides); resetTimer(); }
-function goSlide(n) { showSlide(n); resetTimer(); }
-function resetTimer() {
+
+function nextSlide() { showSlide((curSlide + 1) % slides); resetSliderTimer(); }
+function prevSlide() { showSlide((curSlide - 1 + slides) % slides); resetSliderTimer(); }
+function goSlide(n) { showSlide(n); resetSliderTimer(); }
+
+function resetSliderTimer() {
   clearInterval(sliderTimer);
   if (slides > 1) sliderTimer = setInterval(nextSlide, 5000);
 }
-if (slides > 1) sliderTimer = setInterval(nextSlide, 5000);
+
+function initHeroSlider() {
+  const wrap = document.getElementById('slider');
+  if (!wrap) return;
+
+  slides = wrap.querySelectorAll('.slide').length || 1;
+  showSlide(0);
+  resetSliderTimer();
+}
+
+window.nextSlide = nextSlide;
+window.prevSlide = prevSlide;
+window.goSlide = goSlide;
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initHeroSlider);
+} else {
+  initHeroSlider();
+}
 
 /* PRODUCTS */
 const products = window.MG_PRODUCTS || [];

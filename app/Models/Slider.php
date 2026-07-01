@@ -30,10 +30,18 @@ class Slider extends Model
         });
     }
 
+    public function hasValidImage(): bool
+    {
+        return filled($this->image)
+            && Storage::disk('public')->exists($this->image);
+    }
+
     /** Accessor for full URL */
     public function getImageUrlAttribute(): ?string
     {
-        return $this->image ? Storage::disk('public')->url($this->image) : null;
+        return $this->hasValidImage()
+            ? Storage::disk('public')->url($this->image)
+            : null;
     }
 
     public function scopeActive($query)
@@ -53,8 +61,10 @@ class Slider extends Model
 
     public function backgroundCss(): string
     {
-        if ($this->image) {
-            return "background-image:url('{$this->image_url}');background-size:cover;background-position:center";
+        if ($this->hasValidImage()) {
+            $url = str_replace("'", "\\'", $this->image_url);
+
+            return "background-image:url('{$url}');background-size:cover;background-position:center";
         }
 
         return $this->background_style

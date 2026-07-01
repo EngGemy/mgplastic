@@ -87,15 +87,15 @@ class WebsiteContentSeeder extends Seeder
                 ],
             ];
 
-            foreach ($slides as $i => $slide) {
-                Slider::create([
-                    ...$slide,
-                    'type' => 'home',
-                    'image' => 'sliders/slide'.($i + 1).'.jpg',
-                    'sort_order' => $i + 1,
-                    'is_active' => true,
-                ]);
-            }
+        foreach ($slides as $i => $slide) {
+            Slider::create([
+                ...$slide,
+                'type' => 'home',
+                'image' => '',
+                'sort_order' => $i + 1,
+                'is_active' => true,
+            ]);
+        }
         }
     }
 }

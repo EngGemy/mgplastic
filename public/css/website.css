@@ -66,17 +66,17 @@ body{font-family:'Cairo',sans-serif;color:var(--ink);background:#fff;overflow-x:
 .slider-wrap{position:relative;overflow:hidden;height:88vh;min-height:500px}
 .slide{
   position:absolute;top:0;left:0;right:0;bottom:0;
-  display:flex;align-items:center;
+  display:flex;align-items:center;justify-content:flex-start;
   opacity:0;transition:opacity .7s ease;pointer-events:none;
 }
-.slide.active{opacity:1;pointer-events:all}
+.slide.active{opacity:1;pointer-events:all;z-index:1}
 .slide-bg{
   position:absolute;inset:0;background-size:cover;background-position:center;
   transition:transform 6s ease;
 }
 .slide.active .slide-bg{transform:scale(1.04)}
 .slide-overlay{position:absolute;inset:0;background:linear-gradient(130deg,rgba(13,29,110,.85) 0%,rgba(13,45,110,.5) 60%,rgba(0,0,0,.2) 100%)}
-.slide-content{position:relative;z-index:2;max-width:680px;padding:0 5vw}
+.slide-content{position:relative;z-index:2;max-width:680px;padding:0 5vw;text-align:right}
 .slide-tag{
   font-family:'JetBrains Mono',monospace;
   font-size:11px;letter-spacing:.18em;color:rgba(255,255,255,.6);

@@ -59,6 +59,7 @@ class SliderResource extends Resource
                 ->imageEditor()
                 ->openable()
                 ->downloadable()
+                ->helperText('اختياري — إن لم تُرفع صورة يُستخدم تدرج CSS من الحقل أدناه.')
                 ->columnSpanFull(),
 
             Forms\Components\TextInput::make('sort_order')->label('الترتيب')->numeric()->default(0),
