@@ -40,8 +40,8 @@
         <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px">المنتجات</div>
             <ul class="footer-links">
-                @foreach($categories->take(5) as $category)
-                    <li><a href="#catalog">{{ $category->name }}</a></li>
+                @foreach(collect($categories)->take(5) as $category)
+                    <li><a href="#catalog">{{ $category['name'] }}</a></li>
                 @endforeach
             </ul>
         </div>
