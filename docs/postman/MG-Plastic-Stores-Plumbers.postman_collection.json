@@ -1,0 +1,362 @@
+{
+  "info": {
+    "name": "MG Plastic — Stores & Plumbers API",
+    "_postman_id": "b1e2c3d4-0000-4a00-9000-mgplastic0001",
+    "description": "Endpoints for wholesale store self-registration, store media (slider/videos/product images), social media links, admin-controlled social visibility, and plumber profile/location.\n\n## Setup\n1. Set the `base_url` variable to your app URL (Laragon default: http://mgplastic.test — production: https://mg-plastic.com).\n2. Run **Auth → Register Store** (or Login), then **Verify OTP** — the `token` is saved automatically for all authenticated requests.\n3. Use the Store / Plumber folders with the saved Bearer token.\n\nAll write endpoints return JSON: `{ status: bool, message: string, data: ... }`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://mgplastic.test", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "store_user_id", "value": "", "type": "string" },
+    { "key": "media_id", "value": "", "type": "string" },
+    { "key": "link_id", "value": "", "type": "string" },
+    { "key": "plumber_media_id", "value": "", "type": "string" },
+    { "key": "phone", "value": "0910000000", "type": "string" },
+    { "key": "password", "value": "secret123", "type": "string" },
+    { "key": "otp", "value": "123456", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register Store (موزع جملة)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.token) {",
+                  "  pm.collectionVariables.set('token', json.data.token);",
+                  "}",
+                  "if (json && json.data && json.data.store && json.data.store.id) {",
+                  "  pm.collectionVariables.set('store_user_id', json.data.store.id);",
+                  "}",
+                  "pm.test('registered', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" } ],
+            "url": { "raw": "{{base_url}}/api/v1/auth/register-store", "host": ["{{base_url}}"], "path": ["api","v1","auth","register-store"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "متجر الأندلس", "type": "text" },
+                { "key": "phone", "value": "{{phone}}", "type": "text" },
+                { "key": "email", "value": "store@example.com", "type": "text" },
+                { "key": "password", "value": "{{password}}", "type": "text" },
+                { "key": "brand_name", "value": "مؤسسة الأندلس للمواد الصحية", "type": "text" },
+                { "key": "address", "value": "بنغازي - شارع جمال", "type": "text" },
+                { "key": "website", "value": "https://andalus-store.ly", "type": "text" },
+                { "key": "country_id", "value": "1", "type": "text" },
+                { "key": "city_id", "value": "1", "type": "text" },
+                { "key": "latitude", "value": "32.1194", "type": "text" },
+                { "key": "longitude", "value": "20.0868", "type": "text" },
+                { "key": "short_description", "value": "متجر جملة لمواد السباكة", "type": "text" },
+                { "key": "profile_photo", "type": "file", "src": [] },
+                { "key": "brand_logo", "type": "file", "src": [] },
+                { "key": "social_links[0][platform]", "value": "facebook", "type": "text" },
+                { "key": "social_links[0][url]", "value": "https://facebook.com/andalus", "type": "text" },
+                { "key": "social_links[1][platform]", "value": "whatsapp", "type": "text" },
+                { "key": "social_links[1][url]", "value": "https://wa.me/2189XXXXXXX", "type": "text" }
+              ]
+            },
+            "description": "Self-register a wholesale store. Optional fields may be omitted. Account is created pending admin approval; an OTP is sent to the phone. Response returns a token + store object."
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.token) { pm.collectionVariables.set('token', json.token); }",
+                  "pm.test('verified', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{base_url}}/api/v1/auth/verify-otp", "host": ["{{base_url}}"], "path": ["api","v1","auth","verify-otp"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"otp\": \"{{otp}}\"\n}" },
+            "description": "Verify the OTP sent on registration. Returns a fresh token."
+          }
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{base_url}}/api/v1/auth/resend-otp", "host": ["{{base_url}}"], "path": ["api","v1","auth","resend-otp"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"{{phone}}\"\n}" }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.token) { pm.collectionVariables.set('token', json.token); }",
+                  "pm.test('login ok', () => pm.expect(pm.response.code).to.be.oneOf([200,403]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api","v1","auth","login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "description": "Login returns a token only when the account is phone-verified and admin-approved & active."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Store — My Store (auth)",
+      "item": [
+        {
+          "name": "Get My Store",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store", "host": ["{{base_url}}"], "path": ["api","v1","my-store"] }
+          }
+        },
+        {
+          "name": "Update My Store",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store", "host": ["{{base_url}}"], "path": ["api","v1","my-store"] },
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"متجر الأندلس\",\n  \"brand_name\": \"مؤسسة الأندلس\",\n  \"address\": \"بنغازي - وسط البلد\",\n  \"website\": \"https://andalus-store.ly\",\n  \"short_description\": \"جملة مواد صحية\",\n  \"long_description\": \"نبذة تفصيلية عن المتجر وخدماته\",\n  \"latitude\": 32.1194,\n  \"longitude\": 20.0868,\n  \"show_social_links\": true\n}" },
+            "description": "Update store profile. `show_social_links` also controllable here (also togglable by admin from the panel)."
+          }
+        },
+        {
+          "name": "Upload Slider Images (banner)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [
+                "const json = pm.response.json();",
+                "if (json && json.data && json.data[0] && json.data[0].id) { pm.collectionVariables.set('media_id', json.data[0].id); }"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store/media", "host": ["{{base_url}}"], "path": ["api","v1","my-store","media"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "kind", "value": "banner", "type": "text", "description": "banner = صور السلايدر" },
+                { "key": "title", "value": "عرض الصيف", "type": "text" },
+                { "key": "media[]", "type": "file", "src": [] },
+                { "key": "media[]", "type": "file", "src": [] }
+              ]
+            },
+            "description": "Upload one or more slider images. `kind` can be: banner (slider), video, product_image, gallery. Max 500MB per file; images: jpg/jpeg/png/webp."
+          }
+        },
+        {
+          "name": "Upload Store Video",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store/media", "host": ["{{base_url}}"], "path": ["api","v1","my-store","media"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "kind", "value": "video", "type": "text" },
+                { "key": "title", "value": "جولة داخل المتجر", "type": "text" },
+                { "key": "media[]", "type": "file", "src": [], "description": "mp4/mov/webm/mkv/avi" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload Product Image",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store/media", "host": ["{{base_url}}"], "path": ["api","v1","my-store","media"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "kind", "value": "product_image", "type": "text" },
+                { "key": "product_id", "value": "1", "type": "text", "description": "optional" },
+                { "key": "media[]", "type": "file", "src": [] }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List My Store Media",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store/media", "host": ["{{base_url}}"], "path": ["api","v1","my-store","media"] }
+          }
+        },
+        {
+          "name": "Delete Media",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store/media/{{media_id}}", "host": ["{{base_url}}"], "path": ["api","v1","my-store","media","{{media_id}}"] }
+          }
+        },
+        {
+          "name": "Upsert Social Links",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [
+                "const json = pm.response.json();",
+                "if (json && json.data && json.data[0] && json.data[0].id) { pm.collectionVariables.set('link_id', json.data[0].id); }"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store/social-links", "host": ["{{base_url}}"], "path": ["api","v1","my-store","social-links"] },
+            "body": { "mode": "raw", "raw": "{\n  \"links\": [\n    { \"platform\": \"facebook\",  \"url\": \"https://facebook.com/andalus\", \"sort_order\": 1 },\n    { \"platform\": \"instagram\", \"url\": \"https://instagram.com/andalus\", \"sort_order\": 2 },\n    { \"platform\": \"whatsapp\",  \"url\": \"https://wa.me/2189XXXXXXX\", \"sort_order\": 3 },\n    { \"platform\": \"tiktok\",    \"url\": \"https://tiktok.com/@andalus\", \"sort_order\": 4 }\n  ]\n}" },
+            "description": "Create/update social links (upsert by platform). Platforms: facebook, instagram, whatsapp, twitter, youtube, tiktok, website, snapchat."
+          }
+        },
+        {
+          "name": "Delete Social Link",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/my-store/social-links/{{link_id}}", "host": ["{{base_url}}"], "path": ["api","v1","my-store","social-links","{{link_id}}"] }
+          }
+        },
+        {
+          "name": "Public Store (respects social toggle)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" } ],
+            "url": { "raw": "{{base_url}}/api/v1/network-stores/{{store_user_id}}", "host": ["{{base_url}}"], "path": ["api","v1","network-stores","{{store_user_id}}"] },
+            "description": "Public store profile. When admin/store disables `show_social_links`, `social_links` returns [] here."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Plumber (auth)",
+      "item": [
+        {
+          "name": "Update Profile + Location",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/plumber/update-profile", "host": ["{{base_url}}"], "path": ["api","v1","plumber","update-profile"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "about_me", "value": "سبّاك محترف - خبرة 10 سنوات", "type": "text" },
+                { "key": "short_description", "value": "تركيب وصيانة", "type": "text" },
+                { "key": "video_url", "value": "https://youtu.be/xxxx", "type": "text" },
+                { "key": "website", "value": "https://my-plumber.ly", "type": "text" },
+                { "key": "address", "value": "طرابلس - حي الأندلس", "type": "text" },
+                { "key": "latitude", "value": "32.8872", "type": "text", "description": "lat موقع السباك" },
+                { "key": "longitude", "value": "13.1913", "type": "text", "description": "lng موقع السباك" },
+                { "key": "profile_photo", "type": "file", "src": [] }
+              ]
+            },
+            "description": "Plumber updates profile + location (latitude/longitude) + website link. Response includes `location.map_url`."
+          }
+        },
+        {
+          "name": "Add Work Media (images/videos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": [
+                "const json = pm.response.json();",
+                "if (json && json.data && json.data[0] && json.data[0].id) { pm.collectionVariables.set('plumber_media_id', json.data[0].id); }"
+              ] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/plumber/work-photos", "host": ["{{base_url}}"], "path": ["api","v1","plumber","work-photos"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "media[]", "type": "file", "src": [] },
+                { "key": "media[]", "type": "file", "src": [] }
+              ]
+            },
+            "description": "Upload plumber work images and/or videos. Videos get an auto-generated thumbnail."
+          }
+        },
+        {
+          "name": "List Work Media",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/plumber/work-photos", "host": ["{{base_url}}"], "path": ["api","v1","plumber","work-photos"] }
+          }
+        },
+        {
+          "name": "Delete Work Media",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/plumber/work-photos/{{plumber_media_id}}", "host": ["{{base_url}}"], "path": ["api","v1","plumber","work-photos","{{plumber_media_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Helpers",
+      "item": [
+        {
+          "name": "Countries",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" } ],
+            "url": { "raw": "{{base_url}}/api/v1/countries", "host": ["{{base_url}}"], "path": ["api","v1","countries"] }
+          }
+        },
+        {
+          "name": "Cities of Country",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" } ],
+            "url": { "raw": "{{base_url}}/api/v1/countries/1/cities", "host": ["{{base_url}}"], "path": ["api","v1","countries","1","cities"] }
+          }
+        },
+        {
+          "name": "Me (current user)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/me", "host": ["{{base_url}}"], "path": ["api","v1","mobile","me"] }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -39,6 +39,13 @@ class AdminPanelProvider extends PanelProvider
                 'danger' => Color::hex('#dc2626'),
                 'info' => Color::hex('#0891b2'),
                 'gray' => Color::Zinc,
+                // Role palette (used by UserRoles badges/icons across the panel)
+                'purple' => Color::Purple,
+                'indigo' => Color::Indigo,
+                'blue' => Color::Blue,
+                'amber' => Color::Amber,
+                'teal' => Color::Teal,
+                'green' => Color::Green,
             ])
             ->font('Cairo', provider: GoogleFontProvider::class)
             ->sidebarCollapsibleOnDesktop()

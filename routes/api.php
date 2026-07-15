@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\LoginController;
 use App\Http\Controllers\Api\Auth\PlumberRegisterController;
+use App\Http\Controllers\Api\Auth\StoreRegisterController;
 use App\Http\Controllers\Api\Auth\VerifyOtpController;
 use App\Http\Controllers\Api\Auth\PasswordResetByPhoneController;
 
@@ -55,6 +56,9 @@ Route::middleware('api')->prefix('v1/auth')->group(function () {
     // Plumber Register (separate logic)
     Route::post('register-plumber', [PlumberRegisterController::class, 'register']);
     Route::post('login-plumber', [LoginController::class, 'login']); // can reuse login if same logic
+
+    // Wholesale store self-registration (موزع الجملة) — pending admin approval
+    Route::post('register-store', [StoreRegisterController::class, 'register']);
 
     Route::post('verify-otp', [VerifyOtpController::class, 'verify'])->middleware('throttle:6,1');
     Route::post('resend-otp', [VerifyOtpController::class, 'resend'])->middleware('throttle:3,1');

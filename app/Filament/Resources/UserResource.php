@@ -55,6 +55,11 @@ class UserResource extends Resource
             || $user?->canAdminPermission(AdminPermissions::USERS_VIEW);
     }
 
+    public static function canView($record): bool
+    {
+        return static::canViewAny();
+    }
+
     public static function canCreate(): bool
     {
         return auth()->user()?->canAdminPermission(AdminPermissions::USERS_MANAGE) ?? false;
@@ -97,11 +102,11 @@ class UserResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make(__('Profile'))
+            Forms\Components\Section::make('الملف الشخصي')
                 ->columns(3)
                 ->schema([
                     Forms\Components\FileUpload::make('profile_photo')
-                        ->label(__('Photo'))
+                        ->label('الصورة الشخصية')
                         ->disk('public')
                         ->directory('profile_photos')
                         ->image()
@@ -111,18 +116,18 @@ class UserResource extends Resource
                         ->columnSpanFull(),
 
                     Forms\Components\TextInput::make('name')
-                        ->label(__('Name'))
+                        ->label('الاسم')
                         ->required()
                         ->maxLength(255)
                         ->columnSpan(2),
 
                     Forms\Components\TextInput::make('email')
-                        ->label(__('Email'))
+                        ->label('البريد الإلكتروني')
                         ->email()
                         ->maxLength(255),
 
                     Forms\Components\TextInput::make('phone')
-                        ->label(__('Phone'))
+                        ->label('رقم الهاتف')
                         ->tel()
                         ->required()
                         ->maxLength(50),
@@ -156,7 +161,7 @@ class UserResource extends Resource
                         ->visible(fn (Get $get) => in_array($get('role'), ['retail_trader', 'plumber'])),
 
                     Forms\Components\Select::make('country_id')
-                        ->label(__('Country'))
+                        ->label('الدولة')
                         ->options(fn () =>
                         Country::query()
                             ->orderBy('name_en')
@@ -171,7 +176,7 @@ class UserResource extends Resource
                         ->required(),
 
                     Forms\Components\Select::make('city_id')
-                        ->label(__('City'))
+                        ->label('المدينة')
                         ->options(fn (Get $get) =>
                         City::query()
                             ->when($get('country_id'), fn ($q, $cid) => $q->where('country_id', $cid))
@@ -185,18 +190,18 @@ class UserResource extends Resource
                         ->required(),
 
                     Forms\Components\Textarea::make('about_me')
-                        ->label(__('About me'))
+                        ->label('نبذة تعريفية')
                         ->columnSpanFull(),
 
                     Forms\Components\TextInput::make('short_description')
-                        ->label(__('Short description')),
+                        ->label('وصف مختصر'),
 
                     Forms\Components\Textarea::make('long_description')
-                        ->label(__('Long description'))
+                        ->label('وصف تفصيلي')
                         ->columnSpanFull(),
 
                     Forms\Components\TextInput::make('video_url')
-                        ->label(__('Video URL'))
+                        ->label('رابط فيديو تعريفي')
                         ->url()
                         ->maxLength(2048)
                         ->columnSpanFull(),
@@ -216,19 +221,19 @@ class UserResource extends Resource
                         ->columnSpanFull(),
                 ]),
 
-            Forms\Components\Section::make(__('Security & Status'))
+            Forms\Components\Section::make('الأمان والحالة')
                 ->columns(3)
                 ->schema([
                     Forms\Components\TextInput::make('password')
-                        ->label(__('Password'))
+                        ->label('كلمة المرور')
                         ->password()
                         ->dehydrated(fn ($state) => filled($state))
                         ->required(fn ($record) => $record === null)
                         ->maxLength(255),
 
-                    Forms\Components\Toggle::make('is_phone_verified')->label(__('Phone Verified')),
-                    Forms\Components\Toggle::make('is_approved')->label(__('Approved')),
-                    Forms\Components\Toggle::make('is_active')->label(__('Active')),
+                    Forms\Components\Toggle::make('is_phone_verified')->label('موثّق الهاتف'),
+                    Forms\Components\Toggle::make('is_approved')->label('معتمد'),
+                    Forms\Components\Toggle::make('is_active')->label('نشط'),
                 ]),
         ]);
     }
@@ -236,31 +241,37 @@ class UserResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->recordClasses(fn ($record) => 'mg-user-row mg-user-row--'.UserRoles::group($record->role))
             ->columns([
                 Tables\Columns\ImageColumn::make('profile_photo')
-                    ->label(__('Photo'))
+                    ->label('الصورة')
                     ->disk('public')
                     ->circular()
-                    ->size(36),
+                    ->size(44)
+                    ->defaultImageUrl(fn ($record) => 'https://ui-avatars.com/api/?name='.urlencode($record->name ?? 'U').'&background=0D8ABC&color=fff&size=88'),
 
                 Tables\Columns\TextColumn::make('name')
-                    ->label(__('Name'))
+                    ->label('الاسم')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->weight('bold')
+                    ->description(fn ($record) => UserRoles::label($record->role)),
 
                 Tables\Columns\TextColumn::make('phone')
-                    ->label(__('Phone'))
+                    ->label('رقم الهاتف')
+                    ->icon('heroicon-m-phone')
                     ->searchable()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('email')
-                    ->label(__('Email'))
+                    ->label('البريد')
                     ->searchable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('role')
                     ->label('الدور')
                     ->badge()
+                    ->icon(fn ($state) => UserRoles::icon($state))
                     ->color(fn ($state) => UserRoles::color($state))
                     ->formatStateUsing(fn ($state) => UserRoles::label($state))
                     ->sortable(),
@@ -272,7 +283,7 @@ class UserResource extends Resource
 
                 // Locale-aware display, still sorts consistently by EN
                 Tables\Columns\TextColumn::make('country.name_en')
-                    ->label(__('Country'))
+                    ->label('الدولة')
                     ->formatStateUsing(fn ($state, $record) =>
                     app()->getLocale() === 'ar'
                         ? ($record?->country?->name_ar ?? $state)
@@ -281,7 +292,7 @@ class UserResource extends Resource
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('city.name_en')
-                    ->label(__('City'))
+                    ->label('المدينة')
                     ->formatStateUsing(fn ($state, $record) =>
                     app()->getLocale() === 'ar'
                         ? ($record?->city?->name_ar ?? $state)
@@ -290,28 +301,28 @@ class UserResource extends Resource
                     ->toggleable(),
 
                 Tables\Columns\IconColumn::make('is_phone_verified')
-                    ->label(__('Phone'))
+                    ->label('موثّق')
                     ->boolean()
                     ->sortable(),
 
                 Tables\Columns\IconColumn::make('is_approved')
-                    ->label(__('Approved'))
+                    ->label('معتمد')
                     ->boolean()
                     ->sortable(),
 
                 Tables\Columns\IconColumn::make('is_active')
-                    ->label(__('Active'))
+                    ->label('نشط')
                     ->boolean()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('created_at')
-                    ->label(__('Created at'))
+                    ->label('تاريخ الإنشاء')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('updated_at')
-                    ->label(__('Updated at'))
+                    ->label('آخر تحديث')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -322,12 +333,12 @@ class UserResource extends Resource
                     ->options(UserRoles::selectOptions())
                     ->multiple(),
 
-                Tables\Filters\TernaryFilter::make('is_phone_verified')->label(__('Phone Verified')),
-                Tables\Filters\TernaryFilter::make('is_approved')->label(__('Approved')),
-                Tables\Filters\TernaryFilter::make('is_active')->label(__('Active')),
+                Tables\Filters\TernaryFilter::make('is_phone_verified')->label('موثّق الهاتف'),
+                Tables\Filters\TernaryFilter::make('is_approved')->label('معتمد'),
+                Tables\Filters\TernaryFilter::make('is_active')->label('نشط'),
 
                 Tables\Filters\SelectFilter::make('country_id')
-                    ->label(__('Country'))
+                    ->label('الدولة')
                     ->options(fn () =>
                     Country::query()
                         ->orderBy('name_en')
@@ -337,8 +348,12 @@ class UserResource extends Resource
                     ),
             ])
             ->actions([
+                Tables\Actions\ViewAction::make()
+                    ->label('عرض')
+                    ->icon('heroicon-o-eye'),
+
                 Tables\Actions\Action::make('approve')
-                    ->label(__('Approve'))
+                    ->label('اعتماد')
                     ->icon('heroicon-o-check-circle')
                     ->visible(fn ($record) => ! $record?->is_approved)
                     ->requiresConfirmation()
@@ -347,7 +362,7 @@ class UserResource extends Resource
                     ),
 
                 Tables\Actions\Action::make('deactivate')
-                    ->label(__('Deactivate'))
+                    ->label('إيقاف')
                     ->icon('heroicon-o-no-symbol')
                     ->color('danger')
                     ->visible(fn ($record) => (bool) $record?->is_active)
@@ -357,7 +372,7 @@ class UserResource extends Resource
                     ),
 
                 Tables\Actions\Action::make('activate')
-                    ->label(__('Activate'))
+                    ->label('تفعيل')
                     ->icon('heroicon-o-bolt')
                     ->color('success')
                     ->visible(fn ($record) => ! (bool) $record?->is_active)
@@ -368,26 +383,26 @@ class UserResource extends Resource
 
                 \App\Filament\Support\UserNotificationActions::tableAction(),
 
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('تعديل'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('bulkApprove')
-                        ->label(__('Approve selected'))
+                        ->label('اعتماد المحدد')
                         ->icon('heroicon-o-check-circle')
                         ->action(fn ($records) =>
                         $records->each->forceFill(['is_approved' => true, 'approved_at' => now()])->each->save()
                         ),
                     Tables\Actions\BulkAction::make('bulkDeactivate')
-                        ->label(__('Deactivate selected'))
+                        ->label('إيقاف المحدد')
                         ->icon('heroicon-o-no-symbol')
                         ->color('danger')
                         ->action(fn ($records) =>
                         $records->each->forceFill(['is_active' => false, 'deactivated_at' => now()])->each->save()
                         ),
                     Tables\Actions\BulkAction::make('bulkActivate')
-                        ->label(__('Activate selected'))
+                        ->label('تفعيل المحدد')
                         ->icon('heroicon-o-bolt')
                         ->color('success')
                         ->action(fn ($records) =>
@@ -414,6 +429,7 @@ class UserResource extends Resource
         return [
             'index'  => Pages\ListUsers::route('/'),
             'create' => Pages\CreateUser::route('/create'),
+            'view'   => Pages\ViewUser::route('/{record}'),
             'edit'   => Pages\EditUser::route('/{record}/edit'),
         ];
     }

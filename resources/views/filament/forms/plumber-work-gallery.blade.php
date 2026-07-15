@@ -1,8 +1,8 @@
 @php
-    /** @var \Filament\Forms\Components\ViewField $field */
-    $record = $field->getRecord();
-    $items = $record
-        ? $record->workPhotos()->latest()->get()
+    // Works both as a form ViewField ($field) and when included with an explicit $galleryRecord.
+    $galleryRecord = $galleryRecord ?? (isset($field) ? $field->getRecord() : null);
+    $items = $galleryRecord
+        ? $galleryRecord->workPhotos()->latest()->get()
         : collect();
 
     $videos = $items->filter(fn ($p) => $p->is_video);

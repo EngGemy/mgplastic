@@ -179,6 +179,14 @@ trait HasStoreLocationForm
     protected static function storeCatalogFields(): array
     {
         return [
+            Forms\Components\TextInput::make('website')
+                ->label('الموقع الإلكتروني')
+                ->placeholder('https://example.com')
+                ->url()
+                ->maxLength(500)
+                ->prefixIcon('heroicon-o-globe-alt')
+                ->columnSpanFull(),
+
             Forms\Components\Textarea::make('short_description')
                 ->label('وصف مختصر')
                 ->placeholder('سطر أو سطرين يظهران في قائمة المتاجر...')
@@ -214,6 +222,12 @@ trait HasStoreLocationForm
 
             Forms\Components\Toggle::make('is_phone_verified')
                 ->label('الهاتف موثّق')
+                ->default(true)
+                ->inline(false),
+
+            Forms\Components\Toggle::make('show_social_links')
+                ->label('إظهار روابط التواصل الاجتماعي')
+                ->helperText('عند الإيقاف تُخفى حسابات السوشيال ميديا عن التطبيق والموقع.')
                 ->default(true)
                 ->inline(false),
         ];

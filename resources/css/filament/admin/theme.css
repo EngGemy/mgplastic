@@ -1405,3 +1405,23 @@
 .fi-resource-withdrawal-requests .fi-ta-cell {
     vertical-align: middle;
 }
+
+/* ── تمييز صفوف المستخدمين حسب الدور ── */
+.mg-user-row {
+    position: relative;
+}
+.mg-user-row td:first-child {
+    border-inline-start: 4px solid transparent;
+}
+.mg-user-row--field td:first-child   { border-inline-start-color: #10b981; } /* سباك / بائع */
+.mg-user-row--network td:first-child { border-inline-start-color: #2563eb; } /* موزعون */
+.mg-user-row--admin td:first-child   { border-inline-start-color: #7c3aed; } /* الإدارة */
+.mg-user-row--app td:first-child     { border-inline-start-color: #94a3b8; } /* مستخدم تطبيق */
+
+.mg-user-row--field:hover   { background: #ecfdf5 !important; }
+.mg-user-row--network:hover { background: #eff6ff !important; }
+.mg-user-row--admin:hover   { background: #f5f3ff !important; }
+
+.dark .mg-user-row--field:hover   { background: rgb(6 78 59 / 25%) !important; }
+.dark .mg-user-row--network:hover { background: rgb(30 58 95 / 30%) !important; }
+.dark .mg-user-row--admin:hover   { background: rgb(76 29 149 / 25%) !important; }

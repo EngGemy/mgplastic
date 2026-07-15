@@ -12,9 +12,12 @@ class NetworkStoreResource extends JsonResource
         $media = $this->whenLoaded('storeMedia', fn () => $this->storeMedia, collect());
         $social = $this->whenLoaded('socialLinks', fn () => $this->socialLinks, collect());
 
+        $showSocial = (bool) ($this->show_social_links ?? true);
+
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'brand_name' => $this->brand_name,
             'phone' => $this->phone,
             'role' => $this->role,
             'role_label' => match ($this->role) {
@@ -22,12 +25,16 @@ class NetworkStoreResource extends JsonResource
                 'retail_trader' => 'تاجر تجزئة',
                 default => $this->role,
             },
+            'is_approved' => (bool) $this->is_approved,
+            'is_active' => (bool) $this->is_active,
             'address' => $this->address,
             'store_description' => $this->store_description,
             'short_description' => $this->short_description,
             'long_description' => $this->long_description,
             'about_me' => $this->about_me,
+            'website' => $this->website,
             'profile_photo_url' => $this->profile_photo_url,
+            'brand_logo_url' => $this->brand_logo ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->brand_logo) : null,
             'latitude' => $this->latitude,
             'longitude' => $this->longitude,
             'map_url' => $this->mapUrl(),
@@ -48,7 +55,8 @@ class NetworkStoreResource extends JsonResource
                 ['product_name' => $item->product?->name ?? null],
             )),
             'gallery' => $media->where('kind', 'gallery')->values()->map->toApiArray(),
-            'social_links' => $social->map->toApiArray(),
+            'show_social_links' => $showSocial,
+            'social_links' => $showSocial ? $social->map->toApiArray() : [],
         ];
     }
 }

@@ -231,6 +231,7 @@ class PlumberProfileController extends Controller
             'short_description' => 'nullable|string|max:255',
             'long_description'  => 'nullable|string',
             'video_url'         => 'nullable|url',
+            'website'           => 'nullable|url|max:500',
             'profile_photo'     => 'nullable|image|max:2048',
             'address'           => 'nullable|string|max:500',
             'latitude'          => 'nullable|numeric|between:-90,90',
@@ -244,7 +245,7 @@ class PlumberProfileController extends Controller
             $user->profile_photo = $request->file('profile_photo')->store('profile_photos', 'public');
         }
 
-        foreach (['about_me', 'short_description', 'long_description', 'video_url', 'address', 'latitude', 'longitude'] as $field) {
+        foreach (['about_me', 'short_description', 'long_description', 'video_url', 'website', 'address', 'latitude', 'longitude'] as $field) {
             if ($request->has($field)) {
                 $user->{$field} = $request->input($field);
             }
@@ -252,10 +253,18 @@ class PlumberProfileController extends Controller
 
         $user->save();
 
+        $fresh = $user->fresh();
+
         return response()->json([
             'status'  => true,
             'message' => 'Profile updated successfully',
-            'data'    => $user->fresh(),
+            'data'    => $fresh,
+            'location' => [
+                'latitude'  => $fresh->latitude,
+                'longitude' => $fresh->longitude,
+                'map_url'   => $fresh->mapUrl(),
+                'website'   => $fresh->website,
+            ],
         ]);
     }
 }

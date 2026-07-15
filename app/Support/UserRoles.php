@@ -70,6 +70,11 @@ class UserRoles
         return self::definitions()[$role]['icon'] ?? 'heroicon-o-user';
     }
 
+    public static function group(?string $role): string
+    {
+        return self::definitions()[$role]['group'] ?? 'app';
+    }
+
     /** @return array<string, string> */
     public static function selectOptions(): array
     {
