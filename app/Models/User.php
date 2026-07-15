@@ -123,6 +123,18 @@ class User extends Authenticatable
     {
         return $this->hasMany(PlumberStore::class, 'vendor_id');
     }
+
+    /** Orders this user placed as a buyer. */
+    public function ordersPlaced(): HasMany
+    {
+        return $this->hasMany(Order::class, 'requester_id');
+    }
+
+    /** Orders this user must fulfil as a supplier. */
+    public function ordersReceived(): HasMany
+    {
+        return $this->hasMany(Order::class, 'supplier_id');
+    }
     /**
      * Accessor: full absolute URL for profile photo.
      */

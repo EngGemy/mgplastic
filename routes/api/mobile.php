@@ -18,7 +18,9 @@ use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardCont
 use App\Http\Controllers\Api\Plumber\WalletApiController;
 use App\Http\Controllers\Api\Plumber\WalletController;
 use App\Http\Controllers\Api\Plumber\WithdrawalController;
+use App\Http\Controllers\Api\Distributor\OrderController as DistributorOrderController;
 use App\Http\Controllers\Api\Trader\DashboardController as TraderDashboardController;
+use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
 use App\Http\Controllers\Api\Trader\PosController as TraderPosController;
 use Illuminate\Support\Facades\Route;
@@ -70,6 +72,13 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('pos/stock', [TraderPosController::class, 'stock']);
         Route::post('pos/checkout', [TraderPosController::class, 'checkout']);
+
+        // Orders placed to the wholesale distributor
+        Route::get('orders', [TraderOrderController::class, 'index']);
+        Route::post('orders', [TraderOrderController::class, 'store']);
+        Route::get('orders/{order}', [TraderOrderController::class, 'show']);
+        Route::post('orders/{order}/receive', [TraderOrderController::class, 'receive']);
+        Route::post('orders/{order}/cancel', [TraderOrderController::class, 'cancel']);
     });
 
     // ── Wholesale distributor (موزع الجملة) ────────────────────
@@ -81,5 +90,15 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('pos/stock', [DistributorPosController::class, 'stock']);
         Route::post('pos/checkout', [DistributorPosController::class, 'checkout']);
+
+        // Orders — place to factory + fulfil retail-trader orders
+        Route::get('orders', [DistributorOrderController::class, 'index']);
+        Route::post('orders', [DistributorOrderController::class, 'store']);
+        Route::get('orders/{order}', [DistributorOrderController::class, 'show']);
+        Route::post('orders/{order}/confirm', [DistributorOrderController::class, 'confirm']);
+        Route::post('orders/{order}/ship', [DistributorOrderController::class, 'ship']);
+        Route::post('orders/{order}/reject', [DistributorOrderController::class, 'reject']);
+        Route::post('orders/{order}/receive', [DistributorOrderController::class, 'receive']);
+        Route::post('orders/{order}/cancel', [DistributorOrderController::class, 'cancel']);
     });
 });

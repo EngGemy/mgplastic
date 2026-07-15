@@ -101,141 +101,237 @@ class UserResource extends Resource
 
     public static function form(Form $form): Form
     {
-        return $form->schema([
-            Forms\Components\Section::make('الملف الشخصي')
-                ->columns(3)
-                ->schema([
-                    Forms\Components\FileUpload::make('profile_photo')
-                        ->label('الصورة الشخصية')
-                        ->disk('public')
-                        ->directory('profile_photos')
-                        ->image()
-                        ->imageEditor()
-                        ->openable()
-                        ->downloadable()
-                        ->columnSpanFull(),
+        return $form
+            ->columns(3)
+            ->schema([
+                // ===== العمود الرئيسي =====
+                Forms\Components\Group::make()
+                    ->columnSpan(['lg' => 2])
+                    ->schema([
+                        Forms\Components\Section::make('المعلومات الأساسية')
+                            ->description('بيانات التواصل والتعريف الأساسية للمستخدم.')
+                            ->icon('heroicon-o-identification')
+                            ->columns(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('name')
+                                    ->label('الاسم')
+                                    ->placeholder('الاسم الكامل / اسم المتجر')
+                                    ->prefixIcon('heroicon-o-user')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->columnSpanFull(),
 
-                    Forms\Components\TextInput::make('name')
-                        ->label('الاسم')
-                        ->required()
-                        ->maxLength(255)
-                        ->columnSpan(2),
+                                Forms\Components\TextInput::make('phone')
+                                    ->label('رقم الهاتف')
+                                    ->placeholder('09XXXXXXXX')
+                                    ->prefixIcon('heroicon-o-phone')
+                                    ->tel()
+                                    ->required()
+                                    ->maxLength(50),
 
-                    Forms\Components\TextInput::make('email')
-                        ->label('البريد الإلكتروني')
-                        ->email()
-                        ->maxLength(255),
+                                Forms\Components\TextInput::make('email')
+                                    ->label('البريد الإلكتروني')
+                                    ->placeholder('اختياري')
+                                    ->prefixIcon('heroicon-o-envelope')
+                                    ->email()
+                                    ->maxLength(255),
+                            ]),
 
-                    Forms\Components\TextInput::make('phone')
-                        ->label('رقم الهاتف')
-                        ->tel()
-                        ->required()
-                        ->maxLength(50),
+                        Forms\Components\Section::make('صلاحيات لوحة التحكم')
+                            ->description('تُطبَّق على دور «مدير لوحة التحكم» فقط. اتركها فارغة = صلاحيات كاملة.')
+                            ->icon('heroicon-o-key')
+                            ->visible(fn (Get $get) => $get('role') === 'admin')
+                            ->schema([
+                                Forms\Components\CheckboxList::make('permissions')
+                                    ->label('')
+                                    ->options(AdminPermissions::labels())
+                                    ->columns(2)
+                                    ->bulkToggleable()
+                                    ->gridDirection('row')
+                                    ->columnSpanFull(),
+                            ]),
 
-                    Forms\Components\Select::make('role')
-                        ->label('الدور الوظيفي')
-                        ->options(fn () => static::assignableRoleOptions())
-                        ->required()
-                        ->searchable()
-                        ->native(false)
-                        ->live(),
+                        Forms\Components\Section::make('الموقع الجغرافي')
+                            ->description('الدولة والمدينة والعنوان التفصيلي.')
+                            ->icon('heroicon-o-map-pin')
+                            ->columns(2)
+                            ->schema([
+                                Forms\Components\Select::make('country_id')
+                                    ->label('الدولة')
+                                    ->options(fn () =>
+                                    Country::query()
+                                        ->orderBy('name_en')
+                                        ->get()
+                                        ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
+                                        ->toArray()
+                                    )
+                                    ->searchable()
+                                    ->preload()
+                                    ->native(false)
+                                    ->reactive()
+                                    ->afterStateUpdated(fn (Set $set) => $set('city_id', null))
+                                    ->required(),
 
-                    Forms\Components\CheckboxList::make('permissions')
-                        ->label('صلاحيات لوحة التحكم')
-                        ->helperText('تُطبَّق على دور «مدير لوحة التحكم» فقط. اتركها فارغة = صلاحيات كاملة.')
-                        ->options(AdminPermissions::labels())
-                        ->columns(2)
-                        ->visible(fn (Get $get) => $get('role') === 'admin')
-                        ->columnSpanFull(),
+                                Forms\Components\Select::make('city_id')
+                                    ->label('المدينة')
+                                    ->options(fn (Get $get) =>
+                                    City::query()
+                                        ->when($get('country_id'), fn ($q, $cid) => $q->where('country_id', $cid))
+                                        ->orderBy('name_en')
+                                        ->get()
+                                        ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
+                                        ->toArray()
+                                    )
+                                    ->searchable()
+                                    ->preload()
+                                    ->native(false)
+                                    ->required(),
 
-                    Forms\Components\Select::make('parent_distributor_id')
-                        ->label('المسؤول المباشر')
-                        ->helperText('السباك: اختر تاجر القطاعي | تاجر القطاعي: اختر موزع الجملة')
-                        ->options(fn (Get $get) => match ($get('role')) {
-                            'retail_trader' => User::where('role', 'wholesale_distributor')->pluck('name', 'id'),
-                            'plumber' => User::where('role', 'retail_trader')->pluck('name', 'id'),
-                            default => [],
-                        })
-                        ->nullable()
-                        ->searchable()
-                        ->visible(fn (Get $get) => in_array($get('role'), ['retail_trader', 'plumber'])),
+                                Forms\Components\Textarea::make('address')
+                                    ->label('العنوان التفصيلي')
+                                    ->placeholder('الحي — الشارع — معلم قريب')
+                                    ->rows(2)
+                                    ->columnSpanFull(),
+                            ]),
 
-                    Forms\Components\Select::make('country_id')
-                        ->label('الدولة')
-                        ->options(fn () =>
-                        Country::query()
-                            ->orderBy('name_en')
-                            ->get()
-                            ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
-                            ->toArray()
-                        )
-                        ->searchable()
-                        ->preload()
-                        ->reactive()
-                        ->afterStateUpdated(fn (Set $set) => $set('city_id', null))
-                        ->required(),
+                        Forms\Components\Section::make('النبذة والوصف')
+                            ->description('نصوص تعريفية تظهر في الملف العام والتطبيق.')
+                            ->icon('heroicon-o-document-text')
+                            ->collapsible()
+                            ->schema([
+                                Forms\Components\Textarea::make('about_me')
+                                    ->label('نبذة تعريفية')
+                                    ->rows(2)
+                                    ->columnSpanFull(),
 
-                    Forms\Components\Select::make('city_id')
-                        ->label('المدينة')
-                        ->options(fn (Get $get) =>
-                        City::query()
-                            ->when($get('country_id'), fn ($q, $cid) => $q->where('country_id', $cid))
-                            ->orderBy('name_en')
-                            ->get()
-                            ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
-                            ->toArray()
-                        )
-                        ->searchable()
-                        ->preload()
-                        ->required(),
+                                Forms\Components\Textarea::make('short_description')
+                                    ->label('وصف مختصر')
+                                    ->placeholder('سطر أو سطرين يظهران في القوائم...')
+                                    ->rows(2)
+                                    ->maxLength(500)
+                                    ->columnSpanFull(),
 
-                    Forms\Components\Textarea::make('about_me')
-                        ->label('نبذة تعريفية')
-                        ->columnSpanFull(),
+                                Forms\Components\Textarea::make('long_description')
+                                    ->label('وصف تفصيلي')
+                                    ->rows(4)
+                                    ->columnSpanFull(),
+                            ]),
 
-                    Forms\Components\TextInput::make('short_description')
-                        ->label('وصف مختصر'),
+                        ...self::brandCompanyFields(),
 
-                    Forms\Components\Textarea::make('long_description')
-                        ->label('وصف تفصيلي')
-                        ->columnSpanFull(),
+                        Forms\Components\Section::make('روابط ووسائط')
+                            ->description('الموقع الإلكتروني وفيديو تعريفي.')
+                            ->icon('heroicon-o-link')
+                            ->collapsible()
+                            ->columns(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('website')
+                                    ->label('الموقع الإلكتروني')
+                                    ->placeholder('https://example.com')
+                                    ->prefixIcon('heroicon-o-globe-alt')
+                                    ->url()
+                                    ->maxLength(500),
 
-                    Forms\Components\TextInput::make('video_url')
-                        ->label('رابط فيديو تعريفي')
-                        ->url()
-                        ->maxLength(2048)
-                        ->columnSpanFull(),
-                ]),
+                                Forms\Components\TextInput::make('video_url')
+                                    ->label('رابط فيديو تعريفي')
+                                    ->placeholder('https://youtube.com/...')
+                                    ->prefixIcon('heroicon-o-play-circle')
+                                    ->url()
+                                    ->maxLength(2048),
+                            ]),
 
-            ...self::brandCompanyFields(),
+                        Forms\Components\Section::make('معرض أعمال السباك')
+                            ->description('الصور والفيديوهات التي يرفعها السباك من التطبيق — يُنشأ للفيديو غلاف تلقائي.')
+                            ->icon('heroicon-o-photo')
+                            ->collapsible()
+                            ->visible(fn ($record) => $record?->role === User::ROLE_PLUMBER)
+                            ->schema([
+                                Forms\Components\ViewField::make('_work_gallery')
+                                    ->view('filament.forms.plumber-work-gallery')
+                                    ->dehydrated(false)
+                                    ->columnSpanFull(),
+                            ]),
+                    ]),
 
-            Forms\Components\Section::make('معرض أعمال السباك')
-                ->description('الصور والفيديوهات التي يرفعها السباك من التطبيق — يُنشأ للفيديو غلاف تلقائي.')
-                ->icon('heroicon-o-photo')
-                ->collapsible()
-                ->visible(fn ($record) => $record?->role === User::ROLE_PLUMBER)
-                ->schema([
-                    Forms\Components\ViewField::make('_work_gallery')
-                        ->view('filament.forms.plumber-work-gallery')
-                        ->dehydrated(false)
-                        ->columnSpanFull(),
-                ]),
+                // ===== الشريط الجانبي =====
+                Forms\Components\Group::make()
+                    ->columnSpan(['lg' => 1])
+                    ->schema([
+                        Forms\Components\Section::make('الصورة والدور')
+                            ->icon('heroicon-o-user-circle')
+                            ->schema([
+                                Forms\Components\FileUpload::make('profile_photo')
+                                    ->label('الصورة الشخصية')
+                                    ->disk('public')
+                                    ->directory('profile_photos')
+                                    ->image()
+                                    ->avatar()
+                                    ->imageEditor()
+                                    ->circleCropper()
+                                    ->alignCenter()
+                                    ->columnSpanFull(),
 
-            Forms\Components\Section::make('الأمان والحالة')
-                ->columns(3)
-                ->schema([
-                    Forms\Components\TextInput::make('password')
-                        ->label('كلمة المرور')
-                        ->password()
-                        ->dehydrated(fn ($state) => filled($state))
-                        ->required(fn ($record) => $record === null)
-                        ->maxLength(255),
+                                Forms\Components\Select::make('role')
+                                    ->label('الدور الوظيفي')
+                                    ->options(fn () => static::assignableRoleOptions())
+                                    ->required()
+                                    ->searchable()
+                                    ->native(false)
+                                    ->live()
+                                    ->columnSpanFull(),
 
-                    Forms\Components\Toggle::make('is_phone_verified')->label('موثّق الهاتف'),
-                    Forms\Components\Toggle::make('is_approved')->label('معتمد'),
-                    Forms\Components\Toggle::make('is_active')->label('نشط'),
-                ]),
-        ]);
+                                Forms\Components\Select::make('parent_distributor_id')
+                                    ->label('المسؤول المباشر')
+                                    ->helperText('السباك: اختر تاجر القطاعي | تاجر القطاعي: اختر موزع الجملة')
+                                    ->options(fn (Get $get) => match ($get('role')) {
+                                        'retail_trader' => User::where('role', 'wholesale_distributor')->pluck('name', 'id'),
+                                        'plumber' => User::where('role', 'retail_trader')->pluck('name', 'id'),
+                                        default => [],
+                                    })
+                                    ->nullable()
+                                    ->searchable()
+                                    ->preload()
+                                    ->native(false)
+                                    ->visible(fn (Get $get) => in_array($get('role'), ['retail_trader', 'plumber']))
+                                    ->columnSpanFull(),
+                            ]),
+
+                        Forms\Components\Section::make('الأمان والحالة')
+                            ->icon('heroicon-o-lock-closed')
+                            ->schema([
+                                Forms\Components\TextInput::make('password')
+                                    ->label('كلمة المرور')
+                                    ->password()
+                                    ->revealable()
+                                    ->placeholder(fn ($record) => $record ? 'اتركها فارغة لعدم التغيير' : '6 أحرف على الأقل')
+                                    ->dehydrated(fn ($state) => filled($state))
+                                    ->required(fn ($record) => $record === null)
+                                    ->minLength(6)
+                                    ->maxLength(255),
+
+                                Forms\Components\Toggle::make('is_active')
+                                    ->label('نشط')
+                                    ->helperText('حساب فعّال ويمكنه تسجيل الدخول.')
+                                    ->default(true)
+                                    ->inline(false),
+
+                                Forms\Components\Toggle::make('is_approved')
+                                    ->label('معتمد')
+                                    ->helperText('تمت الموافقة عليه ويظهر في الشبكة.')
+                                    ->inline(false),
+
+                                Forms\Components\Toggle::make('is_phone_verified')
+                                    ->label('الهاتف موثّق')
+                                    ->inline(false),
+
+                                Forms\Components\Toggle::make('show_social_links')
+                                    ->label('إظهار روابط التواصل')
+                                    ->helperText('عند الإيقاف تُخفى حسابات السوشيال ميديا.')
+                                    ->default(true)
+                                    ->inline(false),
+                            ]),
+                    ]),
+            ]);
     }
 
     public static function table(Table $table): Table

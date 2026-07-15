@@ -42,6 +42,7 @@ class DistributorPanelProvider extends PanelProvider
             ->maxContentWidth('full')
             ->databaseNotifications()
             ->resources([
+                \App\Filament\Distributor\Resources\DistributorOrderResource::class,
                 \App\Filament\Distributor\Resources\DistributorInvoiceResource::class,
                 \App\Filament\Distributor\Resources\DistributorDistributionResource::class,
                 \App\Filament\Distributor\Resources\DistributorRetailTraderResource::class,

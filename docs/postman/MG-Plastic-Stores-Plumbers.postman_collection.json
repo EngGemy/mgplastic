@@ -12,6 +12,8 @@
     { "key": "media_id", "value": "", "type": "string" },
     { "key": "link_id", "value": "", "type": "string" },
     { "key": "plumber_media_id", "value": "", "type": "string" },
+    { "key": "order_id", "value": "", "type": "string" },
+    { "key": "product_id", "value": "1", "type": "string" },
     { "key": "phone", "value": "0910000000", "type": "string" },
     { "key": "password", "value": "secret123", "type": "string" },
     { "key": "otp", "value": "123456", "type": "string" }
@@ -325,6 +327,161 @@
             "method": "DELETE",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "url": { "raw": "{{base_url}}/api/v1/plumber/work-photos/{{plumber_media_id}}", "host": ["{{base_url}}"], "path": ["api","v1","plumber","work-photos","{{plumber_media_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders — Distributor (موزع الجملة)",
+      "description": "Wholesale distributor: place orders to the factory + fulfil orders from its retail traders. Login as a wholesale_distributor first (token saved).",
+      "item": [
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders?scope=", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders"], "query": [ { "key": "scope", "value": "", "description": "empty=all | placed=my orders to factory | incoming=orders from my retail traders" }, { "key": "status", "value": "", "disabled": true } ] },
+            "description": "All orders where I am buyer or supplier."
+          }
+        },
+        {
+          "name": "Place Order to Factory",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.id) { pm.collectionVariables.set('order_id', json.data.id); }",
+                  "pm.test('placed', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders"] },
+            "body": { "mode": "raw", "raw": "{\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 10 }\n  ],\n  \"note\": \"طلب توريد شهري\"\n}" },
+            "description": "channel = factory_to_wholesale. Creates a 'placed' order; admins are notified."
+          }
+        },
+        {
+          "name": "Show Order",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders/{{order_id}}", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders","{{order_id}}"] }
+          }
+        },
+        {
+          "name": "Confirm Order (as supplier)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders/{{order_id}}/confirm", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders","{{order_id}}","confirm"] },
+            "body": { "mode": "raw", "raw": "{\n  \"note\": \"تم قبول الطلب\"\n}" },
+            "description": "Only the supplier of a retail order (supplier_id == me) can confirm."
+          }
+        },
+        {
+          "name": "Ship Order (as supplier)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders/{{order_id}}/ship", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders","{{order_id}}","ship"] },
+            "body": { "mode": "raw", "raw": "{\n  \"carrier_name\": \"شركة الشحن السريع\",\n  \"tracking_number\": \"TRK-12345\",\n  \"expected_delivery_at\": \"2026-07-20\"\n}" }
+          }
+        },
+        {
+          "name": "Reject Order (as supplier)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders/{{order_id}}/reject", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders","{{order_id}}","reject"] },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"الكمية غير متوفرة حالياً\"\n}" }
+          }
+        },
+        {
+          "name": "Receive / Confirm Delivery (as buyer)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders/{{order_id}}/receive", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders","{{order_id}}","receive"] },
+            "description": "Buyer confirms receipt — the ordered quantities are added to the buyer's stock."
+          }
+        },
+        {
+          "name": "Cancel Order (as buyer)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/distributor/orders/{{order_id}}/cancel", "host": ["{{base_url}}"], "path": ["api","v1","mobile","distributor","orders","{{order_id}}","cancel"] },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"لم نعد بحاجة للطلب\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders — Trader (تاجر قطاعي)",
+      "description": "Retail trader: place orders to its wholesale distributor and confirm receipt. Login as a retail_trader first (token saved).",
+      "item": [
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/trader/orders", "host": ["{{base_url}}"], "path": ["api","v1","mobile","trader","orders"] }
+          }
+        },
+        {
+          "name": "Place Order to Wholesaler",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json && json.data && json.data.id) { pm.collectionVariables.set('order_id', json.data.id); }",
+                  "pm.test('placed', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/trader/orders", "host": ["{{base_url}}"], "path": ["api","v1","mobile","trader","orders"] },
+            "body": { "mode": "raw", "raw": "{\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 4 }\n  ],\n  \"note\": \"طلب من موزع الجملة\"\n}" },
+            "description": "channel = wholesale_to_retail. Supplier is resolved automatically from your parent_distributor_id."
+          }
+        },
+        {
+          "name": "Show Order",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}", "host": ["{{base_url}}"], "path": ["api","v1","mobile","trader","orders","{{order_id}}"] }
+          }
+        },
+        {
+          "name": "Receive / Confirm Delivery",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}/receive", "host": ["{{base_url}}"], "path": ["api","v1","mobile","trader","orders","{{order_id}}","receive"] },
+            "description": "Adds the delivered quantities to your stock (deducted from the wholesaler)."
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}/cancel", "host": ["{{base_url}}"], "path": ["api","v1","mobile","trader","orders","{{order_id}}","cancel"] },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"إلغاء الطلب\"\n}" }
           }
         }
       ]

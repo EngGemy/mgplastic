@@ -41,6 +41,7 @@ class TraderPanelProvider extends PanelProvider
             ->maxContentWidth('full')
             ->databaseNotifications()
             ->resources([
+                \App\Filament\Trader\Resources\TraderOrderResource::class,
                 \App\Filament\Trader\Resources\TraderInvoiceResource::class,
                 \App\Filament\Trader\Resources\TraderDistributionResource::class,
                 \App\Filament\Trader\Resources\TraderMyStoreResource::class,
