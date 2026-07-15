@@ -9,7 +9,7 @@
     $images = $items->reject(fn ($p) => $p->is_video);
 @endphp
 
-<div class="mg-works" dir="rtl" wire:ignore>
+<div class="mg-works" dir="rtl">
     <style>
         .mg-works{font-family:'Cairo',sans-serif}
         .mg-works-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
@@ -66,7 +66,7 @@
             <div class="mg-chip vid"><span class="n">{{ $videos->count() }}</span> فيديو</div>
         </div>
 
-        <div class="mg-works-grid">
+        <div class="mg-works-grid" wire:ignore>
             @foreach($items as $p)
                 <div class="mg-tile"
                      data-mg-media
@@ -87,53 +87,53 @@
             @endforeach
         </div>
     @endif
+
+    @script
+    <script>
+        if (! window.__mgWorksInit) {
+            window.__mgWorksInit = true;
+
+            const ensureBox = () => {
+                let box = document.getElementById('mg-lightbox');
+                if (box) return box;
+                box = document.createElement('div');
+                box.id = 'mg-lightbox';
+                box.className = 'mg-lightbox';
+                box.innerHTML = '<button type="button" class="x" aria-label="إغلاق">✕</button><div class="box"></div>';
+                document.body.appendChild(box);
+                box.addEventListener('click', (e) => {
+                    if (e.target === box || e.target.classList.contains('x')) closeBox();
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') closeBox();
+                });
+                return box;
+            };
+
+            const closeBox = () => {
+                const box = document.getElementById('mg-lightbox');
+                if (! box) return;
+                box.classList.remove('open');
+                box.querySelector('.box').innerHTML = '';
+                document.body.style.overflow = '';
+            };
+
+            const openBox = (url, type) => {
+                if (! url) return;
+                const box = ensureBox();
+                box.querySelector('.box').innerHTML = type === 'video'
+                    ? '<video src="' + url + '" controls autoplay playsinline></video>'
+                    : '<img src="' + url + '" alt="">';
+                box.classList.add('open');
+                document.body.style.overflow = 'hidden';
+            };
+
+            document.addEventListener('click', (e) => {
+                const tile = e.target.closest('[data-mg-media]');
+                if (! tile) return;
+                openBox(tile.getAttribute('data-mg-url'), tile.getAttribute('data-mg-type'));
+            });
+        }
+    </script>
+    @endscript
 </div>
-
-<script>
-    (function () {
-        if (window.__mgWorksInit) return;
-        window.__mgWorksInit = true;
-
-        function ensureBox() {
-            let box = document.getElementById('mg-lightbox');
-            if (box) return box;
-            box = document.createElement('div');
-            box.id = 'mg-lightbox';
-            box.className = 'mg-lightbox';
-            box.innerHTML = '<button type="button" class="x" aria-label="إغلاق">✕</button><div class="box"></div>';
-            document.body.appendChild(box);
-            box.addEventListener('click', function (e) {
-                if (e.target === box || e.target.classList.contains('x')) closeBox();
-            });
-            document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape') closeBox();
-            });
-            return box;
-        }
-
-        function closeBox() {
-            const box = document.getElementById('mg-lightbox');
-            if (!box) return;
-            box.classList.remove('open');
-            box.querySelector('.box').innerHTML = '';
-            document.body.style.overflow = '';
-        }
-
-        function openBox(url, type) {
-            if (!url) return;
-            const box = ensureBox();
-            const inner = box.querySelector('.box');
-            inner.innerHTML = type === 'video'
-                ? '<video src="' + url + '" controls autoplay playsinline></video>'
-                : '<img src="' + url + '" alt="">';
-            box.classList.add('open');
-            document.body.style.overflow = 'hidden';
-        }
-
-        document.addEventListener('click', function (e) {
-            const tile = e.target.closest('[data-mg-media]');
-            if (!tile) return;
-            openBox(tile.getAttribute('data-mg-url'), tile.getAttribute('data-mg-type'));
-        });
-    })();
-</script>
