@@ -204,6 +204,18 @@ class UserResource extends Resource
 
             ...self::brandCompanyFields(),
 
+            Forms\Components\Section::make('معرض أعمال السباك')
+                ->description('الصور والفيديوهات التي يرفعها السباك من التطبيق — يُنشأ للفيديو غلاف تلقائي.')
+                ->icon('heroicon-o-photo')
+                ->collapsible()
+                ->visible(fn ($record) => $record?->role === User::ROLE_PLUMBER)
+                ->schema([
+                    Forms\Components\ViewField::make('_work_gallery')
+                        ->view('filament.forms.plumber-work-gallery')
+                        ->dehydrated(false)
+                        ->columnSpanFull(),
+                ]),
+
             Forms\Components\Section::make(__('Security & Status'))
                 ->columns(3)
                 ->schema([

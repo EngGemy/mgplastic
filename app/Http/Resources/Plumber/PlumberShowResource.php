@@ -38,14 +38,39 @@ class PlumberShowResource extends JsonResource
                 ]
             ),
 
+            // Legacy key (images only) kept for backward compatibility.
             'work_photos' => $this->when(
                 $this->relationLoaded('workPhotos'),
-                fn () => $this->workPhotos->map(fn ($p) => [
-                    'id'        => $p->id,
-                    'image'     => $p->image,
-                    'image_url' => $p->image_url,
-                    'created_at'=> optional($p->created_at)->toISOString(),
-                ])
+                fn () => $this->workPhotos
+                    ->reject(fn ($p) => $p->is_video)
+                    ->map(fn ($p) => [
+                        'id'        => $p->id,
+                        'image'     => $p->image,
+                        'image_url' => $p->image_url,
+                        'created_at'=> optional($p->created_at)->toISOString(),
+                    ])
+                    ->values()
+            ),
+
+            // Unified media (images + videos with auto thumbnails).
+            'work_media' => $this->when(
+                $this->relationLoaded('workPhotos'),
+                fn () => $this->workPhotos->map(fn ($p) => $p->toApiArray())->values()
+            ),
+
+            'work_media_count' => $this->when(
+                $this->relationLoaded('workPhotos'),
+                fn () => $this->workPhotos->count()
+            ),
+
+            'work_images_count' => $this->when(
+                $this->relationLoaded('workPhotos'),
+                fn () => $this->workPhotos->reject(fn ($p) => $p->is_video)->count()
+            ),
+
+            'work_videos_count' => $this->when(
+                $this->relationLoaded('workPhotos'),
+                fn () => $this->workPhotos->filter(fn ($p) => $p->is_video)->count()
             ),
 
             'accepted_language' => $locale,
