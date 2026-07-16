@@ -9,6 +9,7 @@ use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Tables;
+use Illuminate\Support\HtmlString;
 
 trait HandlesInvoiceReturns
 {
@@ -36,9 +37,10 @@ trait HandlesInvoiceReturns
             ->color('danger')
             ->visible(fn () => $this->canReturnThisInvoice())
             ->modalHeading('مرتجع بضاعة ونقاط')
-            ->modalDescription('حدّد الكميات المراد إرجاعها. تُخصم النقاط من المستلم وتُعاد للمورّد، ويُحدَّث صافي الفاتورة فوراً.')
+            ->modalDescription(null)
             ->modalSubmitActionLabel('تأكيد المرتجع')
-            ->modalWidth('2xl')
+            ->modalCancelActionLabel('إلغاء')
+            ->modalWidth('3xl')
             ->form(fn () => $this->returnFormSchema())
             ->action(fn (array $data) => $this->executeInvoiceReturn($data));
     }
@@ -51,9 +53,10 @@ trait HandlesInvoiceReturns
             ->color('danger')
             ->visible(fn () => $this->canReturnThisInvoice())
             ->modalHeading('مرتجع بضاعة ونقاط')
-            ->modalDescription('حدّد الكميات المراد إرجاعها. تُخصم النقاط من المستلم وتُعاد للمورّد، ويُحدَّث صافي الفاتورة فوراً.')
+            ->modalDescription(null)
             ->modalSubmitActionLabel('تأكيد المرتجع')
-            ->modalWidth('2xl')
+            ->modalCancelActionLabel('إلغاء')
+            ->modalWidth('3xl')
             ->form(fn () => $this->returnFormSchema())
             ->action(fn (array $data) => $this->executeInvoiceReturn($data));
     }
@@ -148,82 +151,75 @@ trait HandlesInvoiceReturns
         ])->values()->all();
 
         return [
-            Forms\Components\Placeholder::make('return_hint')
-                ->label('')
-                ->content('اترك الكمية 0 للبنود التي لا تريد إرجاعها. الصافي والنقاط يُحدَّثان تلقائياً بعد التأكيد.'),
+            Forms\Components\ViewField::make('return_shell')
+                ->view('filament.forms.invoice-return-shell')
+                ->dehydrated(false)
+                ->columnSpanFull(),
 
             Forms\Components\Repeater::make('items')
-                ->label('بنود المرتجع')
+                ->label(new HtmlString('<span style="font-family:Cairo,sans-serif;font-weight:900;font-size:13px;color:#0f172a">بنود المرتجع</span>'))
                 ->schema([
                     Forms\Components\Hidden::make('invoice_item_id'),
                     Forms\Components\Hidden::make('returnable'),
                     Forms\Components\Hidden::make('points_per_unit'),
                     Forms\Components\Hidden::make('product_name'),
 
-                    Forms\Components\Placeholder::make('product_label')
-                        ->label('المنتج')
-                        ->content(fn (Forms\Get $get) => $get('product_name') ?: '—')
-                        ->columnSpan(2),
+                    Forms\Components\ViewField::make('line_meta')
+                        ->view('filament.forms.invoice-return-line-meta')
+                        ->dehydrated(false)
+                        ->columnSpanFull(),
 
-                    Forms\Components\Placeholder::make('available_label')
-                        ->label('متاح للإرجاع')
-                        ->content(fn (Forms\Get $get) => number_format((int) $get('returnable')).' وحدة'),
+                    Forms\Components\Grid::make(12)
+                        ->schema([
+                            Forms\Components\TextInput::make('quantity')
+                                ->label('كمية المرتجع')
+                                ->numeric()
+                                ->minValue(0)
+                                ->default(0)
+                                ->required()
+                                ->live(onBlur: false)
+                                ->extraFieldWrapperAttributes(['class' => 'ret-qty-wrap'])
+                                ->rule(function (Forms\Get $get) {
+                                    return function (string $attribute, $value, $fail) use ($get) {
+                                        $max = (int) $get('returnable');
+                                        if ((int) $value > $max) {
+                                            $fail("الحد الأقصى للإرجاع هو {$max}");
+                                        }
+                                    };
+                                })
+                                ->columnSpan(8),
 
-                    Forms\Components\Placeholder::make('points_label')
-                        ->label('نقطة / وحدة')
-                        ->content(fn (Forms\Get $get) => rtrim(rtrim(number_format((float) $get('points_per_unit'), 2), '0'), '.') ?: '0'),
-
-                    Forms\Components\TextInput::make('quantity')
-                        ->label('كمية المرتجع')
-                        ->numeric()
-                        ->minValue(0)
-                        ->default(0)
-                        ->required()
-                        ->live()
-                        ->rule(function (Forms\Get $get) {
-                            return function (string $attribute, $value, $fail) use ($get) {
-                                $max = (int) $get('returnable');
-                                if ((int) $value > $max) {
-                                    $fail("الحد الأقصى للإرجاع هو {$max}");
-                                }
-                            };
-                        }),
-
-                    Forms\Components\Placeholder::make('line_points')
-                        ->label('نقاط هذا البند')
-                        ->content(fn (Forms\Get $get) => number_format(
-                            (int) floor((int) $get('quantity') * (float) $get('points_per_unit'))
-                        ).' نقطة'),
+                            Forms\Components\ViewField::make('line_points')
+                                ->view('filament.forms.invoice-return-line-points')
+                                ->dehydrated(false)
+                                ->columnSpan(4),
+                        ])
+                        ->columnSpanFull(),
                 ])
-                ->columns(3)
+                ->columns(1)
                 ->default($defaults)
                 ->dehydrated()
                 ->addable(false)
                 ->deletable(false)
                 ->reorderable(false)
-                ->itemLabel(fn (array $state) => $state['product_name'] ?? 'بند')
-                ->collapsible()
-                ->collapsed(false),
+                ->collapsible(false)
+                ->extraAttributes(['class' => 'ret-shell'])
+                ->columnSpanFull(),
 
-            Forms\Components\Placeholder::make('totals_preview')
-                ->label('إجمالي المرتجع (حسب الكميات المدخلة)')
-                ->content(function (Forms\Get $get) {
-                    $items = $get('items') ?? [];
-                    $qty = 0;
-                    $pts = 0;
-                    foreach ($items as $row) {
-                        $q = (int) ($row['quantity'] ?? 0);
-                        $qty += $q;
-                        $pts += (int) floor($q * (float) ($row['points_per_unit'] ?? 0));
-                    }
+            Forms\Components\ViewField::make('totals_preview')
+                ->view('filament.forms.invoice-return-totals')
+                ->dehydrated(false)
+                ->columnSpanFull(),
 
-                    return "{$qty} وحدة — {$pts} نقطة ستُخصم من المستلم وتُعاد للمورّد";
-                }),
+            Forms\Components\Placeholder::make('note_label')
+                ->label('')
+                ->content(new HtmlString('<span class="ret-note-label">ملاحظة المرتجع (اختياري)</span>')),
 
             Forms\Components\Textarea::make('note')
-                ->label('ملاحظة المرتجع (اختياري)')
+                ->label('')
                 ->placeholder('سبب الإرجاع أو أي تفاصيل...')
-                ->rows(2),
+                ->rows(2)
+                ->extraAttributes(['class' => 'ret-shell']),
         ];
     }
 

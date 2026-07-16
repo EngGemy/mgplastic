@@ -38,9 +38,14 @@ class TraderPos extends Page
 
     public ?int $selectedCategoryId = null;
 
+    /** all | available | order */
+    public string $stockFilter = 'available';
+
     public string $search = '';
 
     public string $plumberSearch = '';
+
+    public string $categorySearch = '';
 
     /** @var array<string, array<string, mixed>> */
     public array $cart = [];
@@ -117,14 +122,15 @@ class TraderPos extends Page
 
     public function getCategoriesProperty(): Collection
     {
-        $productIds = $this->catalogRows()->pluck('product_id')->all();
+        $rows = $this->catalogRows();
+        $productIds = $rows->pluck('product_id')->all();
 
         if ($productIds === []) {
             return collect();
         }
 
-        return ProductCategory::query()
-            ->with('translations')
+        $cats = ProductCategory::query()
+            ->with(['translations', 'children:id,parent_id'])
             ->whereNull('parent_id')
             ->where(function ($q) use ($productIds) {
                 $q->whereHas('products', fn ($p) => $p->whereIn('id', $productIds))
@@ -132,6 +138,62 @@ class TraderPos extends Page
             })
             ->orderBy('id')
             ->get();
+
+        $term = mb_strtolower(trim($this->categorySearch));
+
+        return $cats
+            ->map(function (ProductCategory $cat) use ($rows) {
+                $allowed = collect([$cat->id])
+                    ->merge($cat->children->pluck('id'))
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                $inCat = $rows->filter(fn ($r) => in_array((int) ($r['category_id'] ?? 0), $allowed, true));
+
+                return [
+                    'id' => $cat->id,
+                    'name' => localized_name($cat, 'name', $cat->slug ?? "فئة #{$cat->id}"),
+                    'total' => $inCat->count(),
+                    'available' => $inCat->where('can_distribute', true)->count(),
+                ];
+            })
+            ->when($term !== '', fn ($c) => $c->filter(
+                fn ($row) => str_contains(mb_strtolower($row['name']), $term)
+            ))
+            ->values();
+    }
+
+    public function getFilterCountsProperty(): array
+    {
+        $rows = $this->catalogRows();
+
+        return [
+            'all' => $rows->count(),
+            'available' => $rows->where('can_distribute', true)->count(),
+            'order' => $rows->where('can_distribute', false)->count(),
+        ];
+    }
+
+    public function setStockFilter(string $filter): void
+    {
+        if (! in_array($filter, ['all', 'available', 'order'], true)) {
+            return;
+        }
+
+        $this->stockFilter = $filter;
+    }
+
+    public function clearFilters(): void
+    {
+        $this->stockFilter = 'all';
+        $this->selectedCategoryId = null;
+        $this->search = '';
+        $this->categorySearch = '';
+    }
+
+    public function getCatalogAllProperty(): Collection
+    {
+        return $this->catalogRows();
     }
 
     /**
@@ -189,6 +251,12 @@ class TraderPos extends Page
     public function getFilteredStockProperty(): Collection
     {
         return $this->catalogRows()
+            ->when($this->stockFilter === 'available', fn ($c) => $c->filter(
+                fn ($r) => (bool) ($r['can_distribute'] ?? false)
+            ))
+            ->when($this->stockFilter === 'order', fn ($c) => $c->filter(
+                fn ($r) => ! (bool) ($r['can_distribute'] ?? false)
+            ))
             ->when($this->selectedCategoryId, function (Collection $c) {
                 $catId = (int) $this->selectedCategoryId;
                 $allowed = ProductCategory::query()
