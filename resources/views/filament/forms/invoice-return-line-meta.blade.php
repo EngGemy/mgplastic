@@ -1,4 +1,5 @@
 @php
+    $get = $field->getGetCallback();
     $name = $get('product_name') ?: '—';
     $returnable = (int) $get('returnable');
     $ppu = (float) $get('points_per_unit');

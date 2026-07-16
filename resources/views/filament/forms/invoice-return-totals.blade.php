@@ -1,4 +1,5 @@
 @php
+    $get = $field->getGetCallback();
     $items = $get('items') ?? [];
     $qty = 0;
     $pts = 0;

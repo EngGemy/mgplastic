@@ -1,4 +1,5 @@
 @php
+    $get = $field->getGetCallback();
     $qty = (int) $get('quantity');
     $ppu = (float) $get('points_per_unit');
     $linePts = (int) floor($qty * $ppu);
