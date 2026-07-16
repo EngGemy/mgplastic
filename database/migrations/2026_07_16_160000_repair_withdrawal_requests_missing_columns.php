@@ -57,19 +57,30 @@ return new class extends Migration
             }
         });
 
-        // Backfill wallet_account_id from plumber wallets when possible
+        // Backfill wallet_account_id from plumber wallets (portable across MySQL/SQLite)
         if (
             Schema::hasColumn('withdrawal_requests', 'wallet_account_id')
             && Schema::hasColumn('withdrawal_requests', 'plumber_id')
             && Schema::hasTable('wallet_accounts')
         ) {
-            DB::statement("
-                UPDATE withdrawal_requests wr
-                INNER JOIN wallet_accounts wa
-                    ON wa.owner_id = wr.plumber_id AND wa.currency = 'LYD'
-                SET wr.wallet_account_id = wa.id
-                WHERE wr.wallet_account_id IS NULL
-            ");
+            DB::table('withdrawal_requests')
+                ->whereNull('wallet_account_id')
+                ->whereNotNull('plumber_id')
+                ->orderBy('id')
+                ->chunkById(100, function ($rows) {
+                    foreach ($rows as $row) {
+                        $walletId = DB::table('wallet_accounts')
+                            ->where('owner_id', $row->plumber_id)
+                            ->where('currency', 'LYD')
+                            ->value('id');
+
+                        if ($walletId) {
+                            DB::table('withdrawal_requests')
+                                ->where('id', $row->id)
+                                ->update(['wallet_account_id' => $walletId]);
+                        }
+                    }
+                });
         }
     }
 
