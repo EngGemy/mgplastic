@@ -12,10 +12,13 @@ return new class extends Migration
             return;
         }
 
+        if (Schema::hasColumn('withdrawal_requests', 'amount_cents')) {
+            return;
+        }
+
         Schema::table('withdrawal_requests', function (Blueprint $table) {
-            if (! Schema::hasColumn('withdrawal_requests', 'amount_cents')) {
-                $table->unsignedBigInteger('amount_cents')->default(0)->after('wallet_account_id');
-            }
+            // بدون after() حتى لا تفشل على مخطط إنتاج مختلف
+            $table->unsignedBigInteger('amount_cents')->default(0);
         });
     }
 
@@ -25,10 +28,12 @@ return new class extends Migration
             return;
         }
 
+        if (! Schema::hasColumn('withdrawal_requests', 'amount_cents')) {
+            return;
+        }
+
         Schema::table('withdrawal_requests', function (Blueprint $table) {
-            if (Schema::hasColumn('withdrawal_requests', 'amount_cents')) {
-                $table->dropColumn('amount_cents');
-            }
+            $table->dropColumn('amount_cents');
         });
     }
 };
