@@ -93,16 +93,6 @@ class CreateRetailPos extends Page
             return;
         }
 
-        if ($this->cartPoints > $this->walletBalance) {
-            Notification::make()
-                ->danger()
-                ->title('رصيد النقاط غير كافٍ')
-                ->body("المطلوب {$this->cartPoints} نقطة — رصيدك {$this->walletBalance} نقطة")
-                ->send();
-
-            return;
-        }
-
         try {
             $retailTrader = User::findOrFail($this->retailTraderId);
 
@@ -119,7 +109,7 @@ class CreateRetailPos extends Page
             Notification::make()
                 ->success()
                 ->title('تم إصدار فاتورة الصادر')
-                ->body("{$count} فاتورة صادرة — {$points} نقطة مخصومة من رصيدك")
+                ->body("{$count} فاتورة صادرة — {$points} نقطة مرتبطة بالتوزيع")
                 ->send();
 
             $this->redirect(InvoiceResource::getUrl('index', ['activeTab' => 'outgoing']));

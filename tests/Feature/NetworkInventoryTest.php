@@ -48,20 +48,42 @@ class NetworkInventoryTest extends TestCase
         $inventory->allocateFromStock($stock, [$product->id => 5]);
     }
 
-    public function test_wholesaler_cannot_sell_more_points_than_wallet_balance(): void
+    public function test_wholesaler_stock_points_are_independent_of_wallet_balance(): void
     {
         $wholesaler = User::factory()->create(['role' => 'wholesale_distributor']);
+        User::factory()->create(['role' => 'super_admin']);
+        $product = Product::factory()->create(['points_per_unit' => 5.0]);
 
         WalletAccount::create([
             'owner_id' => $wholesaler->id,
             'currency' => 'LYD',
             'balance_cents' => 0,
-            'balance_points' => 10,
+            'balance_points' => 5, // wallet low — must NOT block stock allocation
         ]);
 
-        $inventory = app(NetworkInventoryService::class);
+        $invoice = Invoice::factory()->create([
+            'status' => 'approved',
+            'invoice_type' => 'wholesale_pos',
+            'invoice_flow' => 'incoming',
+            'wholesale_distributor_id' => $wholesaler->id,
+        ]);
 
-        $this->expectException(\DomainException::class);
-        $inventory->assertPointsBalance($wholesaler, 20);
+        InvoiceItem::factory()->create([
+            'invoice_id' => $invoice->id,
+            'product_id' => $product->id,
+            'quantity' => 100,
+            'points_per_unit' => 5.0,
+            'total_points' => 500,
+        ]);
+
+        app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
+
+        $inventory = app(NetworkInventoryService::class);
+        $stock = $inventory->stockForWholesaler($wholesaler);
+
+        $groups = $inventory->allocateFromStock($stock, [$product->id => 100]);
+
+        $this->assertNotEmpty($groups);
+        $this->assertSame(100, (int) collect($groups)->flatMap(fn ($g) => $g['items'])->sum('quantity'));
     }
 }

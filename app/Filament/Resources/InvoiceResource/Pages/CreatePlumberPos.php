@@ -147,16 +147,6 @@ class CreatePlumberPos extends Page
             return;
         }
 
-        if ($this->cartPoints > $this->walletBalance) {
-            Notification::make()
-                ->danger()
-                ->title('رصيد النقاط غير كافٍ')
-                ->body("المطلوب {$this->cartPoints} نقطة — رصيدك {$this->walletBalance} نقطة")
-                ->send();
-
-            return;
-        }
-
         try {
             $plumber = User::findOrFail($this->plumberId);
 

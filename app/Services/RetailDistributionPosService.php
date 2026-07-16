@@ -44,9 +44,8 @@ class RetailDistributionPosService
             ->map(fn ($group) => (int) $group->sum('quantity'))
             ->all();
 
-        $requiredPoints = $this->inventory->totalPointsForRequest($stock, $requested);
-        $this->inventory->assertPointsBalance($wholesaler, $requiredPoints);
-
+        // Stock slots are the source of truth for wholesale→retail.
+        // Wallet points are only settled at plumber (tier 3).
         $groups = $this->inventory->allocateFromStock($stock, $requested);
 
         return DB::transaction(function () use ($groups, $wholesaler, $retailTrader, $issuedBy) {

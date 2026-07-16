@@ -45,9 +45,8 @@ class PlumberDistributionPosService
             ->map(fn ($group) => (int) $group->sum('quantity'))
             ->all();
 
-        $requiredPoints = $this->inventory->totalPointsForRequest($stock, $requested);
-        $this->inventory->assertPointsBalance($retailTrader, $requiredPoints);
-
+        // Stock slots are the source of truth for retail→plumber.
+        // Plumber wallet is credited on confirm (tier 3); seller wallet is not debited.
         $groups = $this->inventory->allocateFromStock($stock, $requested);
 
         return DB::transaction(function () use ($groups, $retailTrader, $plumber) {
