@@ -45,10 +45,8 @@
     $worksVideos = $works->filter(fn ($p) => $p->is_video)->count();
     $worksImages = $worksTotal - $worksVideos;
 
-    $balancePoints = (int) (\App\Models\WalletAccount::query()
-        ->where('owner_id', $record->id)
-        ->where('currency', 'LYD')
-        ->value('balance_points') ?? 0);
+    $financeService = app(\App\Services\PlumberFinanceSummaryService::class);
+    $finance = $isPlumber ? $financeService->for($record) : null;
 
     $retailCount = $isWholesale ? $record->retailTraders()->count() : 0;
     $plumberCount = $isWholesale
@@ -102,6 +100,23 @@
         .mgp-stat .lbl{font-size:12.5px;color:#64748b;font-weight:700;margin-top:5px}
         .mgp-stat--points{background:linear-gradient(160deg,#fffbeb,#fef3c7);border-color:#fde68a}
         .mgp-stat--points .num{color:#b45309}
+        .mgp-stat--money{background:linear-gradient(160deg,#ecfdf5,#d1fae5);border-color:#a7f3d0}
+        .mgp-stat--money .num{color:#047857}
+        .mgp-stat--paid{background:linear-gradient(160deg,#eff6ff,#dbeafe);border-color:#bfdbfe}
+        .mgp-stat--paid .num{color:#1d4ed8}
+        .mgp-stat--pending{background:linear-gradient(160deg,#fff7ed,#ffedd5);border-color:#fed7aa}
+        .mgp-stat--pending .num{color:#c2410c}
+
+        .mgp-table{width:100%;border-collapse:collapse;font-size:13px}
+        .mgp-table th{text-align:right;font-size:11px;color:#94a3b8;font-weight:800;padding:8px 6px;border-bottom:2px solid #f1f5f9}
+        .mgp-table td{padding:10px 6px;border-bottom:1px solid #f8fafc;vertical-align:top}
+        .mgp-badge{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800}
+        .mgp-badge.ok{background:#ecfdf5;color:#047857}
+        .mgp-badge.warn{background:#fffbeb;color:#b45309}
+        .mgp-badge.danger{background:#fef2f2;color:#b91c1c}
+        .mgp-badge.info{background:#eff6ff;color:#1d4ed8}
+        .mgp-badge.gray{background:#f1f5f9;color:#475569}
+        .mgp-empty{color:#94a3b8;font-size:13px;padding:12px 0;text-align:center}
 
         .mgp-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-top:18px;align-items:start}
         @media(max-width:900px){.mgp-grid{grid-template-columns:1fr}}
@@ -175,9 +190,26 @@
         @if($isPlumber)
             <div class="mgp-stat mgp-stat--points">
                 <div class="ic">⭐</div>
-                <div class="num">{{ number_format($balancePoints) }}</div>
-                <div class="lbl">رصيد النقاط</div>
+                <div class="num">{{ number_format($finance['balance_points']) }}</div>
+                <div class="lbl">رصيد النقاط المتبقي</div>
             </div>
+            <div class="mgp-stat mgp-stat--money">
+                <div class="ic">💰</div>
+                <div class="num" style="font-size:20px">{{ $finance['balance_money_formatted'] }}</div>
+                <div class="lbl">رصيد فلوس قابل للسحب</div>
+            </div>
+            <div class="mgp-stat mgp-stat--paid">
+                <div class="ic">🏦</div>
+                <div class="num" style="font-size:20px">{{ $finance['withdrawn_paid_formatted'] }}</div>
+                <div class="lbl">تم صرفه للسباك (مدفوع)</div>
+            </div>
+            <div class="mgp-stat mgp-stat--pending">
+                <div class="ic">⏳</div>
+                <div class="num" style="font-size:20px">{{ $finance['withdrawn_pending_formatted'] }}</div>
+                <div class="lbl">طلبات سحب قيد المعالجة</div>
+            </div>
+            <div class="mgp-stat"><div class="ic">📥</div><div class="num">{{ number_format($finance['earned_points']) }}</div><div class="lbl">إجمالي نقاط مكتسبة</div></div>
+            <div class="mgp-stat"><div class="ic">🔄</div><div class="num">{{ number_format($finance['converted_points']) }}</div><div class="lbl">نقاط محوّلة لفلوس</div></div>
             <div class="mgp-stat"><div class="ic">🖼️</div><div class="num">{{ number_format($worksTotal) }}</div><div class="lbl">إجمالي الأعمال</div></div>
             <div class="mgp-stat"><div class="ic">📷</div><div class="num">{{ number_format($worksImages) }}</div><div class="lbl">صورة</div></div>
             <div class="mgp-stat"><div class="ic">🎬</div><div class="num">{{ number_format($worksVideos) }}</div><div class="lbl">فيديو</div></div>
@@ -191,6 +223,160 @@
         @endif
         <div class="mgp-stat"><div class="ic">🆔</div><div class="num">#{{ $record->id }}</div><div class="lbl">رقم الحساب</div></div>
     </div>
+
+    @if($isPlumber && $finance)
+    <div class="mgp-section-title"><span class="bar"></span> 💼 المحفظة والمدفوعات والسحوبات</div>
+    <div class="mgp-grid">
+        <div class="mgp-card">
+            <h3><span class="dot"></span> ملخص الأرصدة</h3>
+            <div class="mgp-info">
+                <div class="mgp-field">
+                    <div class="fi">⭐</div>
+                    <div class="ft">
+                        <div class="fl">رصيد النقاط الحالي</div>
+                        <div class="fv">{{ number_format($finance['balance_points']) }} نقطة</div>
+                    </div>
+                </div>
+                <div class="mgp-field">
+                    <div class="fi">💰</div>
+                    <div class="ft">
+                        <div class="fl">رصيد الفلوس المتبقي (لم يُسحب)</div>
+                        <div class="fv">{{ $finance['balance_money_formatted'] }}</div>
+                    </div>
+                </div>
+                <div class="mgp-field">
+                    <div class="fi">🏦</div>
+                    <div class="ft">
+                        <div class="fl">إجمالي المدفوع له (سحوبات مدفوعة)</div>
+                        <div class="fv">{{ $finance['withdrawn_paid_formatted'] }} ({{ $finance['withdrawals_paid_count'] }} طلب)</div>
+                    </div>
+                </div>
+                <div class="mgp-field">
+                    <div class="fi">⏳</div>
+                    <div class="ft">
+                        <div class="fl">سحوبات قيد المعالجة / معتمدة</div>
+                        <div class="fv">{{ $finance['withdrawn_pending_formatted'] }} ({{ $finance['withdrawals_pending_count'] }} طلب)</div>
+                    </div>
+                </div>
+                <div class="mgp-field">
+                    <div class="fi">📥</div>
+                    <div class="ft">
+                        <div class="fl">إجمالي النقاط المكتسبة</div>
+                        <div class="fv">{{ number_format($finance['earned_points']) }}</div>
+                    </div>
+                </div>
+                <div class="mgp-field">
+                    <div class="fi">🔄</div>
+                    <div class="ft">
+                        <div class="fl">نقاط حُوّلت إلى فلوس</div>
+                        <div class="fv">{{ number_format($finance['converted_points']) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mgp-card">
+            <h3><span class="dot"></span> طلبات السحب</h3>
+            @if($finance['withdrawals']->isEmpty())
+                <div class="mgp-empty">لا توجد طلبات سحب بعد</div>
+            @else
+                <table class="mgp-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>المبلغ</th>
+                            <th>الحالة</th>
+                            <th>الطريقة</th>
+                            <th>التاريخ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($finance['withdrawals'] as $w)
+                            @php
+                                $badge = match ($w->status) {
+                                    'paid' => 'ok',
+                                    'pending', 'approved' => 'warn',
+                                    'rejected' => 'danger',
+                                    default => 'gray',
+                                };
+                            @endphp
+                            <tr>
+                                <td>
+                                    <div style="font-weight:800">#{{ $w->id }}</div>
+                                    @if($w->receipt_number)<div style="font-size:11px;color:#94a3b8">{{ $w->receipt_number }}</div>@endif
+                                </td>
+                                <td style="font-weight:800">{{ $w->formattedAmount() }}</td>
+                                <td><span class="mgp-badge {{ $badge }}">{{ $w->statusLabel() }}</span></td>
+                                <td>
+                                    <div>{{ $w->methodLabel() }}</div>
+                                    <div style="font-size:11px;color:#64748b">{{ $w->payoutDetailsSummary() }}</div>
+                                </td>
+                                <td style="font-size:12px;color:#64748b">
+                                    {{ optional($w->paid_at ?? $w->created_at)->format('Y/m/d H:i') }}
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            @endif
+        </div>
+    </div>
+
+    <div class="mgp-card" style="margin-top:18px">
+        <h3><span class="dot"></span> حركات المحفظة (مدفوعات / تحويل / تعديلات)</h3>
+        @if($finance['transactions']->isEmpty())
+            <div class="mgp-empty">لا توجد حركات محفظة بعد</div>
+        @else
+            <table class="mgp-table">
+                <thead>
+                    <tr>
+                        <th>النوع</th>
+                        <th>الوصف</th>
+                        <th>نقاط</th>
+                        <th>مبلغ</th>
+                        <th>التاريخ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($finance['transactions'] as $tx)
+                        @php
+                            $typeBadge = match ($tx->type) {
+                                'credit' => 'ok',
+                                'conversion' => 'info',
+                                'withdrawal' => 'warn',
+                                'adjustment' => 'gray',
+                                'debit' => 'danger',
+                                default => 'gray',
+                            };
+                            $pts = (int) $tx->points_delta;
+                            $cents = (int) $tx->amount_cents;
+                        @endphp
+                        <tr>
+                            <td><span class="mgp-badge {{ $typeBadge }}">{{ $financeService->transactionTypeLabel($tx->type) }}</span></td>
+                            <td>
+                                <div style="font-weight:700">{{ $tx->description ?: '—' }}</div>
+                                @if(! empty($tx->meta['reason']))
+                                    <div style="font-size:11px;color:#94a3b8">{{ $tx->meta['reason'] }}</div>
+                                @endif
+                            </td>
+                            <td style="font-weight:800;color:{{ $pts >= 0 ? '#047857' : '#b91c1c' }}">
+                                {{ $pts > 0 ? '+' : '' }}{{ number_format($pts) }}
+                            </td>
+                            <td style="font-weight:800;color:{{ $cents >= 0 ? '#1d4ed8' : '#b91c1c' }}">
+                                @if($cents !== 0)
+                                    {{ ($cents > 0 ? '+' : '').number_format($cents / 100, 2) }} د.ل
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td style="font-size:12px;color:#64748b">{{ optional($tx->created_at)->format('Y/m/d H:i') }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
+    @endif
 
     {{-- MAIN GRID --}}
     <div class="mgp-grid">
