@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Concerns;
 use App\Models\SocialLink;
 use App\Models\StoreMedia;
 use App\Services\StoreMediaUploadService;
+use App\Support\SocialLinksPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -304,15 +305,45 @@ trait HandlesStoreMedia
     {
         $owner = $this->resolveStoreMediaOwner($request);
 
-        $data = $request->validate([
-            'links' => ['required', 'array', 'min:1'],
-            'links.*.platform' => ['required', 'string', 'max:32'],
-            'links.*.url' => ['required', 'url', 'max:500'],
-            'links.*.sort_order' => ['nullable', 'integer', 'min:0'],
-        ]);
+        $links = SocialLinksPayload::normalize($request);
+
+        if ($links === []) {
+            return response()->json([
+                'status' => false,
+                'message' => 'أرسل رابطًا واحدًا على الأقل مع platform و url',
+                'errors' => [
+                    'links' => [
+                        'مثال: {"links":[{"platform":"facebook","url":"https://facebook.com/you"},{"platform":"whatsapp","url":"0912345678"}]}',
+                    ],
+                ],
+                'accepted_platforms' => array_keys(SocialLink::PLATFORMS),
+            ], 422);
+        }
+
+        $platformKeys = implode(',', array_keys(SocialLink::PLATFORMS));
+        $validator = validator(
+            ['links' => $links],
+            [
+                'links' => ['required', 'array', 'min:1'],
+                'links.*.platform' => ['required', 'string', 'in:'.$platformKeys],
+                'links.*.url' => ['required', 'url', 'max:500'],
+                'links.*.sort_order' => ['nullable', 'integer', 'min:0'],
+            ],
+            [
+                'links.*.url.url' => 'صيغة الرابط غير صحيحة.',
+            ]
+        );
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
 
         $saved = [];
-        foreach ($data['links'] as $row) {
+        foreach ($links as $row) {
             $link = $owner->socialLinks()->updateOrCreate(
                 ['platform' => $row['platform']],
                 [
@@ -330,11 +361,26 @@ trait HandlesStoreMedia
         ]);
     }
 
-    public function deleteSocialLink(Request $request, int $linkId): JsonResponse
+    public function deleteSocialLink(Request $request, $linkId): JsonResponse
     {
         $owner = $this->resolveStoreMediaOwner($request);
 
-        $deleted = $owner->socialLinks()->whereKey($linkId)->delete();
+        $query = $owner->socialLinks();
+        $key = is_string($linkId) ? trim($linkId) : $linkId;
+
+        if (is_numeric($key)) {
+            $deleted = $query->whereKey((int) $key)->delete();
+        } else {
+            $platform = strtolower((string) $key);
+            if (! array_key_exists($platform, SocialLink::PLATFORMS)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'منصة غير معروفة',
+                    'accepted_platforms' => array_keys(SocialLink::PLATFORMS),
+                ], 422);
+            }
+            $deleted = $query->where('platform', $platform)->delete();
+        }
 
         if (! $deleted) {
             return response()->json(['status' => false, 'message' => 'الرابط غير موجود'], 404);

@@ -18,6 +18,8 @@ trait ManagesMyStoreProducts
 
     public string $productDescription = '';
 
+    public string $search = '';
+
     public ?int $editingId = null;
 
     public bool $showForm = false;
@@ -30,13 +32,61 @@ trait ManagesMyStoreProducts
             return collect();
         }
 
-        return StoreMedia::query()
+        $q = StoreMedia::query()
             ->where('owner_type', $user->getMorphClass())
             ->where('owner_id', $user->id)
             ->where('kind', 'my_product')
             ->orderBy('sort_order')
-            ->orderByDesc('id')
-            ->get();
+            ->orderByDesc('id');
+
+        $term = trim($this->search);
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $q->where(function ($query) use ($like) {
+                $query->where('title', 'like', $like)
+                    ->orWhere('description', 'like', $like);
+            });
+        }
+
+        return $q->get();
+    }
+
+    public function getEditingItemProperty(): ?StoreMedia
+    {
+        if (! $this->editingId) {
+            return null;
+        }
+
+        return $this->findOwnedProduct($this->editingId);
+    }
+
+    public function getProductsCountProperty(): int
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return 0;
+        }
+
+        return (int) StoreMedia::query()
+            ->where('owner_type', $user->getMorphClass())
+            ->where('owner_id', $user->id)
+            ->where('kind', 'my_product')
+            ->count();
+    }
+
+    public function getVisibleCountProperty(): int
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return 0;
+        }
+
+        return (int) StoreMedia::query()
+            ->where('owner_type', $user->getMorphClass())
+            ->where('owner_id', $user->id)
+            ->where('kind', 'my_product')
+            ->where('is_active', true)
+            ->count();
     }
 
     public function openCreateForm(): void
@@ -49,9 +99,13 @@ trait ManagesMyStoreProducts
     {
         $item = $this->findOwnedProduct($id);
         if (! $item) {
+            Notification::make()->danger()->title('المنتج غير موجود')->send();
+
             return;
         }
 
+        $this->resetValidation();
+        $this->resetErrorBag();
         $this->editingId = $item->id;
         $this->productName = (string) ($item->title ?? '');
         $this->productDescription = (string) ($item->description ?? '');
@@ -82,6 +136,7 @@ trait ManagesMyStoreProducts
             'productName.required' => 'اكتب اسم المنتج',
             'photo.required' => 'أضف صورة للمنتج',
             'photo.image' => 'الملف يجب أن يكون صورة',
+            'photo.max' => 'الحد الأقصى للصورة 10 ميجا',
         ]);
 
         $user = auth()->user();
@@ -89,12 +144,14 @@ trait ManagesMyStoreProducts
         if ($this->editingId) {
             $item = $this->findOwnedProduct($this->editingId);
             if (! $item) {
+                Notification::make()->danger()->title('المنتج غير موجود')->send();
+
                 return;
             }
 
             $data = [
                 'title' => trim($this->productName),
-                'description' => trim($this->productDescription) ?: null,
+                'description' => trim($this->productDescription) !== '' ? trim($this->productDescription) : null,
             ];
 
             if ($this->photo) {
@@ -105,7 +162,6 @@ trait ManagesMyStoreProducts
             }
 
             $item->update($data);
-
             Notification::make()->success()->title('تم تحديث المنتج')->send();
         } else {
             $path = $this->photo->store('store_media/my-products', 'public');
@@ -119,12 +175,12 @@ trait ManagesMyStoreProducts
                 'kind' => 'my_product',
                 'file_path' => $path,
                 'title' => trim($this->productName),
-                'description' => trim($this->productDescription) ?: null,
+                'description' => trim($this->productDescription) !== '' ? trim($this->productDescription) : null,
                 'sort_order' => $sort + 1,
                 'is_active' => true,
             ]);
 
-            Notification::make()->success()->title('تمت إضافة المنتج لمعرضك')->send();
+            Notification::make()->success()->title('تمت إضافة المنتج للمعرض')->send();
         }
 
         $this->closeForm();
@@ -149,6 +205,10 @@ trait ManagesMyStoreProducts
         }
 
         $item->update(['is_active' => ! $item->is_active]);
+        Notification::make()
+            ->success()
+            ->title($item->fresh()->is_active ? 'المنتج ظاهر في المعرض' : 'تم إخفاء المنتج من المعرض')
+            ->send();
     }
 
     protected function findOwnedProduct(int $id): ?StoreMedia
@@ -170,5 +230,6 @@ trait ManagesMyStoreProducts
         $this->productDescription = '';
         $this->photo = null;
         $this->resetValidation();
+        $this->resetErrorBag();
     }
 }

@@ -128,7 +128,7 @@ Route::prefix('v1/plumber-stores')->group(function () {
         Route::post('/{id}/media', [PlumberStoreMediaController::class, 'uploadStoreMedia'])->whereNumber('id');
         Route::delete('/{id}/media/{mediaId}', [PlumberStoreMediaController::class, 'deleteStoreMedia'])->whereNumber('id')->whereNumber('mediaId');
         Route::post('/{id}/social-links', [PlumberStoreMediaController::class, 'upsertSocialLinks'])->whereNumber('id');
-        Route::delete('/{id}/social-links/{linkId}', [PlumberStoreMediaController::class, 'deleteSocialLink'])->whereNumber('id')->whereNumber('linkId');
+        Route::delete('/{id}/social-links/{linkId}', [PlumberStoreMediaController::class, 'deleteSocialLink'])->whereNumber('id');
     });
 });
 
@@ -139,7 +139,7 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::post('my-store/media', [NetworkStoreController::class, 'uploadStoreMedia']);
     Route::delete('my-store/media/{mediaId}', [NetworkStoreController::class, 'deleteStoreMedia'])->whereNumber('mediaId');
     Route::post('my-store/social-links', [NetworkStoreController::class, 'upsertSocialLinks']);
-    Route::delete('my-store/social-links/{linkId}', [NetworkStoreController::class, 'deleteSocialLink'])->whereNumber('linkId');
+    Route::delete('my-store/social-links/{linkId}', [NetworkStoreController::class, 'deleteSocialLink']);
 
     // Explicit slider aliases (same as kind=banner media)
     Route::get('my-store/slider', [NetworkStoreController::class, 'listSlider']);
@@ -171,7 +171,7 @@ Route::middleware(['api', 'auth:sanctum'])->prefix('v1/plumber')->group(function
 
     Route::get('/social-links', [PlumberProfileController::class, 'listSocialLinks']);
     Route::post('/social-links', [PlumberProfileController::class, 'upsertSocialLinks']);
-    Route::delete('/social-links/{linkId}', [PlumberProfileController::class, 'deleteSocialLink'])->whereNumber('linkId');
+    Route::delete('/social-links/{linkId}', [PlumberProfileController::class, 'deleteSocialLink']);
 });
 
 
@@ -297,7 +297,7 @@ Route::prefix('v1')->group(function () {
                 /** Social links */
                 Route::get('social-links', [PlumberProfileController::class, 'listSocialLinks']);
                 Route::post('social-links', [PlumberProfileController::class, 'upsertSocialLinks']);
-                Route::delete('social-links/{linkId}', [PlumberProfileController::class, 'deleteSocialLink'])->whereNumber('linkId');
+                Route::delete('social-links/{linkId}', [PlumberProfileController::class, 'deleteSocialLink']);
             });
     });
 

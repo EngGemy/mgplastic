@@ -21,6 +21,11 @@ class MyProducts extends Page
 
     protected static string $view = 'filament.pages.my-products';
 
+    public function getHeading(): string
+    {
+        return '';
+    }
+
     public static function canAccess(): bool
     {
         $user = auth()->user();

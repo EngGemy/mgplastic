@@ -321,7 +321,7 @@
               "mode": "raw",
               "raw": "{\n  \"points\": 100,\n  \"currency\": \"LYD\"\n}"
             },
-            "description": "اختياري: تحويل نقاط إلى رصيد مالي قبل طلب السحب (حسب فترة الصرف في إعدادات النظام)."
+            "description": "تحويل نقاط إلى رصيد مالي.\n\n- الحد الأدنى الافتراضي: حسب إعدادات الإدارة (`min_redeem_points`)\n- لو رصيدك أقل من الحد الأدنى: أرسل كامل الرصيد (`points` = `balance_points`) وسيُقبل\n- شوف الحد من: `GET /api/v1/mobile/plumber/wallet/conversion-rules`\n\nعند الفشل يرجع رسالة عربية + `min_redeem_points` و`balance_points`."
           }
         }
       ]
