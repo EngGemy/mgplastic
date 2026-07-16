@@ -1,0 +1,238 @@
+{
+  "info": {
+    "name": "MG Plastic — Trader Orders (قطاعي → جملة)",
+    "_postman_id": "c7d8e9f0-trader-ord-4000-9000-mgtraderord",
+    "description": "# طلبات تاجر القطاعي من موزّع الجملة\n\nAuth: Bearer token لـ `retail_trader`.\n\n## التدفق\n1. Login\n2. `GET .../trader/products` — اختَر المنتجات (pagination)\n3. `POST .../trader/orders` — أرسل الطلب\n4. `GET .../trader/orders` — تابع الحالة\n5. بعد الشحن: `POST .../orders/{id}/receive`\n6. أو: `POST .../orders/{id}/cancel`\n\n## ملاحظة\nهذا **ليس** طلب من السباك. السباك يستلم نقاط عبر POS القطاعي.\nهنا: **تاجر القطاعي يطلب توريد من موزّع الجملة** (`channel = wholesale_to_retail`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "trader_phone", "value": "", "type": "string" },
+    { "key": "trader_password", "value": "", "type": "string" },
+    { "key": "trader_token", "value": "", "type": "string" },
+    { "key": "product_id", "value": "1", "type": "string" },
+    { "key": "order_id", "value": "", "type": "string" },
+    { "key": "category_id", "value": "", "type": "string" },
+    { "key": "per_page", "value": "20", "type": "string" },
+    { "key": "page", "value": "1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Auth",
+      "item": [
+        {
+          "name": "Login Retail Trader",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token || json?.token;",
+                  "if (token) pm.collectionVariables.set('trader_token', token);",
+                  "const role = json?.data?.user?.role || json?.data?.store?.role;",
+                  "if (role) console.log('role=', role);",
+                  "pm.test('login ok', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{trader_phone}}\",\n  \"password\": \"{{trader_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "لازم يكون الحساب `retail_trader` ومربوط بموزّع جملة (رقم موحّد / parent)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — Products catalog (للطلب)",
+      "item": [
+        {
+          "name": "List products (paginated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = json?.data?.items?.[0];",
+                  "if (first?.id) pm.collectionVariables.set('product_id', String(first.id));",
+                  "console.log('total=', json?.data?.pagination?.total, 'first=', first?.name, first?.id);",
+                  "pm.test('products ok', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Accept-Language", "value": "ar" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/products?per_page={{per_page}}&page={{page}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "products"],
+              "query": [
+                { "key": "per_page", "value": "{{per_page}}" },
+                { "key": "page", "value": "{{page}}" },
+                { "key": "q", "value": "", "disabled": true, "description": "بحث بالاسم" },
+                { "key": "category_id", "value": "{{category_id}}", "disabled": true }
+              ]
+            },
+            "description": "## GET `/api/v1/mobile/trader/products`\n\nكتالوج المنتجات لاختيار بنود الطلب.\n\n### Query\n| param | default | notes |\n|-------|---------|-------|\n| per_page | 20 | max 100 |\n| page | 1 | |\n| q / search | — | بحث بالاسم |\n| category_id | — | فلتر تصنيف |\n\n### Response `data`\n- `items[]`: id, name, description, image_url, points_per_unit, category_id, category_name\n- `pagination`: current_page, last_page, per_page, total\n\nيرجع منتجات بـ `points_per_unit > 0` فقط."
+          }
+        },
+        {
+          "name": "Search products",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Accept-Language", "value": "ar" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/products?q=ترهونه&per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "products"],
+              "query": [
+                { "key": "q", "value": "ترهونه" },
+                { "key": "per_page", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Orders",
+      "item": [
+        {
+          "name": "List orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true, "description": "placed|confirmed|shipping|delivered|cancelled" }
+              ]
+            },
+            "description": "`GET /api/v1/mobile/trader/orders`\n\nطلباتك أنت كـ buyer تجاه موزّع الجملة."
+          }
+        },
+        {
+          "name": "Place order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const id = json?.data?.id;",
+                  "if (id) pm.collectionVariables.set('order_id', String(id));",
+                  "console.log(json);",
+                  "pm.test('order placed', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 4 }\n  ],\n  \"note\": \"طلب توريد من موزع الجملة\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders"]
+            },
+            "description": "## POST `/api/v1/mobile/trader/orders`\n\n### Body\n```json\n{\n  \"lines\": [{ \"product_id\": 1, \"quantity\": 4 }],\n  \"note\": \"اختياري\"\n}\n```\n\n`supplier` يُحدَّد تلقائياً من ربطك بموزّع الجملة.\n\nResponse: Order مع `status=placed`, `channel=wholesale_to_retail`."
+          }
+        },
+        {
+          "name": "Show order",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{order_id}}"]
+            },
+            "description": "`GET /api/v1/mobile/trader/orders/{order}`\n\nيشمل `items`, `timeline`, `status_label`."
+          }
+        },
+        {
+          "name": "Receive / confirm delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}/receive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{order_id}}", "receive"]
+            },
+            "description": "`POST .../receive`\n\nبعد ما الموزّع يشحن الطلب — تأكيد الاستلام يضيف الكميات لمخزونك القطاعي."
+          }
+        },
+        {
+          "name": "Cancel order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"لم نعد بحاجة للطلب\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{order_id}}", "cancel"]
+            },
+            "description": "`POST .../cancel`\n\nBody اختياري: `{ \"reason\": \"...\" }`\n\nيُسمح قبل الشحن فقط."
+          }
+        }
+      ]
+    }
+  ]
+}

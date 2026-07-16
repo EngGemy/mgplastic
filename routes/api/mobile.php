@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\Trader\DashboardController as TraderDashboardContro
 use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
 use App\Http\Controllers\Api\Trader\PosController as TraderPosController;
+use App\Http\Controllers\Api\Trader\ProductCatalogController as TraderProductCatalogController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/mobile')->group(function () {
@@ -84,6 +85,9 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('pos/stock', [TraderPosController::class, 'stock']);
         Route::post('pos/checkout', [TraderPosController::class, 'checkout']);
+
+        // Catalog — pick products when placing supply order to wholesaler
+        Route::get('products', [TraderProductCatalogController::class, 'index']);
 
         // Orders placed to the wholesale distributor
         Route::get('orders', [TraderOrderController::class, 'index']);
