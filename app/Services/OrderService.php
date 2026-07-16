@@ -516,6 +516,226 @@ class OrderService
         ];
     }
 
+    /**
+     * Stock check for each line on a plumber→retail order.
+     *
+     * @return list<array{
+     *   product_id:int,
+     *   name:string,
+     *   requested_qty:int,
+     *   available_qty:int,
+     *   fulfillable_qty:int,
+     *   is_available:bool,
+     *   points_per_unit:float
+     * }>
+     */
+    public function stockAvailability(Order $order): array
+    {
+        if (! $order->isPlumberChannel() || ! $order->supplier) {
+            return [];
+        }
+
+        $order->loadMissing('items');
+        $stock = $this->inventory->stockForRetailTrader($order->supplier)->keyBy('product_id');
+
+        return $order->items->map(function (OrderItem $item) use ($stock) {
+            $row = $stock->get((int) $item->product_id);
+            $available = (int) ($row['available_qty'] ?? 0);
+            $requested = (int) $item->quantity;
+
+            return [
+                'product_id' => (int) $item->product_id,
+                'name' => $item->name_snapshot ?: ('منتج #'.$item->product_id),
+                'requested_qty' => $requested,
+                'available_qty' => $available,
+                'fulfillable_qty' => min($requested, $available),
+                'is_available' => $available >= $requested && $requested > 0,
+                'points_per_unit' => (float) $item->points_per_unit,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * Supplier edits order lines before fulfillment (placed / confirmed).
+     *
+     * @param  array<int, array{product_id:int, quantity:int}>  $lines
+     */
+    public function updateItems(Order $order, User $actor, array $lines): Order
+    {
+        $this->assertSupplier($order, $actor);
+        $this->assertStatus(
+            $order,
+            [OrderStatus::PLACED, OrderStatus::CONFIRMED],
+            'لا يمكن تعديل الأصناف بعد الشحن أو التسليم',
+        );
+
+        $prepared = $this->prepareLines($lines);
+
+        if (empty($prepared['items'])) {
+            throw new \DomainException('أضف منتجاً واحداً على الأقل');
+        }
+
+        return DB::transaction(function () use ($order, $prepared) {
+            $order->items()->delete();
+
+            foreach ($prepared['items'] as $row) {
+                OrderItem::create(['order_id' => $order->id, ...$row]);
+            }
+
+            $order->update([
+                'total_quantity' => $prepared['total_quantity'],
+                'total_points' => $prepared['total_points'],
+            ]);
+
+            return $order->fresh(['items', 'requester', 'supplier']);
+        });
+    }
+
+    /**
+     * Trim quantities to what the retail trader currently has in stock.
+     * Removes lines with zero available stock.
+     */
+    public function applyAvailableStock(Order $order, User $actor): Order
+    {
+        $this->assertSupplier($order, $actor);
+
+        if (! $order->isPlumberChannel()) {
+            throw new \DomainException('تطبيق المخزون متاح لطلبات السباكين فقط');
+        }
+
+        $this->assertStatus(
+            $order,
+            [OrderStatus::PLACED, OrderStatus::CONFIRMED],
+            'لا يمكن تعديل الأصناف بعد الشحن أو التسليم',
+        );
+
+        $availability = collect($this->stockAvailability($order));
+        $lines = $availability
+            ->filter(fn (array $row) => $row['fulfillable_qty'] > 0)
+            ->map(fn (array $row) => [
+                'product_id' => $row['product_id'],
+                'quantity' => $row['fulfillable_qty'],
+            ])
+            ->values()
+            ->all();
+
+        if ($lines === []) {
+            throw new \DomainException('لا يوجد أي صنف متوفر في مخزونك من هذا الطلب — عدّل الأصناف أو ارفض الطلب');
+        }
+
+        $order = $this->updateItems($order, $actor, $lines);
+
+        $skipped = $availability->filter(fn (array $row) => $row['fulfillable_qty'] < $row['requested_qty'])->count();
+
+        if ($skipped > 0) {
+            $note = trim(($order->supplier_note ? $order->supplier_note."\n" : '')."تم تقليص {$skipped} صنف حسب المتوفر في المخزون.");
+            $order->update(['supplier_note' => $note]);
+        }
+
+        return $order->fresh(['items', 'requester', 'supplier']);
+    }
+
+    /**
+     * Retail trader executes a plumber order: stock check → distribute (invoice) → delivered.
+     * Only products currently in the trader's stock can be fulfilled.
+     */
+    public function fulfillAsInvoice(Order $order, User $actor, ?string $note = null): Order
+    {
+        $this->assertSupplier($order, $actor);
+
+        if (! $order->isPlumberChannel()) {
+            throw new \DomainException('تحويل الطلب لفاتورة متاح لطلبات السباكين فقط');
+        }
+
+        $this->assertStatus(
+            $order,
+            [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING],
+            'لا يمكن تنفيذ هذا الطلب في حالته الحالية',
+        );
+
+        $order->loadMissing(['items', 'requester', 'supplier']);
+
+        if ($order->items->isEmpty()) {
+            throw new \DomainException('الطلب بلا أصناف — عدّل الأصناف أولاً');
+        }
+
+        $availability = $this->stockAvailability($order);
+        $shortages = collect($availability)->filter(fn (array $row) => ! $row['is_available'])->values();
+
+        if ($shortages->isNotEmpty()) {
+            $list = $shortages->map(function (array $row) {
+                return "«{$row['name']}»: مطلوب {$row['requested_qty']} — متوفر {$row['available_qty']}";
+            })->implode(' | ');
+
+            throw new \DomainException(
+                "لا يمكن التنفيذ — أصناف غير متوفرة بالكامل في مخزونك: {$list}. "
+                .'عدّل الكميات أو اضغط «تطبيق المتوفر فقط» ثم نفّذ.'
+            );
+        }
+
+        return DB::transaction(function () use ($order, $actor, $note) {
+            if ($order->status === OrderStatus::PLACED) {
+                $order->update([
+                    'status' => OrderStatus::CONFIRMED,
+                    'confirmed_at' => now(),
+                    'confirmed_by' => $actor->id,
+                ]);
+            }
+
+            if (! $order->shipped_at) {
+                $order->update([
+                    'status' => OrderStatus::SHIPPING,
+                    'shipped_at' => now(),
+                    'shipped_by' => $actor->id,
+                ]);
+            }
+
+            if ($note) {
+                $order->update(['supplier_note' => $note]);
+            }
+
+            $order = $order->fresh(['items', 'requester', 'supplier']);
+
+            $lines = $order->items->map(fn (OrderItem $item) => [
+                'product_id' => (int) $item->product_id,
+                'quantity' => (int) $item->quantity,
+                'points_per_unit' => (float) $item->points_per_unit,
+            ])->all();
+
+            $reference = $this->fulfilRetailToPlumber($order, $lines);
+
+            $order->update([
+                'status' => OrderStatus::DELIVERED,
+                'delivered_at' => now(),
+                'delivered_by' => $actor->id,
+                'delivered_reference' => $reference['reference'] ?? null,
+            ]);
+
+            $points = (int) $order->total_points;
+            $pointsNote = $points > 0 ? " وتم إضافة {$points} نقطة لمحفظتك." : '.';
+
+            $this->notifyRequester(
+                $order,
+                'تم تنفيذ طلبك ✓',
+                "طلب رقم {$order->order_number} تم تحويله لفاتورة وتسليمه{$pointsNote}",
+                'success',
+            );
+
+            return $order->fresh(['items', 'requester', 'supplier']);
+        });
+    }
+
+    protected function assertSupplier(Order $order, User $actor): void
+    {
+        if (in_array($actor->role, ['super_admin', 'admin'], true)) {
+            return;
+        }
+
+        if ((int) $actor->id !== (int) $order->supplier_id) {
+            throw new \DomainException('يمكن للمورّد فقط تنفيذ هذه العملية');
+        }
+    }
+
     protected function assertStatus(Order $order, array $allowed, string $message): void
     {
         if (! in_array($order->status, $allowed, true)) {

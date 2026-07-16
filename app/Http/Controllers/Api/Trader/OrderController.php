@@ -127,6 +127,68 @@ class OrderController extends Controller
         );
     }
 
+    public function stock(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->isParty($order, $request->user())) {
+            return $this->error('غير مصرّح', 403);
+        }
+
+        if (! $order->isPlumberChannel()) {
+            return $this->error('فحص المخزون لطلبات السباكين فقط', 422);
+        }
+
+        return $this->success([
+            'order_id' => $order->id,
+            'lines' => $this->orders->stockAvailability($order),
+        ]);
+    }
+
+    public function updateItems(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->isSupplier($order, $request->user()) || ! $order->isPlumberChannel()) {
+            return $this->error('يمكن للتاجر القطاعي فقط تعديل طلبات السباكين', 403);
+        }
+
+        $v = Validator::make($request->all(), [
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+        ]);
+
+        if ($v->fails()) {
+            return $this->error('بيانات غير صالحة', 422, $v->errors());
+        }
+
+        return $this->transition(
+            fn () => $this->orders->updateItems($order, $request->user(), $request->input('lines')),
+            'تم تحديث أصناف الطلب',
+        );
+    }
+
+    public function applyStock(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->isSupplier($order, $request->user()) || ! $order->isPlumberChannel()) {
+            return $this->error('يمكن للتاجر القطاعي فقط تطبيق المخزون', 403);
+        }
+
+        return $this->transition(
+            fn () => $this->orders->applyAvailableStock($order, $request->user()),
+            'تم تطبيق المتوفر من المخزون',
+        );
+    }
+
+    public function fulfill(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->isSupplier($order, $request->user()) || ! $order->isPlumberChannel()) {
+            return $this->error('يمكن للتاجر القطاعي فقط تنفيذ الطلب كفاتورة', 403);
+        }
+
+        return $this->transition(
+            fn () => $this->orders->fulfillAsInvoice($order, $request->user(), $request->input('note')),
+            'تم تنفيذ الطلب وتحويله لفاتورة وتحديث المخزون',
+        );
+    }
+
     public function receive(Request $request, Order $order): JsonResponse
     {
         if (! $this->isBuyer($order, $request->user())) {

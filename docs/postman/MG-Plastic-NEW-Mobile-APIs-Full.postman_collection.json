@@ -1,0 +1,947 @@
+{
+  "info": {
+    "name": "MG Plastic — NEW Mobile APIs (Full)",
+    "_postman_id": "f0a1b2c3-newapi-4000-9000-mgnewfull",
+    "description": "# كل الـ Endpoints الجديدة — للاستخدام المباشر\n\nBase: `{{base_url}}/api/v1`\n\n## الأقسام\n1. Auth\n2. Plumber → طلب محل تجزئة + منتجات + محفظة convert\n3. Trader → منتجات + طلبيات جملة + تنفيذ طلبات السباكين\n4. Notifications (سباك / تاجر)\n\nAuth: Bearer token حسب الدور.\n\n## ملفات منفصلة (تفصيل أكثر)\n- `MG-Plastic-Plumber-Orders-to-Retail.postman_collection.json`\n- `MG-Plastic-Trader-Orders.postman_collection.json`\n- `MG-Plastic-Notifications.postman_collection.json`\n- `MG-Plastic-Points-Convert-Withdraw.postman_collection.json`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "plumber_phone", "value": "", "type": "string" },
+    { "key": "plumber_password", "value": "", "type": "string" },
+    { "key": "plumber_token", "value": "", "type": "string" },
+    { "key": "trader_phone", "value": "", "type": "string" },
+    { "key": "trader_password", "value": "", "type": "string" },
+    { "key": "trader_token", "value": "", "type": "string" },
+    { "key": "retail_trader_id", "value": "", "type": "string" },
+    { "key": "product_id", "value": "1", "type": "string" },
+    { "key": "order_id", "value": "", "type": "string" },
+    { "key": "plumber_order_id", "value": "", "type": "string" },
+    { "key": "trader_order_id", "value": "", "type": "string" },
+    { "key": "notification_id", "value": "", "type": "string" },
+    { "key": "points_to_convert", "value": "100", "type": "string" },
+    { "key": "per_page", "value": "20", "type": "string" },
+    { "key": "page", "value": "1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Auth",
+      "item": [
+        {
+          "name": "Login Plumber",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const token = json?.data?.token || json?.token;",
+                "if (token) pm.collectionVariables.set('plumber_token', token);",
+                "pm.test('login plumber', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{plumber_phone}}\",\n  \"password\": \"{{plumber_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Login Retail Trader",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const token = json?.data?.token || json?.token;",
+                "if (token) pm.collectionVariables.set('trader_token', token);",
+                "const id = json?.data?.user?.id || json?.data?.store?.id;",
+                "if (id) pm.collectionVariables.set('retail_trader_id', String(id));",
+                "pm.test('login trader', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{trader_phone}}\",\n  \"password\": \"{{trader_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — Plumber: Products (كل منتجات MG)",
+      "item": [
+        {
+          "name": "GET products (paginated)",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const first = json?.data?.items?.[0];",
+                "if (first?.id) pm.collectionVariables.set('product_id', String(first.id));",
+                "console.log('total=', json?.data?.pagination?.total);"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Accept-Language", "value": "ar" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/products?per_page={{per_page}}&page={{page}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "products"],
+              "query": [
+                { "key": "per_page", "value": "{{per_page}}" },
+                { "key": "page", "value": "{{page}}" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "category_id", "value": "", "disabled": true },
+                { "key": "has_points", "value": "", "disabled": true, "description": "1=with points | 0=without | empty=all" }
+              ]
+            },
+            "description": "## GET `/api/v1/mobile/plumber/products`\n\nيرجع **كل** منتجات MG (حتى بدون نقاط).\n\nResponse item: `id, name, description, image_url, points_per_unit, has_points, category_id, category_name` + `pagination`"
+          }
+        },
+        {
+          "name": "Search products",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/products?q=ترهونه&per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "products"],
+              "query": [
+                { "key": "q", "value": "ترهونه" },
+                { "key": "per_page", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Plumber: Orders → Retail store",
+      "description": "السباك يطلب أي منتج من محل التجزئة — بدون فحص مخزون عند الإنشاء.\nchannel = `retail_to_plumber`",
+      "item": [
+        {
+          "name": "POST place order",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "if (json?.data?.id) {",
+                "  pm.collectionVariables.set('plumber_order_id', String(json.data.id));",
+                "  pm.collectionVariables.set('order_id', String(json.data.id));",
+                "}",
+                "pm.test('order placed', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"retail_trader_id\": {{retail_trader_id}},\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 2 }\n  ],\n  \"note\": \"طلب من السباك لمحل التجزئة\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders"]
+            },
+            "description": "## POST `/api/v1/mobile/plumber/orders`\n\n| field | required |\n|-------|----------|\n| retail_trader_id | ✅ user id للتاجر القطاعي |\n| lines[].product_id | ✅ |\n| lines[].quantity | ✅ ≥1 |\n| note | ❌ |\n\nStatus بعد الإنشاء: `placed` (بانتظار التأكيد)\nالمخزون **لا يُفحص** هنا."
+          }
+        },
+        {
+          "name": "GET list my orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders"],
+              "query": [
+                { "key": "status", "value": "", "disabled": true, "description": "placed|confirmed|shipping|delivered|cancelled|rejected" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET show order",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders/{{plumber_order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders", "{{plumber_order_id}}"]
+            }
+          }
+        },
+        {
+          "name": "POST receive (after ship)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders/{{plumber_order_id}}/receive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders", "{{plumber_order_id}}", "receive"]
+            },
+            "description": "بعد ما التاجر يعمل ship — الاستلام يمنح النقاط لمحفظة السباك من مخزون القطاعي."
+          }
+        },
+        {
+          "name": "POST cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"لم أعد أحتاج الطلب\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders/{{plumber_order_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders", "{{plumber_order_id}}", "cancel"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — Plumber: Wallet convert (per-product)",
+      "item": [
+        {
+          "name": "GET conversion-rules + product_lots",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/conversion-rules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "conversion-rules"]
+            },
+            "description": "يشمل `product_lots` و `estimated_full_balance` — تحويل حسب كل منتج."
+          }
+        },
+        {
+          "name": "GET wallet",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const d = json?.data || json;",
+                "if (d.balance_points > 0) pm.collectionVariables.set('points_to_convert', String(d.balance_points));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "POST convert",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"points\": {{points_to_convert}},\n  \"currency\": \"LYD\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/convert",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "convert"]
+            },
+            "description": "Response يتضمن `breakdown[]` لكل منتج + `mode=per_product`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 — Trader: Products catalog",
+      "item": [
+        {
+          "name": "GET products (all MG)",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const first = json?.data?.items?.[0];",
+                "if (first?.id) pm.collectionVariables.set('product_id', String(first.id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/products?per_page={{per_page}}&page={{page}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "products"],
+              "query": [
+                { "key": "per_page", "value": "{{per_page}}" },
+                { "key": "page", "value": "{{page}}" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "category_id", "value": "", "disabled": true }
+              ]
+            },
+            "description": "## GET `/api/v1/mobile/trader/products`\n\nكل منتجات MG (مع/بدون نقاط) لاختيار بنود طلب الجملة."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 — Trader: Orders to wholesaler",
+      "item": [
+        {
+          "name": "POST place order to wholesaler",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "if (json?.data?.id) pm.collectionVariables.set('trader_order_id', String(json.data.id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 4 }\n  ],\n  \"note\": \"طلب توريد من الجملة\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders"]
+            },
+            "description": "`channel = wholesale_to_retail` — المورّد يُحدَّد من ربط الجملة تلقائياً."
+          }
+        },
+        {
+          "name": "GET my orders to wholesaler",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders?scope=to_wholesaler",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders"],
+              "query": [{ "key": "scope", "value": "to_wholesaler" }]
+            }
+          }
+        },
+        {
+          "name": "POST receive wholesaler order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{trader_order_id}}/receive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{trader_order_id}}", "receive"]
+            }
+          }
+        },
+        {
+          "name": "POST cancel my order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"إلغاء\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{trader_order_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{trader_order_id}}", "cancel"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 — Trader: Incoming plumber orders",
+      "description": "تنفيذ طلبات السباكين — تظهر أيضاً في لوحة `/trader/orders` تاب طلبات السباكين",
+      "item": [
+        {
+          "name": "GET incoming from plumbers",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const list = json?.data;",
+                "const first = Array.isArray(list) ? list[0] : (list?.[0] || null);",
+                "const id = first?.id || first?.data?.id;",
+                "if (id) pm.collectionVariables.set('plumber_order_id', String(id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders?scope=from_plumbers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders"],
+              "query": [
+                { "key": "scope", "value": "from_plumbers", "description": "alias: incoming" }
+              ]
+            },
+            "description": "`scope=from_plumbers` أو `incoming`"
+          }
+        },
+        {
+          "name": "POST confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"تم قبول الطلب\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}", "confirm"]
+            }
+          }
+        },
+        {
+          "name": "POST ship",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carrier_name\": \"مندوب المحل\",\n  \"tracking_number\": \"\",\n  \"expected_delivery_at\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}/ship",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}", "ship"]
+            }
+          }
+        },
+        {
+          "name": "POST reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"غير متوفر\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}", "reject"]
+            }
+          }
+        },
+        {
+          "name": "GET show order",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}"]
+            }
+          }
+        },
+        {
+          "name": "GET stock check vs order",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}/stock",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}", "stock"]
+            },
+            "description": "لكل صنف: requested_qty / available_qty / is_available"
+          }
+        },
+        {
+          "name": "PUT edit items",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 1 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}/items",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}", "items"]
+            }
+          }
+        },
+        {
+          "name": "POST apply-stock (trim to available)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}/apply-stock",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}", "apply-stock"]
+            }
+          }
+        },
+        {
+          "name": "POST fulfill (convert to invoice)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"تم التنفيذ من المخزون\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{plumber_order_id}}/fulfill",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{plumber_order_id}}", "fulfill"]
+            },
+            "description": "يفشل لو أي صنف غير متوفر بالكامل. يخصم المخزون + يمنح نقاط السباك + status=delivered"
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 — Notifications (Plumber)",
+      "item": [
+        {
+          "name": "GET list",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const first = json?.data?.items?.[0];",
+                "if (first?.id) pm.collectionVariables.set('notification_id', String(first.id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications?per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications"],
+              "query": [
+                { "key": "per_page", "value": "20" },
+                { "key": "filter", "value": "unread", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "summary"]
+            }
+          }
+        },
+        {
+          "name": "GET unread-count",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/unread-count",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "unread-count"]
+            }
+          }
+        },
+        {
+          "name": "GET show",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}"]
+            }
+          }
+        },
+        {
+          "name": "POST mark read",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}", "read"]
+            }
+          }
+        },
+        {
+          "name": "POST mark unread",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}/unread",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}", "unread"]
+            }
+          }
+        },
+        {
+          "name": "POST read-all",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/read-all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "read-all"]
+            }
+          }
+        },
+        {
+          "name": "POST read-many",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\"{{notification_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/read-many",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "read-many"]
+            }
+          }
+        },
+        {
+          "name": "DELETE one",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}"]
+            }
+          }
+        },
+        {
+          "name": "POST delete-many",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\"{{notification_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/delete-many",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "delete-many"]
+            }
+          }
+        },
+        {
+          "name": "DELETE all read",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "read"]
+            }
+          }
+        },
+        {
+          "name": "DELETE all",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8 — Notifications (Trader)",
+      "item": [
+        {
+          "name": "GET list",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const first = json?.data?.items?.[0];",
+                "if (first?.id) pm.collectionVariables.set('notification_id', String(first.id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications?per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications"],
+              "query": [{ "key": "per_page", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "GET unread-count",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/unread-count",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "unread-count"]
+            }
+          }
+        },
+        {
+          "name": "POST mark read",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/{{notification_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "{{notification_id}}", "read"]
+            }
+          }
+        },
+        {
+          "name": "POST read-all",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/read-all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "read-all"]
+            }
+          }
+        },
+        {
+          "name": "DELETE one",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "{{notification_id}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -145,6 +145,10 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('orders', [TraderOrderController::class, 'index']);
         Route::post('orders', [TraderOrderController::class, 'store']);
         Route::get('orders/{order}', [TraderOrderController::class, 'show']);
+        Route::put('orders/{order}/items', [TraderOrderController::class, 'updateItems']);
+        Route::get('orders/{order}/stock', [TraderOrderController::class, 'stock']);
+        Route::post('orders/{order}/apply-stock', [TraderOrderController::class, 'applyStock']);
+        Route::post('orders/{order}/fulfill', [TraderOrderController::class, 'fulfill']);
         Route::post('orders/{order}/confirm', [TraderOrderController::class, 'confirm']);
         Route::post('orders/{order}/ship', [TraderOrderController::class, 'ship']);
         Route::post('orders/{order}/reject', [TraderOrderController::class, 'reject']);

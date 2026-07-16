@@ -1,5 +1,6 @@
 @php
     use App\Support\OrderStatus;
+    use App\Services\OrderService;
 
     $order = $getRecord();
     $order->loadMissing(['items.product', 'requester', 'supplier']);
@@ -8,6 +9,16 @@
     $currentIdx = array_search($current, $timeline, true);
     if ($currentIdx === false) {
         $currentIdx = OrderStatus::isFinal($current) ? count($timeline) : -1;
+    }
+
+    $stockMap = collect();
+    $showStock = $order->isPlumberChannel()
+        && auth()->check()
+        && (int) auth()->id() === (int) $order->supplier_id
+        && ! OrderStatus::isFinal($order->status);
+
+    if ($showStock) {
+        $stockMap = collect(app(OrderService::class)->stockAvailability($order))->keyBy('product_id');
     }
 @endphp
 
@@ -39,6 +50,9 @@
 .mg-ord-kv{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .mg-ord-k{font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
 .mg-ord-v{font-size:13px;font-weight:700;margin-top:2px}
+.mg-ord-stock-ok{color:#059669;font-weight:700;font-size:11px}
+.mg-ord-stock-bad{color:#dc2626;font-weight:700;font-size:11px}
+.mg-ord-tip{background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#92400e;line-height:1.6}
 </style>
 
 <div class="mg-ord-hero">
@@ -48,6 +62,13 @@
     </div>
     <div class="mg-ord-badge">{{ OrderStatus::label($order->status) }}</div>
 </div>
+
+@if($showStock)
+<div class="mg-ord-tip">
+    السباك يطلب أي منتج حتى لو مش عندك — للتنفيذ لازم الأصناف تكون متوفرة في مخزونك.
+    استخدم «تطبيق المتوفر فقط» أو «تعديل الأصناف»، ثم «تنفيذ وتحويل لفاتورة».
+</div>
+@endif
 
 @if(! OrderStatus::isFinal($current) || $current === OrderStatus::DELIVERED)
 <div class="mg-ord-steps">
@@ -73,6 +94,7 @@
             @php
                 $img = $item->product?->display_image_url;
                 $name = $item->name_snapshot ?: localized_name($item->product, 'name', 'منتج');
+                $stock = $stockMap->get((int) $item->product_id);
             @endphp
             <div class="mg-ord-item">
                 @if($img)
@@ -83,6 +105,15 @@
                 <div style="flex:1;min-width:0">
                     <div class="mg-ord-iname">{{ $name }}</div>
                     <div class="mg-ord-isub">{{ rtrim(rtrim(number_format((float)$item->points_per_unit, 2), '0'), '.') }} نقطة / وحدة · إجمالي {{ number_format($item->line_points) }} نقطة</div>
+                    @if($stock)
+                        <div class="{{ $stock['is_available'] ? 'mg-ord-stock-ok' : 'mg-ord-stock-bad' }}">
+                            @if($stock['is_available'])
+                                ✓ متوفر ({{ $stock['available_qty'] }} في المخزن)
+                            @else
+                                ✕ غير كافٍ — مطلوب {{ $stock['requested_qty'] }} / متوفر {{ $stock['available_qty'] }}
+                            @endif
+                        </div>
+                    @endif
                 </div>
                 <div class="mg-ord-iqty">× {{ $item->quantity }}</div>
             </div>
