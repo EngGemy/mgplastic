@@ -141,9 +141,56 @@ jobs:
           CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
           CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
         run: |
+          set -euo pipefail
           PORT="${CPANEL_PORT:-22}"
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${PORT}" -H "${CPANEL_HOST}" >> ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
+          # Retry keyscan — some hosts briefly refuse GitHub runners
+          for i in 1 2 3 4 5; do
+            if ssh-keyscan -p "${PORT}" -T 15 -H "${CPANEL_HOST}" >> ~/.ssh/known_hosts 2>/dev/null; then
+              echo "known_hosts updated (attempt ${i})"
+              break
+            fi
+            echo "ssh-keyscan failed (attempt ${i}); retrying in 8s..."
+            sleep 8
+            if [ "$i" -eq 5 ]; then
+              echo "Could not fetch host key from ${CPANEL_HOST}:${PORT}"
+              exit 1
+            fi
+          done
+
+      - name: Probe SSH connectivity
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_PORT: ${{ secrets.CPANEL_PORT }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+        run: |
+          set -euo pipefail
+          PORT="${CPANEL_PORT:-22}"
+          SSH_OPTS=(
+            -p "${PORT}"
+            -o BatchMode=yes
+            -o ConnectTimeout=20
+            -o ConnectionAttempts=3
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+            -o StrictHostKeyChecking=yes
+          )
+          for i in 1 2 3 4 5; do
+            if ssh "${SSH_OPTS[@]}" "${CPANEL_USER}@${CPANEL_HOST}" "echo ok && uname -a"; then
+              echo "SSH probe succeeded (attempt ${i})"
+              exit 0
+            fi
+            echo "SSH probe failed (attempt ${i}); waiting 12s..."
+            sleep 12
+          done
+          echo "::error::SSH connection closed by ${CPANEL_HOST}:${PORT}."
+          echo "Common fixes on cPanel:"
+          echo "1) WHM/cPanel → Firewall/CSF: allow GitHub Actions IPs or temporarily disable SSH IP filter"
+          echo "2) Confirm Authorized Keys include the deploy public key for ${CPANEL_USER}"
+          echo "3) Check SSH port (CPANEL_PORT secret) matches the server"
+          echo "4) Re-run this workflow — sometimes the host rate-limits runners"
+          exit 255
 
       - name: Ensure remote directories
         env:
@@ -153,11 +200,27 @@ jobs:
           CPANEL_APP_PATH: ${{ secrets.CPANEL_APP_PATH }}
           CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
         run: |
+          set -euo pipefail
           PORT="${CPANEL_PORT:-22}"
           APP_PATH="${CPANEL_APP_PATH:-$DEFAULT_CPANEL_APP_PATH}"
           PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
-          ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
-            "mkdir -p '${APP_PATH}' '${PUBLIC_PATH}' '${APP_PATH}/storage' '${APP_PATH}/bootstrap/cache'"
+          SSH_OPTS=(
+            -p "${PORT}"
+            -o BatchMode=yes
+            -o ConnectTimeout=20
+            -o ConnectionAttempts=3
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+          )
+          for i in 1 2 3; do
+            if ssh "${SSH_OPTS[@]}" "${CPANEL_USER}@${CPANEL_HOST}" \
+              "mkdir -p '${APP_PATH}' '${PUBLIC_PATH}' '${APP_PATH}/storage' '${APP_PATH}/bootstrap/cache'"; then
+              exit 0
+            fi
+            echo "mkdir failed (attempt ${i}); retrying..."
+            sleep 10
+          done
+          exit 255
 
       - name: Deploy application (with vendor)
         env:
@@ -166,8 +229,16 @@ jobs:
           CPANEL_USER: ${{ secrets.CPANEL_USER }}
           CPANEL_APP_PATH: ${{ secrets.CPANEL_APP_PATH }}
         run: |
+          set -euo pipefail
           PORT="${CPANEL_PORT:-22}"
           APP_PATH="${CPANEL_APP_PATH:-$DEFAULT_CPANEL_APP_PATH}"
+          SSH_OPTS=(
+            -p "${PORT}"
+            -o BatchMode=yes
+            -o ConnectTimeout=20
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=6
+          )
           tar --exclude='.git' \
               --exclude='node_modules' \
               --exclude='.env' \
@@ -177,7 +248,7 @@ jobs:
               --exclude='storage/logs' \
               --exclude='public' \
               --exclude='tests' \
-              -czf - . | ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
+              -czf - . | ssh "${SSH_OPTS[@]}" "${CPANEL_USER}@${CPANEL_HOST}" \
             "tar -xzf - -C '${APP_PATH}'"
 
       - name: Deploy public assets
@@ -187,9 +258,17 @@ jobs:
           CPANEL_USER: ${{ secrets.CPANEL_USER }}
           CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
         run: |
+          set -euo pipefail
           PORT="${CPANEL_PORT:-22}"
           PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
-          tar --exclude='storage/' -czf - -C public . | ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
+          SSH_OPTS=(
+            -p "${PORT}"
+            -o BatchMode=yes
+            -o ConnectTimeout=20
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=6
+          )
+          tar --exclude='storage/' -czf - -C public . | ssh "${SSH_OPTS[@]}" "${CPANEL_USER}@${CPANEL_HOST}" \
             "tar -xzf - -C '${PUBLIC_PATH}'"
 
       - name: Deploy bootstrap index.php
@@ -199,9 +278,10 @@ jobs:
           CPANEL_USER: ${{ secrets.CPANEL_USER }}
           CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
         run: |
+          set -euo pipefail
           PORT="${CPANEL_PORT:-22}"
           PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
-          scp -P "${PORT}" -o BatchMode=yes public/index.php.cpanel \
+          scp -P "${PORT}" -o BatchMode=yes -o ConnectTimeout=20 public/index.php.cpanel \
             "${CPANEL_USER}@${CPANEL_HOST}:${PUBLIC_PATH}/index.php"
 
       - name: Post-deploy (migrate, cache, storage link)
@@ -212,10 +292,18 @@ jobs:
           CPANEL_APP_PATH: ${{ secrets.CPANEL_APP_PATH }}
           CPANEL_PUBLIC_PATH: ${{ secrets.CPANEL_PUBLIC_PATH }}
         run: |
+          set -euo pipefail
           PORT="${CPANEL_PORT:-22}"
           APP_PATH="${CPANEL_APP_PATH:-$DEFAULT_CPANEL_APP_PATH}"
           PUBLIC_PATH="${CPANEL_PUBLIC_PATH:-$DEFAULT_CPANEL_PUBLIC_PATH}"
-          scp -P "${PORT}" -o BatchMode=yes deploy/scripts/post-deploy.sh \
+          SSH_OPTS=(
+            -p "${PORT}"
+            -o BatchMode=yes
+            -o ConnectTimeout=20
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=6
+          )
+          scp -P "${PORT}" -o BatchMode=yes -o ConnectTimeout=20 deploy/scripts/post-deploy.sh \
             "${CPANEL_USER}@${CPANEL_HOST}:/tmp/mgplastic-post-deploy.sh"
-          ssh -p "${PORT}" "${CPANEL_USER}@${CPANEL_HOST}" \
+          ssh "${SSH_OPTS[@]}" "${CPANEL_USER}@${CPANEL_HOST}" \
             "bash /tmp/mgplastic-post-deploy.sh '${APP_PATH}' '${PUBLIC_PATH}' && rm -f /tmp/mgplastic-post-deploy.sh"
