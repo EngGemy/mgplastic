@@ -18,7 +18,11 @@ class PlumberController extends Controller
         $query = User::query()
             ->where('role', 'plumber')
             ->where('is_active', true)
-            ->with(['country', 'city'])
+            ->with([
+                'country',
+                'city',
+                'walletAccounts' => fn ($q) => $q->where('currency', 'LYD'),
+            ])
             ->orderBy('name');
 
         $term = trim((string) $request->query('search', $request->query('q', '')));
@@ -50,7 +54,11 @@ class PlumberController extends Controller
             return $this->error('غير مصرح', 403);
         }
 
-        $plumber->load(['country', 'city']);
+        $plumber->load([
+            'country',
+            'city',
+            'walletAccounts' => fn ($q) => $q->where('currency', 'LYD'),
+        ]);
 
         return $this->success(new UserProfileResource($plumber));
     }

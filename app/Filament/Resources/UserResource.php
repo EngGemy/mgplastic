@@ -372,6 +372,24 @@ class UserResource extends Resource
                     ->formatStateUsing(fn ($state) => UserRoles::label($state))
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('balance_points')
+                    ->label('النقاط')
+                    ->getStateUsing(function ($record) {
+                        if ($record->role !== 'plumber') {
+                            return null;
+                        }
+
+                        return (int) (\App\Models\WalletAccount::query()
+                            ->where('owner_id', $record->id)
+                            ->where('currency', 'LYD')
+                            ->value('balance_points') ?? 0);
+                    })
+                    ->formatStateUsing(fn ($state) => $state === null ? '—' : number_format((int) $state).' نقطة')
+                    ->badge()
+                    ->color(fn ($state) => $state === null ? 'gray' : ((int) $state > 0 ? 'warning' : 'gray'))
+                    ->icon('heroicon-m-star')
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('parentDistributor.name')
                     ->label('تابع لـ')
                     ->placeholder('—')

@@ -112,9 +112,16 @@ class InvoiceController extends Controller
             ->paginate(20)
             ->through(fn (InvoiceDistribution $distribution) => (new ReceivedDistributionResource($distribution))->resolve());
 
+        $balancePoints = (int) (WalletAccount::query()
+            ->where('owner_id', $user->id)
+            ->where('currency', 'LYD')
+            ->value('balance_points') ?? 0);
+
         return response()->json([
             'status' => 200,
             'data' => $distributions,
+            'balance_points' => $balancePoints,
+            'plumber_balance_points' => $balancePoints,
         ]);
     }
 
@@ -132,11 +139,18 @@ class InvoiceController extends Controller
             'invoice:id,number,status,attachment_path,approved_at',
         ]);
 
+        $balancePoints = (int) (WalletAccount::query()
+            ->where('owner_id', $user->id)
+            ->where('currency', 'LYD')
+            ->value('balance_points') ?? 0);
+
         return response()->json([
             'status' => 200,
             'data' => [
                 'distribution' => new ReceivedDistributionResource($distribution),
                 'points_earned' => $distribution->items->sum('points_value'),
+                'balance_points' => $balancePoints,
+                'plumber_balance_points' => $balancePoints,
                 'status_label' => match ($distribution->status) {
                     'confirmed' => 'مؤكد — جارٍ معالجة النقاط',
                     'points_awarded' => 'تم إضافة النقاط للمحفظة',

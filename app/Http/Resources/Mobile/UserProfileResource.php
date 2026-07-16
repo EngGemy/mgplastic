@@ -43,7 +43,23 @@ class UserProfileResource extends JsonResource
             'is_approved' => (bool) $this->is_approved,
             'is_active' => (bool) $this->is_active,
             'store_description' => $this->store_description,
+            'balance_points' => $this->resolveBalancePoints(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
+    }
+
+    protected function resolveBalancePoints(): int
+    {
+        if ($this->relationLoaded('walletAccounts')) {
+            $wallet = $this->walletAccounts->firstWhere('currency', 'LYD')
+                ?? $this->walletAccounts->first();
+
+            return (int) ($wallet?->balance_points ?? 0);
+        }
+
+        return (int) (\App\Models\WalletAccount::query()
+            ->where('owner_id', $this->id)
+            ->where('currency', 'LYD')
+            ->value('balance_points') ?? 0);
     }
 }

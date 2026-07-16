@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\WalletAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
@@ -39,7 +40,7 @@ class LoginController extends Controller
                 'status'  => true,
                 'message' => 'Phone not verified. OTP sent.',
                 'token'   => null,
-                'user'    => $user->makeHidden(['otp_code','otp_expires_at']),
+                'user'    => $this->userPayload($user),
                 'otp'            => $otpMeta['otp'], // DEV ONLY
                 'otp_expires_at' => $otpMeta['expires_at']->toIso8601String(),
             ], 200);
@@ -70,8 +71,22 @@ class LoginController extends Controller
             'status'  => true,
             'message' => $message,
             'token'   => $token,
-            'user'    => $user->makeHidden(['otp_code','otp_expires_at']),
+            'user'    => $this->userPayload($user),
         ], 200);
+    }
+
+    protected function userPayload(User $user): array
+    {
+        $payload = $user->makeHidden(['otp_code', 'otp_expires_at'])->toArray();
+
+        if ($user->role === User::ROLE_PLUMBER || $user->role === 'plumber') {
+            $payload['balance_points'] = (int) (WalletAccount::query()
+                ->where('owner_id', $user->id)
+                ->where('currency', 'LYD')
+                ->value('balance_points') ?? 0);
+        }
+
+        return $payload;
     }
 
     protected function isPhoneVerified(User $user): bool

@@ -50,9 +50,16 @@ class PosController extends Controller
                 $request->user(),
             );
 
+            $plumber->refresh();
+            $balancePoints = (int) ($plumber->wallet('LYD')->balance_points ?? 0);
+
             return $this->created([
                 'distributions' => $distributions,
                 'total_points' => collect($distributions)->sum(fn ($d) => $d->total_points),
+                'plumber_id' => $plumber->id,
+                'plumber_name' => $plumber->name,
+                'plumber_balance_points' => $balancePoints,
+                'balance_points' => $balancePoints,
             ], 'تم توزيع النقاط للسبّاك');
         } catch (\DomainException $e) {
             return $this->error($e->getMessage(), 422);

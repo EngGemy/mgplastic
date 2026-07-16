@@ -45,6 +45,11 @@
     $worksVideos = $works->filter(fn ($p) => $p->is_video)->count();
     $worksImages = $worksTotal - $worksVideos;
 
+    $balancePoints = (int) (\App\Models\WalletAccount::query()
+        ->where('owner_id', $record->id)
+        ->where('currency', 'LYD')
+        ->value('balance_points') ?? 0);
+
     $retailCount = $isWholesale ? $record->retailTraders()->count() : 0;
     $plumberCount = $isWholesale
         ? User::where('role', User::ROLE_PLUMBER)
@@ -95,6 +100,8 @@
         .mgp-stat .ic{font-size:26px;margin-bottom:6px}
         .mgp-stat .num{font-size:26px;font-weight:900;color:var(--c1);line-height:1}
         .mgp-stat .lbl{font-size:12.5px;color:#64748b;font-weight:700;margin-top:5px}
+        .mgp-stat--points{background:linear-gradient(160deg,#fffbeb,#fef3c7);border-color:#fde68a}
+        .mgp-stat--points .num{color:#b45309}
 
         .mgp-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-top:18px;align-items:start}
         @media(max-width:900px){.mgp-grid{grid-template-columns:1fr}}
@@ -166,6 +173,11 @@
     {{-- STATS --}}
     <div class="mgp-stats">
         @if($isPlumber)
+            <div class="mgp-stat mgp-stat--points">
+                <div class="ic">⭐</div>
+                <div class="num">{{ number_format($balancePoints) }}</div>
+                <div class="lbl">رصيد النقاط</div>
+            </div>
             <div class="mgp-stat"><div class="ic">🖼️</div><div class="num">{{ number_format($worksTotal) }}</div><div class="lbl">إجمالي الأعمال</div></div>
             <div class="mgp-stat"><div class="ic">📷</div><div class="num">{{ number_format($worksImages) }}</div><div class="lbl">صورة</div></div>
             <div class="mgp-stat"><div class="ic">🎬</div><div class="num">{{ number_format($worksVideos) }}</div><div class="lbl">فيديو</div></div>

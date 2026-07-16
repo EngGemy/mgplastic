@@ -67,7 +67,8 @@
                   "const json = pm.response.json();",
                   "const first = json?.data?.data?.[0] || json?.data?.[0];",
                   "if (first?.id) { pm.collectionVariables.set('distribution_id', String(first.id)); }",
-                  "pm.test('received list ok', () => pm.expect(pm.response.code).to.eql(200));"
+                  "pm.test('received list ok', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('has balance_points', () => pm.expect(json).to.have.property('balance_points'));"
                 ]
               }
             }
