@@ -88,6 +88,17 @@ class Invoice extends Model
         return $this->hasMany(InvoiceDistribution::class);
     }
 
+    public function returns(): HasMany
+    {
+        return $this->hasMany(InvoiceReturn::class)->latest('id');
+    }
+
+    /** @return array{sold_qty:int, returned_qty:int, net_qty:int, sold_points:int, returned_points:int, net_points:int, returns_count:int} */
+    public function returnSummary(): array
+    {
+        return app(\App\Services\InvoiceReturnService::class)->invoiceReturnSummary($this);
+    }
+
     public function isFullyDistributed(): bool
     {
         $this->loadMissing('items');

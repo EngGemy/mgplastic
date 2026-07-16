@@ -281,45 +281,124 @@
             </div>
         @endif
 
-        <div class="section-title">بنود الفاتورة</div>
+        @php
+            $summary = $returnSummary ?? null;
+            $hasReturns = $summary && ($summary['returns_count'] ?? 0) > 0;
+            $dist = $invoice->sourceDistribution;
+            $showNetLines = $invoice->isOutgoing() && $dist && $dist->items->isNotEmpty();
+        @endphp
+
+        @if($hasReturns)
+            <div class="dist-note" style="background:#fef2f2;color:#991b1b;border-bottom:1px solid #fecaca">
+                مرتجعات مسجّلة على هذه الفاتورة — الصافي = المباع − المرتجع
+                (مرتجع {{ number_format($summary['returned_qty']) }} وحدة / {{ number_format($summary['returned_points']) }} نقطة)
+            </div>
+        @endif
+
+        <div class="section-title">بنود الفاتورة{{ $hasReturns ? ' (صافي بعد المرتجع)' : '' }}</div>
 
         <table>
             <thead>
                 <tr>
                     <th class="col-product">المنتج</th>
-                    <th>الكمية</th>
-                    <th>نقاط/وحدة</th>
-                    <th>إجمالي النقاط</th>
+                    @if($showNetLines)
+                        <th>مباع</th>
+                        <th>مرتجع</th>
+                        <th>صافي</th>
+                        <th>نقاط صافية</th>
+                    @else
+                        <th>الكمية</th>
+                        <th>نقاط/وحدة</th>
+                        <th>إجمالي النقاط</th>
+                    @endif
                 </tr>
             </thead>
             <tbody>
-                @forelse($invoice->items as $item)
-                    <tr>
-                        <td class="col-product">{{ localized_name($item->product, 'name') }}</td>
-                        <td><strong>{{ number_format($item->quantity) }}</strong></td>
-                        <td>{{ number_format($item->points_per_unit, 2) }}</td>
-                        <td class="col-points">{{ number_format($item->total_points) }}</td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="4">لا توجد بنود</td>
-                    </tr>
-                @endforelse
+                @if($showNetLines)
+                    @foreach($dist->items as $dItem)
+                        @php
+                            $sold = (int) $dItem->quantity;
+                            $ret = (int) ($dItem->returned_quantity ?? 0);
+                            $net = max(0, $sold - $ret);
+                            $ppu = (float) ($dItem->invoiceItem?->points_per_unit ?? 0);
+                            $netPts = (int) floor($net * $ppu);
+                        @endphp
+                        <tr>
+                            <td class="col-product">{{ localized_name($dItem->invoiceItem?->product, 'name', 'منتج') }}</td>
+                            <td>{{ number_format($sold) }}</td>
+                            <td style="color:#dc2626;font-weight:700">{{ $ret > 0 ? '−'.number_format($ret) : '0' }}</td>
+                            <td><strong>{{ number_format($net) }}</strong></td>
+                            <td class="col-points">{{ number_format($netPts) }}</td>
+                        </tr>
+                    @endforeach
+                @else
+                    @forelse($invoice->items as $item)
+                        <tr>
+                            <td class="col-product">{{ localized_name($item->product, 'name') }}</td>
+                            <td><strong>{{ number_format($item->quantity) }}</strong></td>
+                            <td>{{ number_format($item->points_per_unit, 2) }}</td>
+                            <td class="col-points">{{ number_format($item->total_points) }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="4">لا توجد بنود</td>
+                        </tr>
+                    @endforelse
+                @endif
             </tbody>
         </table>
 
         <div class="totals">
-            <div></div>
+            <div>
+                @if($hasReturns && $invoice->returns->where('status', 'confirmed')->isNotEmpty())
+                    <div style="font-size:0.8rem;color:#64748b;padding:0.5rem 0">
+                        <strong style="color:#b91c1c">سجل المرتجعات:</strong>
+                        <ul style="margin:0.4rem 0 0;padding-right:1.1rem">
+                            @foreach($invoice->returns->where('status', 'confirmed') as $ret)
+                                <li style="margin-bottom:0.25rem">
+                                    {{ $ret->return_number }} —
+                                    −{{ number_format($ret->total_quantity) }} وحدة /
+                                    −{{ number_format($ret->total_points) }} نقطة
+                                    @if($ret->confirmed_at)
+                                        ({{ $ret->confirmed_at->timezone('Africa/Tripoli')->format('Y/m/d') }})
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
+            </div>
             <div>
                 <div class="totals-box points">
-                    <div class="total-row">
-                        <span>إجمالي الكميات</span>
-                        <strong>{{ number_format($invoice->items->sum('quantity')) }} وحدة</strong>
-                    </div>
-                    <div class="total-row grand grand-points">
-                        <span>إجمالي النقاط</span>
-                        <strong>{{ number_format($invoice->items->sum('total_points')) }} نقطة</strong>
-                    </div>
+                    @if($summary)
+                        <div class="total-row">
+                            <span>كمية الفاتورة</span>
+                            <strong>{{ number_format($summary['sold_qty']) }} وحدة</strong>
+                        </div>
+                        @if($hasReturns)
+                            <div class="total-row" style="color:#dc2626">
+                                <span>مرتجع</span>
+                                <strong>−{{ number_format($summary['returned_qty']) }} وحدة</strong>
+                            </div>
+                        @endif
+                        <div class="total-row">
+                            <span>صافي الوحدات</span>
+                            <strong>{{ number_format($summary['net_qty']) }} وحدة</strong>
+                        </div>
+                        <div class="total-row grand grand-points">
+                            <span>صافي النقاط</span>
+                            <strong>{{ number_format($summary['net_points']) }} نقطة</strong>
+                        </div>
+                    @else
+                        <div class="total-row">
+                            <span>إجمالي الكميات</span>
+                            <strong>{{ number_format($invoice->items->sum('quantity')) }} وحدة</strong>
+                        </div>
+                        <div class="total-row grand grand-points">
+                            <span>إجمالي النقاط</span>
+                            <strong>{{ number_format($invoice->items->sum('total_points')) }} نقطة</strong>
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>

@@ -332,6 +332,17 @@ class InvoiceResource extends Resource
                 ])
                 ->visible(fn ($record) => $record->items->isNotEmpty()),
 
+            Infolists\Components\Section::make('المرتجعات والصافي')
+                ->description('الكميات والنقاط بعد خصم المرتجعات من الفاتورة')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->schema([
+                    Infolists\Components\ViewEntry::make('returns_panel')
+                        ->view('filament.infolists.invoice-returns-panel')
+                        ->columnSpanFull(),
+                ])
+                ->visible(fn ($record) => $record->isWholesalePos() && $record->isOutgoing())
+                ->collapsible(),
+
             Infolists\Components\Section::make('نظام توزيع النقاط')
                 ->schema([
                     Infolists\Components\ViewEntry::make('distribution_panel')

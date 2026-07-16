@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
+use App\Filament\Concerns\HandlesInvoiceReturns;
 use App\Filament\Resources\InvoiceDistributionResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Models\InvoiceDistribution;
@@ -14,6 +15,8 @@ use Filament\Resources\Pages\ViewRecord;
 
 class ViewInvoice extends ViewRecord
 {
+    use HandlesInvoiceReturns;
+
     protected static string $resource = InvoiceResource::class;
 
     public function mount(int|string $record): void
@@ -26,6 +29,9 @@ class ViewInvoice extends ViewRecord
             'distributions.toUser',
             'distributions.items',
             'sourceDistribution.items.invoiceItem.product.translations',
+            'returns.items.product.translations',
+            'returns.fromUser',
+            'returns.toUser',
             'wholesaleDistributor',
             'issuer',
         ]);
@@ -108,41 +114,7 @@ class ViewInvoice extends ViewRecord
                     }
                 }),
 
-            Actions\Action::make('return_invoice')
-                ->label('مرتجع على الفاتورة')
-                ->icon('heroicon-o-arrow-uturn-left')
-                ->color('danger')
-                ->visible(fn () => $this->canReturnThisInvoice())
-                ->form(fn () => $this->returnFormSchema())
-                ->modalHeading('مرتجع بضاعة ونقاط')
-                ->modalDescription('سيتم إرجاع الكميات للمورّد وخصم النقاط من المستلم وإعادتها للأعلى في السلسلة.')
-                ->modalSubmitActionLabel('تأكيد المرتجع')
-                ->action(function (array $data) {
-                    try {
-                        $lines = collect($data['items'] ?? [])
-                            ->filter(fn ($row) => (int) ($row['quantity'] ?? 0) > 0)
-                            ->map(fn ($row) => [
-                                'invoice_item_id' => (int) $row['invoice_item_id'],
-                                'quantity' => (int) $row['quantity'],
-                            ])
-                            ->values()
-                            ->all();
-
-                        $ret = app(\App\Services\InvoiceReturnService::class)
-                            ->returnOutgoingInvoice($this->record, $lines, auth()->user(), $data['note'] ?? null);
-
-                        Notification::make()
-                            ->success()
-                            ->title('تم تسجيل المرتجع ✓')
-                            ->body("رقم {$ret->return_number} — {$ret->total_quantity} وحدة / {$ret->total_points} نقطة أُعيدت للأعلى")
-                            ->persistent()
-                            ->send();
-
-                        $this->record->refresh();
-                    } catch (\DomainException $e) {
-                        Notification::make()->danger()->title('تعذّر المرتجع')->body($e->getMessage())->send();
-                    }
-                }),
+            $this->invoiceReturnAction(),
 
             Actions\Action::make('print_invoice')
                 ->label('طباعة الفاتورة')
@@ -287,89 +259,6 @@ class ViewInvoice extends ViewRecord
                 ->columns(2)
                 ->defaultItems(1)
                 ->addActionLabel('إضافة منتج'),
-        ];
-    }
-
-    protected function canReturnThisInvoice(): bool
-    {
-        $invoice = $this->record;
-        $user = auth()->user();
-
-        if (! $user || ! $invoice->isWholesalePos() || $invoice->invoice_flow !== 'outgoing') {
-            return false;
-        }
-
-        $distribution = $invoice->sourceDistribution;
-        if (! $distribution || ! in_array($distribution->status, ['confirmed', 'points_awarded'], true)) {
-            return false;
-        }
-
-        if (in_array($user->role, ['super_admin', 'admin'], true)) {
-            return true;
-        }
-
-        return in_array((int) $user->id, [
-            (int) $distribution->from_user_id,
-            (int) $distribution->to_user_id,
-        ], true);
-    }
-
-    protected function returnFormSchema(): array
-    {
-        $distribution = $this->record->sourceDistribution;
-        $lines = $distribution
-            ? app(\App\Services\InvoiceReturnService::class)->returnableLines($distribution)
-            : [];
-
-        $options = collect($lines)->mapWithKeys(fn ($line) => [
-            $line['invoice_item_id'] => "{$line['product_name']} — متاح للإرجاع: {$line['returnable']}",
-        ])->all();
-
-        $maxByItem = collect($lines)->mapWithKeys(fn ($line) => [
-            $line['invoice_item_id'] => $line['returnable'],
-        ])->all();
-
-        return [
-            Forms\Components\Repeater::make('items')
-                ->label('بنود المرتجع')
-                ->schema([
-                    Forms\Components\Select::make('invoice_item_id')
-                        ->label('المنتج')
-                        ->options($options)
-                        ->required()
-                        ->live()
-                        ->distinct()
-                        ->disableOptionsWhenSelectedInSiblingRepeaterItems(),
-
-                    Forms\Components\TextInput::make('quantity')
-                        ->label('الكمية')
-                        ->numeric()
-                        ->minValue(1)
-                        ->required()
-                        ->helperText(function (Forms\Get $get) use ($maxByItem) {
-                            $id = (int) $get('invoice_item_id');
-                            $max = $maxByItem[$id] ?? null;
-
-                            return $max ? "الحد الأقصى: {$max}" : null;
-                        })
-                        ->rule(function (Forms\Get $get) use ($maxByItem) {
-                            return function (string $attribute, $value, $fail) use ($get, $maxByItem) {
-                                $id = (int) $get('invoice_item_id');
-                                $max = $maxByItem[$id] ?? 0;
-                                if ((int) $value > $max) {
-                                    $fail("الكمية تتجاوز المتاح للإرجاع ({$max})");
-                                }
-                            };
-                        }),
-                ])
-                ->columns(2)
-                ->defaultItems(1)
-                ->minItems(1)
-                ->addActionLabel('إضافة بند'),
-
-            Forms\Components\Textarea::make('note')
-                ->label('ملاحظة (اختياري)')
-                ->rows(2),
         ];
     }
 }

@@ -16,8 +16,9 @@ class InvoiceReturnService
      * Return goods on a confirmed distribution (tier 2 or 3).
      *
      * Points move back up the chain:
-     * - Debit the buyer (from_user of return = original to_user)
-     * - Credit the seller (to_user of return = original from_user)
+     * - Debit the buyer (original to_user)
+     * - Credit the seller (original from_user)
+     * - Update outgoing invoice net points
      *
      * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
      */
@@ -26,6 +27,7 @@ class InvoiceReturnService
         array $lines,
         User $actor,
         ?string $note = null,
+        ?Invoice $documentInvoice = null,
     ): InvoiceReturn {
         $distribution->loadMissing(['items.invoiceItem.product', 'invoice', 'fromUser', 'toUser']);
 
@@ -45,7 +47,9 @@ class InvoiceReturnService
             throw new \DomainException('أضف كمية مرتجعة واحدة على الأقل');
         }
 
-        return DB::transaction(function () use ($distribution, $prepared, $actor, $note) {
+        $documentInvoice ??= $this->resolveDocumentInvoice($distribution);
+
+        return DB::transaction(function () use ($distribution, $prepared, $actor, $note, $documentInvoice) {
             $totalQty = 0;
             $totalPoints = 0;
 
@@ -55,21 +59,7 @@ class InvoiceReturnService
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                $returnable = (int) $distItem->quantity - (int) ($distItem->returned_quantity ?? 0);
-
-                // For tier 2: also subtract qty already pushed to plumbers (tier 3)
-                if ((int) $distribution->tier === 2) {
-                    $pushedDown = (int) InvoiceDistributionItem::query()
-                        ->where('invoice_item_id', $distItem->invoice_item_id)
-                        ->whereHas('distribution', fn ($q) => $q
-                            ->where('tier', 3)
-                            ->where('parent_distribution_id', $distribution->id)
-                            ->whereIn('status', ['confirmed', 'points_awarded'])
-                        )
-                        ->sum(DB::raw('quantity - COALESCE(returned_quantity, 0)'));
-
-                    $returnable = max(0, $returnable - $pushedDown);
-                }
+                $returnable = $this->returnableQtyForItem($distribution, $distItem);
 
                 if ($row['quantity'] > $returnable) {
                     $name = localized_name($distItem->invoiceItem?->product, 'name', 'منتج');
@@ -86,7 +76,7 @@ class InvoiceReturnService
             }
 
             $return = InvoiceReturn::create([
-                'invoice_id' => $distribution->invoice_id,
+                'invoice_id' => $documentInvoice->id,
                 'distribution_id' => $distribution->id,
                 'from_user_id' => $distribution->to_user_id,
                 'to_user_id' => $distribution->from_user_id,
@@ -122,13 +112,13 @@ class InvoiceReturnService
                 actor: $actor,
             );
 
-            return $return->load('items');
+            $this->syncOutgoingInvoiceTotals($documentInvoice->fresh(['sourceDistribution.items', 'returns']));
+
+            return $return->load(['items.product.translations', 'fromUser', 'toUser']);
         });
     }
 
     /**
-     * Convenience: return against an outgoing invoice's source distribution.
-     *
      * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
      */
     public function returnOutgoingInvoice(Invoice $invoice, array $lines, User $actor, ?string $note = null): InvoiceReturn
@@ -144,7 +134,120 @@ class InvoiceReturnService
             throw new \DomainException('تعذّر العثور على توزيع الفاتورة المرتبط');
         }
 
-        return $this->returnDistribution($distribution, $lines, $actor, $note);
+        return $this->returnDistribution($distribution, $lines, $actor, $note, $invoice);
+    }
+
+    /**
+     * @return array<int, array{invoice_item_id:int, product_name:string, returnable:int, points_per_unit:float, sold:int, returned:int}>
+     */
+    public function returnableLines(InvoiceDistribution $distribution): array
+    {
+        $distribution->loadMissing(['items.invoiceItem.product.translations']);
+
+        $lines = [];
+
+        foreach ($distribution->items as $distItem) {
+            $returnable = $this->returnableQtyForItem($distribution, $distItem);
+
+            if ($returnable <= 0) {
+                continue;
+            }
+
+            $lines[] = [
+                'invoice_item_id' => (int) $distItem->invoice_item_id,
+                'product_name' => localized_name($distItem->invoiceItem?->product, 'name', 'منتج'),
+                'sold' => (int) $distItem->quantity,
+                'returned' => (int) ($distItem->returned_quantity ?? 0),
+                'returnable' => $returnable,
+                'points_per_unit' => (float) ($distItem->invoiceItem?->points_per_unit ?? 0),
+            ];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Summary for invoice UI (outgoing preferred).
+     *
+     * @return array{
+     *   sold_qty:int, returned_qty:int, net_qty:int,
+     *   sold_points:int, returned_points:int, net_points:int,
+     *   returns_count:int
+     * }
+     */
+    public function invoiceReturnSummary(Invoice $invoice): array
+    {
+        $invoice->loadMissing(['returns', 'sourceDistribution.items']);
+
+        $returnedQty = (int) $invoice->returns->where('status', 'confirmed')->sum('total_quantity');
+        $returnedPoints = (int) $invoice->returns->where('status', 'confirmed')->sum('total_points');
+        $returnsCount = $invoice->returns->where('status', 'confirmed')->count();
+
+        if ($invoice->isOutgoing() && $invoice->sourceDistribution) {
+            $soldQty = (int) $invoice->sourceDistribution->items->sum('quantity');
+            $soldPoints = (int) $invoice->sourceDistribution->items->sum('points_value');
+        } else {
+            $soldQty = (int) $invoice->items->sum('quantity');
+            $soldPoints = (int) ($invoice->points_awarded ?: $invoice->items->sum('total_points'));
+        }
+
+        return [
+            'sold_qty' => $soldQty,
+            'returned_qty' => $returnedQty,
+            'net_qty' => max(0, $soldQty - $returnedQty),
+            'sold_points' => $soldPoints,
+            'returned_points' => $returnedPoints,
+            'net_points' => max(0, $soldPoints - $returnedPoints),
+            'returns_count' => $returnsCount,
+        ];
+    }
+
+    protected function resolveDocumentInvoice(InvoiceDistribution $distribution): Invoice
+    {
+        if ((int) $distribution->tier === 2) {
+            $outgoing = Invoice::query()
+                ->where('source_distribution_id', $distribution->id)
+                ->first();
+
+            if ($outgoing) {
+                return $outgoing;
+            }
+        }
+
+        return $distribution->invoice ?? Invoice::query()->findOrFail($distribution->invoice_id);
+    }
+
+    protected function syncOutgoingInvoiceTotals(Invoice $invoice): void
+    {
+        if (! $invoice->isOutgoing()) {
+            return;
+        }
+
+        $summary = $this->invoiceReturnSummary($invoice);
+
+        $invoice->forceFill([
+            'points_awarded' => $summary['net_points'],
+        ])->save();
+    }
+
+    protected function returnableQtyForItem(InvoiceDistribution $distribution, InvoiceDistributionItem $distItem): int
+    {
+        $returnable = (int) $distItem->quantity - (int) ($distItem->returned_quantity ?? 0);
+
+        if ((int) $distribution->tier === 2) {
+            $pushedDown = (int) InvoiceDistributionItem::query()
+                ->where('invoice_item_id', $distItem->invoice_item_id)
+                ->whereHas('distribution', fn ($q) => $q
+                    ->where('tier', 3)
+                    ->where('parent_distribution_id', $distribution->id)
+                    ->whereIn('status', ['confirmed', 'points_awarded'])
+                )
+                ->sum(DB::raw('quantity - COALESCE(returned_quantity, 0)'));
+
+            $returnable = max(0, $returnable - $pushedDown);
+        }
+
+        return max(0, $returnable);
     }
 
     /**
@@ -189,7 +292,6 @@ class InvoiceReturnService
             return;
         }
 
-        // Seller (wholesaler / retail) or buyer can initiate a return
         $allowed = [
             (int) $distribution->from_user_id,
             (int) $distribution->to_user_id,
@@ -208,8 +310,6 @@ class InvoiceReturnService
 
         $fromWallet = $from->wallet();
         $balance = (int) $fromWallet->balance_points;
-
-        // Debit what we can; still record the return for stock even if wallet is short
         $debit = min($points, max(0, $balance));
 
         if ($debit > 0) {
@@ -231,47 +331,5 @@ class InvoiceReturnService
             'debited_from_balance' => $debit,
             'requested_points' => $points,
         ], $actor, "استلام مرتجع {$return->return_number}");
-    }
-
-    /**
-     * Returnable lines for a distribution (for Filament forms).
-     *
-     * @return array<int, array{invoice_item_id:int, product_name:string, returnable:int, points_per_unit:float}>
-     */
-    public function returnableLines(InvoiceDistribution $distribution): array
-    {
-        $distribution->loadMissing(['items.invoiceItem.product.translations']);
-
-        $lines = [];
-
-        foreach ($distribution->items as $distItem) {
-            $returnable = (int) $distItem->quantity - (int) ($distItem->returned_quantity ?? 0);
-
-            if ((int) $distribution->tier === 2) {
-                $pushedDown = (int) InvoiceDistributionItem::query()
-                    ->where('invoice_item_id', $distItem->invoice_item_id)
-                    ->whereHas('distribution', fn ($q) => $q
-                        ->where('tier', 3)
-                        ->where('parent_distribution_id', $distribution->id)
-                        ->whereIn('status', ['confirmed', 'points_awarded'])
-                    )
-                    ->sum(DB::raw('quantity - COALESCE(returned_quantity, 0)'));
-
-                $returnable = max(0, $returnable - $pushedDown);
-            }
-
-            if ($returnable <= 0) {
-                continue;
-            }
-
-            $lines[] = [
-                'invoice_item_id' => (int) $distItem->invoice_item_id,
-                'product_name' => localized_name($distItem->invoiceItem?->product, 'name', 'منتج'),
-                'returnable' => $returnable,
-                'points_per_unit' => (float) ($distItem->invoiceItem?->points_per_unit ?? 0),
-            ];
-        }
-
-        return $lines;
     }
 }
