@@ -107,11 +107,14 @@ class NetworkStoreController extends Controller
     }
 
     /**
-     * GET /api/v1/network-stores/{user}
+     * GET /api/v1/network-stores/{store}
+     * {store} = user id (e.g. 92) or network_code (e.g. MG-W-000092)
      */
-    public function publicShow(User $user): JsonResponse
+    public function publicShow(string $store): JsonResponse
     {
-        if (! $user->isNetworkStore()) {
+        $user = $this->resolvePublicNetworkStore($store);
+
+        if (! $user) {
             return response()->json(['status' => false, 'message' => 'المتجر غير موجود'], 404);
         }
 
@@ -125,6 +128,28 @@ class NetworkStoreController extends Controller
             'status' => true,
             'data' => new NetworkStoreResource($user),
         ]);
+    }
+
+    protected function resolvePublicNetworkStore(string $store): ?User
+    {
+        $key = trim($store);
+
+        if ($key === '') {
+            return null;
+        }
+
+        $query = User::query()->where(function ($q) {
+            $q->where('role', 'wholesale_distributor')
+                ->orWhere('role', 'retail_trader');
+        });
+
+        if (ctype_digit($key)) {
+            return (clone $query)->whereKey((int) $key)->first();
+        }
+
+        $code = app(\App\Services\NetworkCodeService::class)->normalize($key);
+
+        return (clone $query)->where('network_code', $code)->first();
     }
 
     protected function storeJsonResponse(User $user, ?string $actionMessage = null): JsonResponse

@@ -1,0 +1,511 @@
+{
+  "info": {
+    "name": "MG Plastic — Social Links (Plumber + Store)",
+    "_postman_id": "a1b2c3d4-social-4000-9000-mgsociallinks",
+    "description": "# روابط التواصل الاجتماعي\n\n## Setup\n1. ضع `base_url` = `https://mg-plastic.com` أو `http://mgplastic.test`\n2. سجّل دخول سبّاك → يتخزن `plumber_token`\n3. سجّل دخول متجر (موزّع/تاجر) → يتخزن `store_token`\n\n## Platforms المقبولة\n`facebook` · `instagram` · `whatsapp` · `twitter` · `youtube` · `tiktok` · `website` · `snapchat`\n\nAliases: `fb` `ig` `wa` `x` `yt` `tt` `snap` + أسماء عربية\n\n## صيغ الـ Body المقبولة (POST upsert)\n1. **مصفوفة links** (الموصى بها)\n2. **خريطة platform → url**\n3. **رابط واحد** `{ platform, url }`\n4. **JSON string** داخل `links` (multipart)\n5. **متداخل** `{ data: { links: [...] } }`\n6. **aliases للحقول**: `link` / `href` / `value` بدل `url` · `type` بدل `platform`\n7. واتساب: رقم فقط `0912345678` → يتحول `https://wa.me/...`\n8. يوزرنيم: `@plumber` → رابط المنصة\n\nالروابط الفارغة تُتجاهل (التطبيق يقدر يبعت كل المنصات).\n\n## حذف — Best practice\n| الطريقة | متى |\n|---|---|\n| **DELETE .../social-links/facebook** | الأفضل للموبايل — ثابت، idempotent، بدون تخزين id |\n| **DELETE .../social-links/{{link_id}}** | بعد List/Upsert لو معاك الـ id الرقمي |\n\nكلا الطريقتين مدعومان.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "plumber_phone", "value": "", "type": "string" },
+    { "key": "plumber_password", "value": "", "type": "string" },
+    { "key": "plumber_token", "value": "", "type": "string" },
+    { "key": "store_phone", "value": "", "type": "string" },
+    { "key": "store_password", "value": "", "type": "string" },
+    { "key": "store_token", "value": "", "type": "string" },
+    { "key": "link_id", "value": "", "type": "string" },
+    { "key": "store_link_id", "value": "", "type": "string" },
+    { "key": "plumber_store_id", "value": "3", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Auth",
+      "item": [
+        {
+          "name": "Login Plumber",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token || json?.token;",
+                  "if (token) pm.collectionVariables.set('plumber_token', token);",
+                  "pm.test('plumber login', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{plumber_phone}}\",\n  \"password\": \"{{plumber_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "login"]
+            }
+          }
+        },
+        {
+          "name": "Login Store (Distributor / Trader)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token || json?.token;",
+                  "if (token) pm.collectionVariables.set('store_token', token);",
+                  "pm.test('store login', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{store_phone}}\",\n  \"password\": \"{{store_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — Plumber Social Links",
+      "description": "Bearer = plumber_token · Role يجب أن يكون plumber",
+      "item": [
+        {
+          "name": "List Social Links",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = Array.isArray(json?.data) ? json.data[0] : null;",
+                  "if (first?.id) pm.collectionVariables.set('link_id', String(first.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links"]
+            },
+            "description": "يرجع `data[]` كل عنصر: id, platform, platform_label, url, sort_order"
+          }
+        },
+        {
+          "name": "Upsert — A) links array (recommended)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = Array.isArray(json?.data) ? json.data[0] : null;",
+                  "if (first?.id) pm.collectionVariables.set('link_id', String(first.id));",
+                  "pm.test('upsert ok', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"links\": [\n    { \"platform\": \"facebook\", \"url\": \"https://facebook.com/plumber\", \"sort_order\": 0 },\n    { \"platform\": \"instagram\", \"url\": \"https://instagram.com/plumber\", \"sort_order\": 1 },\n    { \"platform\": \"whatsapp\", \"url\": \"0912345678\", \"sort_order\": 2 },\n    { \"platform\": \"youtube\", \"url\": \"\", \"sort_order\": 3 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links"]
+            },
+            "description": "الصيغة الموصى بها. youtube فاضي → يُتجاهل. whatsapp رقم → wa.me"
+          }
+        },
+        {
+          "name": "Upsert — B) platform map",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"facebook\": \"https://facebook.com/plumber\",\n  \"instagram\": \"@plumber\",\n  \"whatsapp\": \"0912345678\",\n  \"tiktok\": \"\",\n  \"website\": \"mg-plastic.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links"]
+            },
+            "description": "خريطة مباشرة. الفارغ يُتجاهل. `@plumber` و `mg-plastic.com` يتظبطوا تلقائيًا."
+          }
+        },
+        {
+          "name": "Upsert — C) single link",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"twitter\",\n  \"url\": \"@plumber_x\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links"]
+            },
+            "description": "إضافة/تحديث منصة واحدة فقط"
+          }
+        },
+        {
+          "name": "Upsert — D) aliases (fb / ig / wa + link field)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"links\": [\n    { \"platform\": \"fb\", \"link\": \"facebook.com/shop\" },\n    { \"type\": \"ig\", \"href\": \"@shop\" },\n    { \"name\": \"wa\", \"value\": \"0910001111\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links"]
+            },
+            "description": "platform aliases + url field aliases"
+          }
+        },
+        {
+          "name": "Upsert — E) nested data.links",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": {\n    \"links\": [\n      { \"platform\": \"snapchat\", \"url\": \"@plumber_snap\" },\n      { \"platform\": \"youtube\", \"url\": \"youtube.com/@plumber\" }\n    ]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links"]
+            }
+          }
+        },
+        {
+          "name": "Upsert — F) links as JSON string (form-style)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"links\": \"[{\\\"platform\\\":\\\"tiktok\\\",\\\"url\\\":\\\"@plumber_tt\\\"}]\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links"]
+            },
+            "description": "بعض عملاء الموبايل يبعتوا المصفوفة كـ string داخل JSON/multipart"
+          }
+        },
+        {
+          "name": "Delete — by platform name (BEST PRACTICE)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links/facebook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links", "facebook"]
+            },
+            "description": "**الأفضل للموبايل.** احذف بـ platform مباشرة:\n- `/social-links/facebook`\n- `/social-links/instagram`\n- `/social-links/whatsapp`\n\nما تحتاجش تحتفظ بالـ id. Idempotent نسبيًا (لو مش موجود → 404)."
+          }
+        },
+        {
+          "name": "Delete — by numeric id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links/{{link_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links", "{{link_id}}"]
+            },
+            "description": "بعد List أو Upsert — `link_id` بيتخزن تلقائيًا من Test scripts.\nاستخدمه لو عندك الـ id من الـ UI list."
+          }
+        },
+        {
+          "name": "Delete — by platform (instagram example)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links/instagram",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links", "instagram"]
+            }
+          }
+        },
+        {
+          "name": "Delete — by platform (whatsapp example)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/social-links/whatsapp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "social-links", "whatsapp"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Store Social Links (my-store)",
+      "description": "Bearer = store_token · موزّع جملة أو تاجر تجزئة",
+      "item": [
+        {
+          "name": "List via My Store profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/my-store",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "my-store"]
+            },
+            "description": "الملف الكامل يتضمن `social_links[]`"
+          }
+        },
+        {
+          "name": "Upsert — links array",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = Array.isArray(json?.data) ? json.data[0] : null;",
+                  "if (first?.id) pm.collectionVariables.set('store_link_id', String(first.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"links\": [\n    { \"platform\": \"facebook\", \"url\": \"https://facebook.com/store\", \"sort_order\": 0 },\n    { \"platform\": \"instagram\", \"url\": \"@store_osama\", \"sort_order\": 1 },\n    { \"platform\": \"whatsapp\", \"url\": \"01015136410\", \"sort_order\": 2 },\n    { \"platform\": \"website\", \"url\": \"mg-plastic.com\", \"sort_order\": 3 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/my-store/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "my-store", "social-links"]
+            }
+          }
+        },
+        {
+          "name": "Upsert — platform map",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"facebook\": \"https://facebook.com/store\",\n  \"instagram\": \"@store\",\n  \"whatsapp\": \"01015136410\",\n  \"tiktok\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/my-store/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "my-store", "social-links"]
+            }
+          }
+        },
+        {
+          "name": "Upsert — single link",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"youtube\",\n  \"url\": \"youtube.com/@store\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/my-store/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "my-store", "social-links"]
+            }
+          }
+        },
+        {
+          "name": "Delete — by platform (BEST PRACTICE)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/my-store/social-links/facebook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "my-store", "social-links", "facebook"]
+            },
+            "description": "الأفضل: احذف بالمنصة `facebook` / `instagram` / ..."
+          }
+        },
+        {
+          "name": "Delete — by numeric id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/my-store/social-links/{{store_link_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "my-store", "social-links", "{{store_link_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — Legacy Plumber-Store Social Links",
+      "description": "متاجر السباكين القديمة `plumber_stores` — يحتاج vendor token + store id",
+      "item": [
+        {
+          "name": "Upsert for plumber-store/{id}",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"links\": [\n    { \"platform\": \"facebook\", \"url\": \"https://facebook.com/osama-store\" },\n    { \"platform\": \"whatsapp\", \"url\": \"01015136410\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber-stores/{{plumber_store_id}}/social-links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber-stores", "{{plumber_store_id}}", "social-links"]
+            }
+          }
+        },
+        {
+          "name": "Delete by platform",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber-stores/{{plumber_store_id}}/social-links/facebook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber-stores", "{{plumber_store_id}}", "social-links", "facebook"]
+            }
+          }
+        },
+        {
+          "name": "Delete by numeric id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{store_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber-stores/{{plumber_store_id}}/social-links/{{store_link_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber-stores", "{{plumber_store_id}}", "social-links", "{{store_link_id}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

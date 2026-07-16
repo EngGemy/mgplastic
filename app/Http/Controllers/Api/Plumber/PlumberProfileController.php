@@ -308,9 +308,12 @@ class PlumberProfileController extends Controller
                 'message' => 'أرسل رابطًا واحدًا على الأقل مع platform و url',
                 'errors' => [
                     'links' => [
-                        'مثال: {"links":[{"platform":"facebook","url":"https://facebook.com/you"},{"platform":"whatsapp","url":"0912345678"}]}',
+                        'مثال JSON: {"links":[{"platform":"facebook","url":"https://facebook.com/you"},{"platform":"whatsapp","url":"0912345678"}]}',
+                        'أو خريطة: {"facebook":"https://facebook.com/you","whatsapp":"0912345678"}',
+                        'أو رابط واحد: {"platform":"instagram","url":"@plumber"}',
                     ],
                 ],
+                'received_keys' => SocialLinksPayload::receivedKeys($request),
                 'accepted_platforms' => array_keys(SocialLink::PLATFORMS),
             ], 422);
         }

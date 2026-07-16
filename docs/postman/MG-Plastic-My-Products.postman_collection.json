@@ -112,7 +112,20 @@
           "host": ["{{base_url}}"],
           "path": ["api", "v1", "network-stores", "{{store_user_id}}"]
         },
-        "description": "الحقل `my_products` في رد المتجر العام — للمعرض في التطبيق."
+        "description": "استخدم user id (مثل 92) أو network_code (مثل MG-W-000092). الحقل `my_products` = معرض المنتجات بدون نقاط.\n\nملاحظة: `/plumber-stores/{id}` رقم مختلف (متجر سباكين قديم) — محل اسامة الشبكي = 92 وليس 3."
+      }
+    },
+    {
+      "name": "عرض متجر بالرقم الموحّد",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": {
+          "raw": "{{base_url}}/api/v1/network-stores/MG-W-000092",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "network-stores", "MG-W-000092"]
+        },
+        "description": "بديل عن الـ id الرقمي."
       }
     }
   ]

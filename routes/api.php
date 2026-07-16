@@ -154,7 +154,9 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::delete('my-store/my-products/{mediaId}', [NetworkStoreController::class, 'deleteMyProduct'])->whereNumber('mediaId');
 });
 
-Route::get('v1/network-stores/{user}', [NetworkStoreController::class, 'publicShow'])->whereNumber('user');
+// Public store profile: numeric user id OR network_code (e.g. MG-W-000092)
+Route::get('v1/network-stores/{store}', [NetworkStoreController::class, 'publicShow'])
+    ->where('store', '[A-Za-z0-9\-]+');
 
 
 Route::middleware('api')->prefix('v1/events')->group(function () {

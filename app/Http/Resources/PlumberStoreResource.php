@@ -2,7 +2,9 @@
 
 namespace App\Http\Resources;
 
+use App\Models\User;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Collection;
 
 class PlumberStoreResource extends JsonResource
 {
@@ -59,6 +61,9 @@ class PlumberStoreResource extends JsonResource
                 $this->storeMedia->where('kind', 'product_image')->values()->map->toApiArray()
             ),
 
+            // معرض «منتجاتي» — من ميديا المتجر + حساب الشبكة المرتبط (موزّع/تاجر)
+            'my_products' => $this->resolveMyProducts()->map->toApiArray()->values(),
+
             'social_links' => $this->when(
                 $this->relationLoaded('socialLinks'),
                 $this->socialLinks->map->toApiArray()
@@ -100,5 +105,60 @@ class PlumberStoreResource extends JsonResource
                 ])
             ),
         ];
+    }
+
+    /**
+     * My Products live on network store Users (Filament «منتجاتي»).
+     * Legacy plumber_stores often share the same phone — merge both sources.
+     */
+    protected function resolveMyProducts(): Collection
+    {
+        $fromStore = $this->relationLoaded('storeMedia')
+            ? $this->storeMedia->where('kind', 'my_product')->where('is_active', true)
+            : collect();
+
+        $networkOwner = $this->resolveNetworkStoreOwner();
+        $fromNetwork = $networkOwner
+            ? $networkOwner->storeMedia()
+                ->where('kind', 'my_product')
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get()
+            : collect();
+
+        return $fromStore
+            ->concat($fromNetwork)
+            ->unique('id')
+            ->sortBy('sort_order')
+            ->values();
+    }
+
+    protected function resolveNetworkStoreOwner(): ?User
+    {
+        $vendor = $this->relationLoaded('vendor') ? $this->vendor : $this->vendor()->first();
+
+        if ($vendor instanceof User && $vendor->isNetworkStore()) {
+            return $vendor;
+        }
+
+        $phones = collect([
+            $this->phone,
+            $vendor?->phone,
+        ])->filter()->map(fn ($p) => trim((string) $p))->filter()->unique()->values();
+
+        if ($phones->isEmpty()) {
+            return null;
+        }
+
+        return User::query()
+            ->where(function ($q) {
+                $q->where('role', 'wholesale_distributor')
+                    ->orWhere('role', 'retail_trader');
+            })
+            ->whereIn('phone', $phones->all())
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->orderByDesc('id')
+            ->first();
     }
 }
