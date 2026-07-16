@@ -9,8 +9,10 @@
 
 use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\Distributor\DashboardController as DistributorDashboardController;
+use App\Http\Controllers\Api\Distributor\OrderController as DistributorOrderController;
 use App\Http\Controllers\Api\Distributor\PosController as DistributorPosController;
 use App\Http\Controllers\Api\Distributor\RetailTraderController;
+use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
 use App\Http\Controllers\Api\Mobile\SettingsController;
@@ -18,7 +20,6 @@ use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardCont
 use App\Http\Controllers\Api\Plumber\WalletApiController;
 use App\Http\Controllers\Api\Plumber\WalletController;
 use App\Http\Controllers\Api\Plumber\WithdrawalController;
-use App\Http\Controllers\Api\Distributor\OrderController as DistributorOrderController;
 use App\Http\Controllers\Api\Trader\DashboardController as TraderDashboardController;
 use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
@@ -29,6 +30,15 @@ Route::prefix('v1/mobile')->group(function () {
 
     // ── Public app settings ─────────────────────────────────────
     Route::get('settings', [SettingsController::class, 'app']);
+
+    // Wallet visibility — apps read this to hide/show the wallet UI
+    Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);
+
+    // Admin-only toggle (Bearer token of super_admin / admin)
+    Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
+        Route::match(['put', 'post'], 'wallet-visibility', [IosWalletVisibilityController::class, 'update']);
+        Route::post('wallet-visibility/toggle', [IosWalletVisibilityController::class, 'toggle']);
+    });
 
     // ── Authenticated (any role) ────────────────────────────────
     Route::middleware(['auth:sanctum'])->group(function () {

@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "MG Plastic — Wallet Visibility API",
+    "_postman_id": "c2f3a4b5-1111-4b00-8000-mgplasticwallet",
+    "description": "Toggle wallet visibility for mobile apps (iOS/Android).\n\n## How it works\n1. Apps call **GET wallet-visibility** (or `/v1/mobile/settings`) on launch.\n2. If `show_wallet` is `false`, hide the wallet tab / screens.\n3. Admin (super_admin / admin) toggles with Bearer token via PUT/POST.\n\n## Setup\n1. Set `base_url` (e.g. `https://mg-plastic.com` or `http://mgplastic.test`).\n2. Login as admin → copy token into `admin_token`.\n3. Run Hide / Show / Toggle requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "admin_token", "value": "", "type": "string" },
+    { "key": "admin_phone", "value": "0910000001", "type": "string" },
+    { "key": "admin_password", "value": "secret123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth (Admin)",
+      "item": [
+        {
+          "name": "Login Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token || json?.token;",
+                  "if (token) { pm.collectionVariables.set('admin_token', token); }",
+                  "pm.test('login ok', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{admin_phone}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+            },
+            "description": "Login as super_admin or admin. Token is saved to `admin_token`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public — Read Visibility",
+      "item": [
+        {
+          "name": "GET Wallet Visibility (ios)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/ios/wallet-visibility",
+              "host": ["{{base_url}}"],
+              "path": ["api", "ios", "wallet-visibility"]
+            },
+            "description": "Public. Returns `{ show_wallet: true|false }`."
+          }
+        },
+        {
+          "name": "GET Wallet Visibility (mobile v1)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/wallet-visibility",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "wallet-visibility"]
+            },
+            "description": "Same flag under the mobile API prefix."
+          }
+        },
+        {
+          "name": "GET App Settings (includes show_wallet)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/settings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "settings"]
+            },
+            "description": "Full app settings. Wallet flag lives at `data.ios_wallet_visibility.show_wallet`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Hide / Show Wallet",
+      "item": [
+        {
+          "name": "HIDE Wallet (enabled=false)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/admin/wallet-visibility",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "admin", "wallet-visibility"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}"
+            },
+            "description": "Hides the wallet in all mobile apps. Requires admin Bearer token."
+          }
+        },
+        {
+          "name": "SHOW Wallet (enabled=true)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/admin/wallet-visibility",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "admin", "wallet-visibility"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}"
+            },
+            "description": "Shows the wallet again in all mobile apps."
+          }
+        },
+        {
+          "name": "TOGGLE Wallet (flip current)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/admin/wallet-visibility/toggle",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "admin", "wallet-visibility", "toggle"]
+            },
+            "description": "Flips the current visibility without a body. Returns previous + new state."
+          }
+        },
+        {
+          "name": "HIDE via legacy admin/ios path",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/ios/wallet-visibility",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "ios", "wallet-visibility"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}"
+            },
+            "description": "Legacy path kept for older clients. Same flag."
+          }
+        },
+        {
+          "name": "SHOW via show_wallet field",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/admin/wallet-visibility",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "admin", "wallet-visibility"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"show_wallet\": true\n}"
+            },
+            "description": "Alternative body key `show_wallet` instead of `enabled`."
+          }
+        }
+      ]
+    }
+  ]
+}

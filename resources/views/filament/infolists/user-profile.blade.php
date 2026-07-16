@@ -221,8 +221,36 @@
                         <div class="ft"><div class="fl">اسم المتجر / العلامة</div><div class="fv">{{ $record->brand_name }}</div></div>
                     </div>
                     @endif
+                    @if($record->website)
+                    <div class="mgp-field">
+                        <div class="fi">🌐</div>
+                        <div class="ft"><div class="fl">الموقع</div><div class="fv"><a href="{{ $record->website }}" target="_blank" rel="noopener" style="color:var(--c1)">{{ $record->website }}</a></div></div>
+                    </div>
+                    @endif
                 </div>
             </div>
+
+            @php
+                $socialLinks = ($isPlumber || $isNetwork)
+                    ? $record->socialLinks()->orderBy('sort_order')->get()
+                    : collect();
+            @endphp
+            @if($socialLinks->isNotEmpty())
+            <div class="mgp-card" style="margin-top:18px">
+                <h3><span class="dot"></span> روابط التواصل الاجتماعي</h3>
+                <div class="mgp-info">
+                    @foreach($socialLinks as $link)
+                    <div class="mgp-field">
+                        <div class="fi">🔗</div>
+                        <div class="ft">
+                            <div class="fl">{{ \App\Models\SocialLink::PLATFORMS[$link->platform] ?? $link->platform }}</div>
+                            <div class="fv"><a href="{{ $link->url }}" target="_blank" rel="noopener" style="color:var(--c1);word-break:break-all">{{ $link->url }}</a></div>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+            @endif
 
             {{-- About / skills --}}
             @if($record->about_me || $record->short_description || $record->long_description || $record->store_description)

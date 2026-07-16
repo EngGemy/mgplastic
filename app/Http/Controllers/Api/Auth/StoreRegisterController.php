@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\NetworkStoreResource;
 use App\Models\User;
+use App\Services\AdminNotificationService;
+use App\Support\AdminPanelPath;
 use App\Traits\SendsMarsolSmsOtp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -132,6 +134,8 @@ class StoreRegisterController extends Controller
 
         $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);
 
+        $this->notifyAdminsOfPendingStore($user);
+
         return response()->json([
             'status'  => true,
             'message' => 'تم تسجيل المتجر. تم إرسال رمز التحقق، وحسابك بانتظار موافقة الإدارة.',
@@ -140,5 +144,16 @@ class StoreRegisterController extends Controller
                 'store' => new NetworkStoreResource($user),
             ],
         ], 201);
+    }
+
+    protected function notifyAdminsOfPendingStore(User $store): void
+    {
+        $title = 'طلب تفعيل متجر جديد 🛎️';
+        $body = "المتجر «{$store->name}»".($store->brand_name ? " ({$store->brand_name})" : '')
+            ." سجّل عبر التطبيق وبانتظار موافقتك — الهاتف: {$store->phone}";
+        $url = AdminPanelPath::url('stores/'.$store->id);
+
+        AdminNotificationService::sendToRole('super_admin', $title, $body, 'warning', $url, 'مراجعة الطلب');
+        AdminNotificationService::sendToRole('admin', $title, $body, 'warning', $url, 'مراجعة الطلب');
     }
 }

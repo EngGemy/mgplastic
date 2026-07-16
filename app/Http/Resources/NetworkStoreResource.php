@@ -49,6 +49,7 @@ class NetworkStoreResource extends JsonResource
                 'name_en' => $this->country->name_en ?? null,
             ] : null),
             'banners' => $media->where('kind', 'banner')->values()->map->toApiArray(),
+            'slider' => $media->where('kind', 'banner')->values()->map->toApiArray(),
             'videos' => $media->where('kind', 'video')->values()->map->toApiArray(),
             'product_images' => $media->where('kind', 'product_image')->values()->map(fn ($item) => array_merge(
                 $item->toApiArray(),

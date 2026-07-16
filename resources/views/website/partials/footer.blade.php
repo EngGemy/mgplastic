@@ -58,6 +58,7 @@
         <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px">التواصل</div>
             <ul class="footer-links">
+                <li><a href="{{ $contactUrl ?? route('contact') }}">صفحة التواصل</a></li>
                 @if($settings->contact_phone)
                     <li><a href="tel:{{ $settings->contact_phone }}" dir="ltr">{{ $settings->contact_phone }}</a></li>
                 @endif
@@ -70,8 +71,9 @@
                 @if($settings->contact_work_days)
                     <li style="color:rgba(255,255,255,.3);font-size:12px">{{ $settings->contact_work_days }} {{ $settings->contact_work_hours }}</li>
                 @endif
-                <li><a href="{{ $termsUrl }}">الشروط والأحكام</a></li>
-                <li><a href="{{ $privacyUrl }}">سياسة الخصوصية</a></li>
+                <li><a href="{{ $privacyUrl ?? route('privacy') }}">سياسة الخصوصية</a></li>
+                <li><a href="{{ $policyUrl ?? route('policy') }}">السياسات والشروط</a></li>
+                <li><a href="{{ $termsUrl ?? route('terms') }}">الشروط والأحكام</a></li>
             </ul>
         </div>
     </div>

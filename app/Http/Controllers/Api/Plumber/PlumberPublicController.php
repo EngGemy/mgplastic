@@ -84,6 +84,7 @@ class PlumberPublicController extends Controller
             ->with([
                 'city:id,country_id,name_en,name_ar',
                 'country:id,name_en,name_ar',
+                'socialLinks',
                 'workPhotos' => function ($q) {
                     $q->latest();
                 },

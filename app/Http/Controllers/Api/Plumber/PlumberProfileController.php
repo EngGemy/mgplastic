@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Plumber;
 
 use App\Http\Controllers\Controller;
 use App\Models\PlumberWorkPhoto;
+use App\Models\SocialLink;
 use App\Services\VideoThumbnailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -253,7 +254,7 @@ class PlumberProfileController extends Controller
 
         $user->save();
 
-        $fresh = $user->fresh();
+        $fresh = $user->fresh()->load('socialLinks');
 
         return response()->json([
             'status'  => true,
@@ -265,6 +266,79 @@ class PlumberProfileController extends Controller
                 'map_url'   => $fresh->mapUrl(),
                 'website'   => $fresh->website,
             ],
+            'social_links' => $fresh->socialLinks->map->toApiArray()->values(),
         ]);
+    }
+
+    /**
+     * GET /api/v1/plumber/social-links
+     */
+    public function listSocialLinks()
+    {
+        $user = Auth::user();
+        if (! $user || $user->role !== 'plumber') {
+            return response()->json(['status' => false, 'message' => 'Only plumbers can manage social links'], 403);
+        }
+
+        return response()->json([
+            'status' => true,
+            'data' => $user->socialLinks()->orderBy('sort_order')->orderBy('id')->get()->map->toApiArray()->values(),
+        ]);
+    }
+
+    /**
+     * POST /api/v1/plumber/social-links
+     * Body: { links: [{ platform, url, sort_order? }, ...] }
+     */
+    public function upsertSocialLinks(Request $request)
+    {
+        $user = Auth::user();
+        if (! $user || $user->role !== 'plumber') {
+            return response()->json(['status' => false, 'message' => 'Only plumbers can manage social links'], 403);
+        }
+
+        $data = $request->validate([
+            'links' => ['required', 'array', 'min:1'],
+            'links.*.platform' => ['required', 'string', 'in:'.implode(',', array_keys(SocialLink::PLATFORMS))],
+            'links.*.url' => ['required', 'url', 'max:500'],
+            'links.*.sort_order' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        $saved = [];
+        foreach ($data['links'] as $row) {
+            $link = $user->socialLinks()->updateOrCreate(
+                ['platform' => $row['platform']],
+                [
+                    'url' => $row['url'],
+                    'sort_order' => $row['sort_order'] ?? 0,
+                ],
+            );
+            $saved[] = $link->toApiArray();
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'تم حفظ روابط التواصل',
+            'data' => $saved,
+        ]);
+    }
+
+    /**
+     * DELETE /api/v1/plumber/social-links/{linkId}
+     */
+    public function deleteSocialLink($linkId)
+    {
+        $user = Auth::user();
+        if (! $user || $user->role !== 'plumber') {
+            return response()->json(['status' => false, 'message' => 'Only plumbers can manage social links'], 403);
+        }
+
+        $deleted = $user->socialLinks()->whereKey($linkId)->delete();
+
+        if (! $deleted) {
+            return response()->json(['status' => false, 'message' => 'الرابط غير موجود'], 404);
+        }
+
+        return response()->json(['status' => true, 'message' => 'تم حذف الرابط']);
     }
 }

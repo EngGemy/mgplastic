@@ -21,6 +21,13 @@ class PlumberShowResource extends JsonResource
             'short_description' => $this->short_description,
             'long_description'  => $this->long_description,
             'video_url'         => $this->video_url,
+            'website'           => $this->website,
+            'show_social_links' => (bool) ($this->show_social_links ?? true),
+
+            'social_links' => $this->when(
+                $this->relationLoaded('socialLinks') && ($this->show_social_links ?? true),
+                fn () => $this->socialLinks->map->toApiArray()->values()
+            ),
 
             'city' => $this->when(
                 $this->relationLoaded('city') && $this->city,

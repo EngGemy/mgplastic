@@ -3,11 +3,13 @@
 namespace App\Filament\RelationManagers;
 
 use App\Models\SocialLink;
+use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class SocialLinksRelationManager extends RelationManager
 {
@@ -16,6 +18,21 @@ class SocialLinksRelationManager extends RelationManager
     protected static ?string $title = 'روابط التواصل';
 
     protected static ?string $modelLabel = 'رابط';
+
+    protected static ?string $icon = 'heroicon-o-share';
+
+    /**
+     * Show for plumbers, network stores, and vendor stores.
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return in_array($ownerRecord->role ?? null, [
+            User::ROLE_PLUMBER,
+            User::ROLE_VENDOR,
+            'wholesale_distributor',
+            'retail_trader',
+        ], true);
+    }
 
     public function form(Form $form): Form
     {

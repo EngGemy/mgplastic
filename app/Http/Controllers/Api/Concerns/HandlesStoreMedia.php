@@ -18,6 +18,7 @@ trait HandlesStoreMedia
 
         return [
             'banners' => $owner->storeMedia->where('kind', 'banner')->values()->map->toApiArray(),
+            'slider' => $owner->storeMedia->where('kind', 'banner')->values()->map->toApiArray(),
             'videos' => $owner->storeMedia->where('kind', 'video')->values()->map->toApiArray(),
             'product_images' => $owner->storeMedia->where('kind', 'product_image')->values()->map->toApiArray(),
             'gallery' => $owner->storeMedia->where('kind', 'gallery')->values()->map->toApiArray(),
@@ -30,14 +31,15 @@ trait HandlesStoreMedia
         $owner = $this->resolveStoreMediaOwner($request);
 
         $request->validate([
-            'kind' => ['required', 'in:banner,video,product_image,gallery'],
+            'kind' => ['required', 'in:banner,slider,video,product_image,gallery'],
             'media' => ['required', 'array', 'min:1'],
             'media.*' => ['required', 'file', 'max:512000'],
             'product_id' => ['nullable', 'integer', 'exists:products,id'],
             'title' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $kind = $request->input('kind');
+        // "slider" is the public-facing name for store banners.
+        $kind = $request->input('kind') === 'slider' ? 'banner' : $request->input('kind');
         $rules = match ($kind) {
             'video' => 'mimes:mp4,mov,webm,mkv,avi',
             default => 'mimes:jpg,jpeg,png,webp',
@@ -70,6 +72,71 @@ trait HandlesStoreMedia
         return response()->json([
             'status' => true,
             'data' => $this->storeMediaResponse($owner),
+        ]);
+    }
+
+    /** Dedicated slider endpoints — same data as kind=banner. */
+    public function listSlider(Request $request): JsonResponse
+    {
+        $owner = $this->resolveStoreMediaOwner($request);
+        $owner->loadMissing('storeMedia');
+
+        $slides = $owner->storeMedia->where('kind', 'banner')->values()->map->toApiArray();
+
+        return response()->json([
+            'status' => true,
+            'data' => $slides,
+        ]);
+    }
+
+    public function uploadSlider(Request $request, StoreMediaUploadService $uploader): JsonResponse
+    {
+        $request->merge(['kind' => 'banner']);
+
+        return $this->uploadStoreMedia($request, $uploader);
+    }
+
+    public function deleteSlider(Request $request, int $mediaId, StoreMediaUploadService $uploader): JsonResponse
+    {
+        return $this->deleteStoreMedia($request, $mediaId, $uploader);
+    }
+
+    public function reorderSlider(Request $request): JsonResponse
+    {
+        $owner = $this->resolveStoreMediaOwner($request);
+
+        $data = $request->validate([
+            'order' => ['required', 'array', 'min:1'],
+            'order.*' => ['required', 'integer', 'distinct'],
+        ]);
+
+        $ids = array_values($data['order']);
+
+        $owned = StoreMedia::query()
+            ->where('owner_type', $owner->getMorphClass())
+            ->where('owner_id', $owner->getKey())
+            ->where('kind', 'banner')
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->all();
+
+        if (count($owned) !== count($ids)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'بعض صور السلايدر غير موجودة أو لا تملكها',
+            ], 422);
+        }
+
+        foreach ($ids as $index => $id) {
+            StoreMedia::query()->whereKey($id)->update(['sort_order' => $index]);
+        }
+
+        $owner->load('storeMedia');
+
+        return response()->json([
+            'status' => true,
+            'message' => 'تم تحديث ترتيب السلايدر',
+            'data' => $owner->storeMedia->where('kind', 'banner')->values()->map->toApiArray(),
         ]);
     }
 

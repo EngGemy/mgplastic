@@ -8,8 +8,10 @@ use App\Http\Controllers\Web\WebsiteRegistrationController;
 
 Route::get('/', [LandingController::class, 'index'])->name('landing');
 Route::get('/portal', [PortalController::class, 'index'])->name('portal');
+Route::get('/contact', [LandingController::class, 'contact'])->name('contact');
 Route::get('/terms', [LandingController::class, 'terms'])->name('terms');
 Route::get('/privacy', [LandingController::class, 'privacy'])->name('privacy');
+Route::get('/policy', [LandingController::class, 'policy'])->name('policy');
 Route::post('/register', [WebsiteRegistrationController::class, 'store'])->name('website.register');
 Route::get('/catalog/products', [\App\Http\Controllers\Web\CatalogController::class, 'products'])->name('website.catalog');
 

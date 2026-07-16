@@ -140,6 +140,12 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::delete('my-store/media/{mediaId}', [NetworkStoreController::class, 'deleteStoreMedia'])->whereNumber('mediaId');
     Route::post('my-store/social-links', [NetworkStoreController::class, 'upsertSocialLinks']);
     Route::delete('my-store/social-links/{linkId}', [NetworkStoreController::class, 'deleteSocialLink'])->whereNumber('linkId');
+
+    // Explicit slider aliases (same as kind=banner media)
+    Route::get('my-store/slider', [NetworkStoreController::class, 'listSlider']);
+    Route::post('my-store/slider', [NetworkStoreController::class, 'uploadSlider']);
+    Route::delete('my-store/slider/{mediaId}', [NetworkStoreController::class, 'deleteSlider'])->whereNumber('mediaId');
+    Route::put('my-store/slider/order', [NetworkStoreController::class, 'reorderSlider']);
 });
 
 Route::get('v1/network-stores/{user}', [NetworkStoreController::class, 'publicShow'])->whereNumber('user');
@@ -156,6 +162,10 @@ Route::middleware(['api', 'auth:sanctum'])->prefix('v1/plumber')->group(function
     Route::post('/work-photos', [PlumberProfileController::class, 'addWorkMedia']);
     Route::get('/work-photos', [PlumberProfileController::class, 'listWorkPhotos']);
     Route::delete('/work-photos/{id}', [PlumberProfileController::class, 'deleteWorkPhoto']);
+
+    Route::get('/social-links', [PlumberProfileController::class, 'listSocialLinks']);
+    Route::post('/social-links', [PlumberProfileController::class, 'upsertSocialLinks']);
+    Route::delete('/social-links/{linkId}', [PlumberProfileController::class, 'deleteSocialLink'])->whereNumber('linkId');
 });
 
 
@@ -277,6 +287,11 @@ Route::prefix('v1')->group(function () {
                 Route::post('work-photos', [PlumberProfileController::class, 'addWorkMedia']);   // POST /api/v1/plumber/work-photos
                 Route::get('work-photos',  [PlumberProfileController::class, 'listWorkPhotos']); // GET  /api/v1/plumber/work-photos
                 Route::delete('work-photos/{id}', [PlumberProfileController::class, 'deleteWorkPhoto']); // DELETE /api/v1/plumber/work-photos/{id}
+
+                /** Social links */
+                Route::get('social-links', [PlumberProfileController::class, 'listSocialLinks']);
+                Route::post('social-links', [PlumberProfileController::class, 'upsertSocialLinks']);
+                Route::delete('social-links/{linkId}', [PlumberProfileController::class, 'deleteSocialLink'])->whereNumber('linkId');
             });
     });
 
@@ -295,17 +310,18 @@ Route::middleware(['auth:sanctum'])->prefix('vendor')->group(function () {
 });
 
 
-// Public iOS read endpoint (or you can protect with simple app key if you prefer)
+// Public wallet visibility (apps read this to hide/show the wallet tab)
 Route::prefix('ios')->group(function () {
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show'])
         ->name('ios.wallet.visibility.show');
 });
 
-// Admin toggle endpoint
-Route::middleware(['auth:sanctum'])  // adjust to your auth/ability
-->prefix('admin/ios')->group(function () {
-    Route::put('wallet-visibility', [IosWalletVisibilityController::class, 'update'])
+// Admin toggle — auth + admin/super_admin role enforced in controller
+Route::middleware(['auth:sanctum'])->prefix('admin/ios')->group(function () {
+    Route::match(['put', 'post'], 'wallet-visibility', [IosWalletVisibilityController::class, 'update'])
         ->name('ios.wallet.visibility.update');
+    Route::post('wallet-visibility/toggle', [IosWalletVisibilityController::class, 'toggle'])
+        ->name('ios.wallet.visibility.toggle');
 });
 
 // ── Mobile API v1 (organized for iOS/Android) ─────────────────

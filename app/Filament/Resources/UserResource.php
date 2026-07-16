@@ -449,13 +449,17 @@ class UserResource extends Resource
                     ->icon('heroicon-o-eye'),
 
                 Tables\Actions\Action::make('approve')
-                    ->label('اعتماد')
+                    ->label(fn ($record) => $record?->role === 'wholesale_distributor' ? 'تفعيل المتجر' : 'اعتماد')
                     ->icon('heroicon-o-check-circle')
                     ->visible(fn ($record) => ! $record?->is_approved)
                     ->requiresConfirmation()
-                    ->action(fn ($record) =>
-                    $record->forceFill(['is_approved' => true, 'approved_at' => now()])->save()
-                    ),
+                    ->action(function ($record) {
+                        if ($record->role === 'wholesale_distributor') {
+                            app(\App\Services\StoreApprovalService::class)->approve($record, auth()->user());
+                        } else {
+                            $record->forceFill(['is_approved' => true, 'approved_at' => now()])->save();
+                        }
+                    }),
 
                 Tables\Actions\Action::make('deactivate')
                     ->label('إيقاف')
@@ -513,11 +517,10 @@ class UserResource extends Resource
 
     public static function getRelations(): array
     {
-        // UserResource::getRelations()
         return [
             \App\Filament\Resources\UserResource\RelationManagers\PlumberWorkPhotosRelationManager::class,
+            \App\Filament\RelationManagers\SocialLinksRelationManager::class,
         ];
-
     }
 
     public static function getPages(): array

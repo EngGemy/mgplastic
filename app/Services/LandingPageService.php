@@ -36,6 +36,8 @@ class LandingPageService
             'libyaCountryId' => $this->libyaCountryId(),
             'termsUrl' => route('terms'),
             'privacyUrl' => route('privacy'),
+            'policyUrl' => route('policy'),
+            'contactUrl' => route('contact'),
         ];
     }
 

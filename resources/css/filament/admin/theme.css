@@ -1425,3 +1425,14 @@
 .dark .mg-user-row--field:hover   { background: rgb(6 78 59 / 25%) !important; }
 .dark .mg-user-row--network:hover { background: rgb(30 58 95 / 30%) !important; }
 .dark .mg-user-row--admin:hover   { background: rgb(76 29 149 / 25%) !important; }
+
+/* ── متاجر بانتظار التفعيل ── */
+.mg-pending-store td:first-child {
+    border-inline-start: 4px solid #d97706;
+}
+.mg-pending-store {
+    background: #fffbeb !important;
+}
+.dark .mg-pending-store {
+    background: rgb(120 53 15 / 20%) !important;
+}
