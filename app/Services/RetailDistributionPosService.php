@@ -11,6 +11,7 @@ class RetailDistributionPosService
     public function __construct(
         protected NetworkInventoryService $inventory,
         protected DistributionService $distributions,
+        protected RetailNetworkLinkService $retailLinks,
     ) {}
 
     /**
@@ -26,9 +27,7 @@ class RetailDistributionPosService
             throw new \DomainException('يجب اختيار تاجر قطاعي');
         }
 
-        if ((int) $retailTrader->parent_distributor_id !== (int) $wholesaler->id) {
-            throw new \DomainException('هذا التاجر القطاعي غير تابع لمتجرك');
-        }
+        $this->retailLinks->assertLinked($wholesaler, $retailTrader);
 
         if (empty($lines)) {
             throw new \DomainException('أضف منتجاً واحداً على الأقل من مخزونك');

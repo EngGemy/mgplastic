@@ -40,11 +40,22 @@ class DistributorRetailTraderResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
+        $wholesalerId = auth()->id();
+
         return parent::getEloquentQuery()
             ->where('role', 'retail_trader')
-            ->where('parent_distributor_id', auth()->id())
+            ->where(function (Builder $q) use ($wholesalerId) {
+                $q->where('parent_distributor_id', $wholesalerId)
+                    ->orWhereHas('linkedWholesalers', fn (Builder $w) => $w->where('users.id', $wholesalerId));
+            })
             ->with(['country', 'city'])
             ->withCount('plumbers');
+    }
+
+    public static function canEdit($record): bool
+    {
+        return app(\App\Services\RetailNetworkLinkService::class)
+            ->isLinked(auth()->user(), $record);
     }
 
     public static function canViewAny(): bool
@@ -57,9 +68,9 @@ class DistributorRetailTraderResource extends Resource
         return true;
     }
 
-    public static function canEdit($record): bool
+    public static function canView($record): bool
     {
-        return (int) $record->parent_distributor_id === (int) auth()->id();
+        return static::canEdit($record);
     }
 
     public static function canDelete($record): bool

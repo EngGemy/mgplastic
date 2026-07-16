@@ -50,7 +50,7 @@ class WholesalerNetworkService
             'distributed_points' => $distributedPoints,
             'product_units' => $productUnits,
             'product_types' => $productTypes,
-            'retail_traders_count' => $wholesaler->retailTraders()->count(),
+            'retail_traders_count' => app(RetailNetworkLinkService::class)->linkedRetailersFor($wholesaler)->count(),
         ];
     }
 

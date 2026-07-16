@@ -252,12 +252,22 @@ class OrderService
                 throw new \DomainException('الطلب من الجملة متاح لتجّار القطاعي فقط');
             }
 
-            $supplier = $requester->parent_distributor_id
-                ? User::find($requester->parent_distributor_id)
-                : null;
+            $supplier = null;
+
+            if ($requester->parent_distributor_id) {
+                $supplier = User::find($requester->parent_distributor_id);
+            }
+
+            if ((! $supplier || ! $supplier->isWholesaleDistributor()) && $requester->relationLoaded('linkedWholesalers')) {
+                $supplier = $requester->linkedWholesalers->first();
+            }
 
             if (! $supplier || ! $supplier->isWholesaleDistributor()) {
-                throw new \DomainException('لست مرتبطاً بموزّع جملة — تواصل مع الإدارة لربط حسابك');
+                $supplier = $requester->linkedWholesalers()->first();
+            }
+
+            if (! $supplier || ! $supplier->isWholesaleDistributor()) {
+                throw new \DomainException('لست مرتبطاً بموزّع جملة — تواصل مع موزّعك ليربط حسابك عبر الرقم الموحّد');
             }
 
             return $supplier;
@@ -366,7 +376,7 @@ class OrderService
             throw new \DomainException('تعذّر تحديد أطراف الطلب');
         }
 
-        if ((int) $retailTrader->parent_distributor_id !== (int) $wholesaler->id) {
+        if (! app(RetailNetworkLinkService::class)->isLinked($wholesaler, $retailTrader)) {
             throw new \DomainException('هذا التاجر القطاعي غير تابع لموزّع الجملة');
         }
 

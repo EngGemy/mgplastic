@@ -46,12 +46,8 @@ class DistributorPos extends Page
 
     public function getRetailTradersProperty(): Collection
     {
-        return User::query()
-            ->where('role', 'retail_trader')
-            ->where('parent_distributor_id', auth()->id())
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'brand_name', 'brand_logo']);
+        return app(\App\Services\RetailNetworkLinkService::class)
+            ->linkedRetailersFor(auth()->user());
     }
 
     public function getCategoriesProperty(): Collection
@@ -239,8 +235,8 @@ class DistributorPos extends Page
         $trader = User::find($this->retailTraderId);
         $wholesaler = auth()->user();
 
-        if (! $trader || (int) $trader->parent_distributor_id !== (int) $wholesaler->id) {
-            Notification::make()->danger()->title('تاجر غير مسموح')->send();
+        if (! $trader || ! app(\App\Services\RetailNetworkLinkService::class)->isLinked($wholesaler, $trader)) {
+            Notification::make()->danger()->title('تاجر غير مسموح — أضفه عبر الرقم الموحّد أولاً')->send();
 
             return;
         }

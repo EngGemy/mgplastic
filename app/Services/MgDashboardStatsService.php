@@ -76,9 +76,13 @@ class MgDashboardStatsService
 
         return [
             'welcomeTitle' => "مرحباً {$name} 👋",
-            'welcomeSubtitle' => 'لوحة موزع الجملة — مخزونك، نقاطك، وتجار القطاعي',
+            'welcomeSubtitle' => filled($user?->network_code)
+                ? "رقمك الموحّد: {$user->network_code} — شاركه مع شركائك لإضافتك لشبكتهم"
+                : 'لوحة موزع الجملة — مخزونك، نقاطك، وتجار القطاعي',
+            'networkCode' => $user?->network_code,
             'accent' => 'blue',
             'cards' => [
+                $this->card('الرقم الموحّد', $user?->network_code ?: '—', 'heroicon-o-qr-code', 'indigo', null, 'هويتك في شبكة MG'),
                 $this->card('رصيد النقاط', (int) $summary['balance_points'], 'heroicon-o-wallet', 'green', null, 'الرصيد الحالي في محفظتك'),
                 $this->card('نقاط من المصنع', (int) $summary['factory_points'], 'heroicon-o-building-office-2', 'blue', null, number_format($remaining).' متبقية للتوزيع'),
                 $this->card('موزَّع للقطاعي', (int) $summary['distributed_points'], 'heroicon-o-arrow-trending-up', 'amber', null, 'نقاط مخصومة عند البيع'),
@@ -101,9 +105,13 @@ class MgDashboardStatsService
 
         return [
             'welcomeTitle' => "مرحباً {$name} 👋",
-            'welcomeSubtitle' => 'لوحة التاجر القطاعي — مخزونك، سبّاكوك، وتوزيع النقاط',
+            'welcomeSubtitle' => filled($user?->network_code)
+                ? "رقمك الموحّد: {$user->network_code} — أعطه لموزّع الجملة لإضافتك لشبكته"
+                : 'لوحة التاجر القطاعي — مخزونك، سبّاكوك، وتوزيع النقاط',
+            'networkCode' => $user?->network_code,
             'accent' => 'green',
             'cards' => [
+                $this->card('الرقم الموحّد', $user?->network_code ?: '—', 'heroicon-o-qr-code', 'indigo', null, 'هويتك في شبكة MG'),
                 $this->card('رصيد النقاط', (int) $summary['balance_points'], 'heroicon-o-wallet', 'green', null, 'الرصيد الحالي في محفظتك'),
                 $this->card('نقاط من الجملة', (int) $summary['received_points'], 'heroicon-o-building-storefront', 'blue', null, number_format($remaining).' لم تُوزَّع بعد'),
                 $this->card('موزَّع للسباكين', (int) $summary['distributed_points'], 'heroicon-o-wrench-screwdriver', 'amber', null, 'نقاط وصلت للسباكين'),

@@ -43,14 +43,14 @@ class InvoiceItem extends Model
     public function availableQuantityForTier(int $tier, ?int $parentDistributionId = null): int
     {
         if ($tier === 1) {
-            $confirmed = $this->distributionItems()
+            $confirmed = (int) $this->distributionItems()
                 ->whereHas('distribution', fn ($q) => $q
                     ->where('tier', 1)
                     ->whereIn('status', ['confirmed', 'points_awarded'])
                 )
-                ->sum('quantity');
+                ->sum(\Illuminate\Support\Facades\DB::raw('quantity - COALESCE(returned_quantity, 0)'));
 
-            return max(0, $this->quantity - $confirmed);
+            return max(0, (int) $this->quantity - $confirmed);
         }
 
         $parentItem = InvoiceDistributionItem::where('distribution_id', $parentDistributionId)
@@ -61,14 +61,16 @@ class InvoiceItem extends Model
             return 0;
         }
 
-        $alreadyConfirmed = $this->distributionItems()
+        $parentNet = (int) $parentItem->quantity - (int) ($parentItem->returned_quantity ?? 0);
+
+        $alreadyConfirmed = (int) $this->distributionItems()
             ->whereHas('distribution', fn ($q) => $q
                 ->where('tier', $tier)
                 ->where('parent_distribution_id', $parentDistributionId)
                 ->whereIn('status', ['confirmed', 'points_awarded'])
             )
-            ->sum('quantity');
+            ->sum(\Illuminate\Support\Facades\DB::raw('quantity - COALESCE(returned_quantity, 0)'));
 
-        return max(0, $parentItem->quantity - $alreadyConfirmed);
+        return max(0, $parentNet - $alreadyConfirmed);
     }
 }

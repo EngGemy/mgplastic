@@ -17,6 +17,7 @@ class NetworkStoreResource extends JsonResource
 
         return [
             'id' => $this->id,
+            'network_code' => $this->network_code,
             'name' => $this->name,
             'brand_name' => $this->brand_name,
             'phone' => $this->phone,

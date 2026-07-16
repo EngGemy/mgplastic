@@ -37,5 +37,6 @@ class AppServiceProvider extends ServiceProvider
         Schema::defaultStringLength(191);
 
         \App\Models\Product::observe(\App\Observers\ProductObserver::class);
+        \App\Models\User::observe(\App\Observers\UserObserver::class);
     }
 }

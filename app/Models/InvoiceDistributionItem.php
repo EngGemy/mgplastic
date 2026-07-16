@@ -11,7 +11,14 @@ class InvoiceDistributionItem extends Model
         'distribution_id',
         'invoice_item_id',
         'quantity',
+        'returned_quantity',
         'points_value',
+    ];
+
+    protected $casts = [
+        'quantity' => 'integer',
+        'returned_quantity' => 'integer',
+        'points_value' => 'integer',
     ];
 
     public function distribution(): BelongsTo

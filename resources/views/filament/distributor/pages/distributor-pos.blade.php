@@ -112,7 +112,9 @@
                 <select wire:model.live="retailTraderId" class="pos-select">
                     <option value="">اختر التاجر القطاعي</option>
                     @foreach($traders as $t)
-                        <option value="{{ $t->id }}">{{ $t->brand_name ?: $t->name }}</option>
+                        <option value="{{ $t->id }}">
+                            @if($t->network_code)[{{ $t->network_code }}] @endif{{ $t->brand_name ?: $t->name }}
+                        </option>
                     @endforeach
                 </select>
             </div>

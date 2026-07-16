@@ -32,9 +32,15 @@
                     @else 🏬 موزع قطاعي
                     @endif
                 </span>
+                @if(filled($record->network_code))
+                    <div style="margin:6px 0 4px;display:inline-flex;align-items:center;gap:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:4px 10px">
+                        <span style="font-size:11px;font-weight:700;color:#64748b">الرقم الموحّد</span>
+                        <strong style="font-size:1rem;color:#1a56db;letter-spacing:.04em;font-family:ui-monospace,monospace">{{ $record->network_code }}</strong>
+                    </div>
+                @endif
                 <h2 class="net-profile-name">{{ $record->name }}</h2>
                 @if($isRetail && $record->parentDistributor)
-                    <p class="net-profile-parent">تابع لـ: <strong>{{ $record->parentDistributor->name }}</strong></p>
+                    <p class="net-profile-parent">موزّع أساسي: <strong>{{ $record->parentDistributor->name }}</strong></p>
                 @endif
             </div>
         </div>

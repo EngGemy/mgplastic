@@ -55,12 +55,8 @@ class CreateRetailPos extends Page
 
     public function getRetailTradersProperty(): Collection
     {
-        return User::query()
-            ->where('role', 'retail_trader')
-            ->where('parent_distributor_id', auth()->id())
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        return app(\App\Services\RetailNetworkLinkService::class)
+            ->linkedRetailersFor(auth()->user());
     }
 
     public function getCategoriesProperty(): Collection

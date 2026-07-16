@@ -69,6 +69,19 @@ class CreateRetailTrader extends CreateRecord
         return $data;
     }
 
+    protected function afterCreate(): void
+    {
+        app(\App\Services\NetworkCodeService::class)->ensure($this->record);
+
+        if ($this->record->parent_distributor_id) {
+            $wholesaler = User::find($this->record->parent_distributor_id);
+            if ($wholesaler?->isWholesaleDistributor()) {
+                app(\App\Services\RetailNetworkLinkService::class)
+                    ->attach($wholesaler, $this->record, auth()->user());
+            }
+        }
+    }
+
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('view', ['record' => $this->record]);

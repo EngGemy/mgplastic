@@ -77,6 +77,8 @@ class WalletAccount extends Model
         $relatedType = match ($meta['reason'] ?? null) {
             'invoice_approval' => Invoice::class,
             'order_delivery' => Order::class,
+            'invoice_return_in',
+            'invoice_return_out' => InvoiceReturn::class,
             'distribution_points',
             'distribution_tier1',
             'distribution_tier2_in',
@@ -86,7 +88,7 @@ class WalletAccount extends Model
             default => InvoiceDistribution::class,
         };
 
-        $relatedId = $meta['order_id'] ?? $meta['distribution_id'] ?? $meta['invoice_id'] ?? null;
+        $relatedId = $meta['return_id'] ?? $meta['order_id'] ?? $meta['distribution_id'] ?? $meta['invoice_id'] ?? null;
 
         return [$relatedType, $relatedId];
     }

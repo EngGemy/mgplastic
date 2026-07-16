@@ -37,6 +37,7 @@ class UserProfileResource extends JsonResource
                 'id' => $this->city?->id,
                 'name' => $this->city?->{app()->getLocale() === 'ar' ? 'name_ar' : 'name_en'},
             ]),
+            'network_code' => $this->network_code,
             'parent_distributor_id' => $this->parent_distributor_id,
             'is_phone_verified' => (bool) $this->is_phone_verified,
             'is_approved' => (bool) $this->is_approved,

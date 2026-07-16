@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\Concerns\HasStoreProfile;
 use App\Models\Concerns\HasWallet;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 
@@ -33,6 +34,7 @@ class User extends Authenticatable
         'city_id',
         'role',
         'permissions',
+        'network_code',
         'parent_distributor_id',
         'is_independent',
         'profile_photo',
@@ -163,6 +165,32 @@ class User extends Authenticatable
     {
         return $this->hasMany(User::class, 'parent_distributor_id')
             ->where('role', 'retail_trader');
+    }
+
+    /** Many-to-many: wholesaler ↔ retail (supports multiple wholesalers). */
+    public function linkedRetailTraders(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            User::class,
+            'wholesaler_retail_trader',
+            'wholesaler_id',
+            'retail_trader_id'
+        )->withPivot(['linked_by', 'linked_at'])->withTimestamps();
+    }
+
+    public function linkedWholesalers(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            User::class,
+            'wholesaler_retail_trader',
+            'retail_trader_id',
+            'wholesaler_id'
+        )->withPivot(['linked_by', 'linked_at'])->withTimestamps();
+    }
+
+    public function isLinkedToWholesaler(User $wholesaler): bool
+    {
+        return app(\App\Services\RetailNetworkLinkService::class)->isLinked($wholesaler, $this);
     }
 
     public function plumbers(): HasMany

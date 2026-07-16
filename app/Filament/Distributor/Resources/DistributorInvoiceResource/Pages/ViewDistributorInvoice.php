@@ -78,6 +78,42 @@ class ViewDistributorInvoice extends ViewInvoice
                     }
                 }),
 
+            Actions\Action::make('return_invoice')
+                ->label('مرتجع على الفاتورة')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->color('danger')
+                ->visible(fn () => $this->canReturnThisInvoice())
+                ->form(fn () => $this->returnFormSchema())
+                ->modalHeading('مرتجع بضاعة ونقاط')
+                ->modalDescription('سيتم إرجاع الكميات للمورّد وخصم النقاط من المستلم وإعادتها للأعلى في السلسلة.')
+                ->modalSubmitActionLabel('تأكيد المرتجع')
+                ->action(function (array $data) {
+                    try {
+                        $lines = collect($data['items'] ?? [])
+                            ->filter(fn ($row) => (int) ($row['quantity'] ?? 0) > 0)
+                            ->map(fn ($row) => [
+                                'invoice_item_id' => (int) $row['invoice_item_id'],
+                                'quantity' => (int) $row['quantity'],
+                            ])
+                            ->values()
+                            ->all();
+
+                        $ret = app(\App\Services\InvoiceReturnService::class)
+                            ->returnOutgoingInvoice($this->record, $lines, auth()->user(), $data['note'] ?? null);
+
+                        Notification::make()
+                            ->success()
+                            ->title('تم تسجيل المرتجع ✓')
+                            ->body("رقم {$ret->return_number} — {$ret->total_quantity} وحدة / {$ret->total_points} نقطة")
+                            ->persistent()
+                            ->send();
+
+                        $this->record->refresh();
+                    } catch (\DomainException $e) {
+                        Notification::make()->danger()->title('تعذّر المرتجع')->body($e->getMessage())->send();
+                    }
+                }),
+
             Actions\Action::make('print_invoice')
                 ->label('طباعة الفاتورة')
                 ->icon('heroicon-o-printer')

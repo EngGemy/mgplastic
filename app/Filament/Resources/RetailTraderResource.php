@@ -286,18 +286,26 @@ class RetailTraderResource extends Resource
             ->defaultSort('created_at', 'desc')
             ->striped()
             ->columns([
+                Tables\Columns\TextColumn::make('network_code')
+                    ->label('الرقم الموحّد')
+                    ->searchable()
+                    ->copyable()
+                    ->weight('bold')
+                    ->color('primary')
+                    ->placeholder('—'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('الاسم')
                     ->searchable()
                     ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('parentDistributor.name')
-                    ->label('المتجر')
-                    ->default('— منفرد —')
+                    ->label('الموزّع الأساسي')
+                    ->default('—')
                     ->badge()
                     ->color(fn ($state) => $state ? 'primary' : 'gray'),
 
-                Tables\Columns\TextColumn::make('phone')->label('الهاتف'),
+                Tables\Columns\TextColumn::make('phone')->label('الهاتف')->searchable(),
 
                 Tables\Columns\TextColumn::make('plumbers_count')
                     ->label('سباكين')
