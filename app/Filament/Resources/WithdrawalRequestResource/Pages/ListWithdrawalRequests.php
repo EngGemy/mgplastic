@@ -64,7 +64,11 @@ class ListWithdrawalRequests extends ListRecords
     {
         try {
             WithdrawalRequestService::markPaid($req, $data);
-            Notification::make()->title('تم تأكيد الدفع')->success()->send();
+            Notification::make()
+                ->title('تم تأكيد الدفع وإرسال الإشعار')
+                ->body('أُرسل للسباك إشعار + رابط إيصال التحويل.')
+                ->success()
+                ->send();
         } catch (\DomainException $e) {
             Notification::make()->title($e->getMessage())->danger()->send();
         }
@@ -74,7 +78,11 @@ class ListWithdrawalRequests extends ListRecords
     {
         try {
             WithdrawalRequestService::rejectAndRefund($req, $data);
-            Notification::make()->title('تم رفض الطلب وإرجاع الرصيد')->success()->send();
+            Notification::make()
+                ->title('تم الرفض وإرجاع الرصيد')
+                ->body('أُبلغ السباك بسبب الرفض.')
+                ->success()
+                ->send();
         } catch (\DomainException $e) {
             Notification::make()->title($e->getMessage())->danger()->send();
         }

@@ -1,0 +1,449 @@
+{
+  "info": {
+    "name": "MG Plastic — Points Convert & Withdraw (Accurate)",
+    "_postman_id": "e8f9a0b1-pts-conv-4000-9000-mgptsconv",
+    "description": "# تحويل النقاط → فلوس → سحب\n\n## الفكرة الصحيحة في النظام\n\n### ① اكتساب النقاط (من الفاتورة / المنتج)\nكل منتج له `points_per_unit` (نقاط لكل وحدة — إعداد أدمن).\nعند توزيع الفاتورة للسباك:\n\n`points_value = floor(quantity × points_per_unit)`\n\nتُضاف إلى `balance_points` في المحفظة.\n\n**مش** سعر البيع بالدينار اللي بيحدد قيمة التحويل لاحقاً.\n\n### ② تحويل النقاط → رصيد مالي\nسعر صرف **عام** من لوحة الإدارة (`ConversionRule`):\n\n```\ngross_LYD = points ÷ points_per_currency_unit\nfee = % + ثابت\nnet يروح لـ balance_cents\n```\n\nمثال: لو `points_per_currency_unit = 100` → كل 100 نقطة = 1.00 د.ل (قبل الرسوم).\n\n### ③ طلب السحب\nالسحب من **`balance_cents`** (فلوس) بعد التحويل — مش من النقاط مباشرة.\n\n## التدفق في Postman\n1. Login\n2. Settings / conversion-rules (اعرف السعر والحد الأدنى)\n3. Wallet (شوف balance_points)\n4. Convert\n5. Wallet تاني (شوف balance_cents)\n6. Create withdrawal\n7. List withdrawals\n\nAuth: Bearer `plumber_token` (role=plumber)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "plumber_phone", "value": "", "type": "string" },
+    { "key": "plumber_password", "value": "", "type": "string" },
+    { "key": "plumber_token", "value": "", "type": "string" },
+    { "key": "points_to_convert", "value": "100", "type": "string" },
+    { "key": "withdraw_amount_cents", "value": "5000", "type": "string" },
+    { "key": "withdrawal_id", "value": "", "type": "string" },
+    { "key": "distribution_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Auth",
+      "item": [
+        {
+          "name": "Login Plumber",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token || json?.token;",
+                  "if (token) pm.collectionVariables.set('plumber_token', token);",
+                  "const bal = json?.data?.user?.balance_points ?? json?.balance_points;",
+                  "if (bal != null) console.log('login balance_points=', bal);",
+                  "pm.test('login ok', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{plumber_phone}}\",\n  \"password\": \"{{plumber_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — كيف اكتسبت النقاط (من الفاتورة)",
+      "description": "النقاط = كمية × points_per_unit لكل بند منتج في التوزيع",
+      "item": [
+        {
+          "name": "Received invoices (distributions)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = json?.data?.data?.[0] || json?.data?.[0];",
+                  "if (first?.id) pm.collectionVariables.set('distribution_id', String(first.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/invoices/received",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "invoices", "received"]
+            },
+            "description": "قائمة التوزيعات الواصلة. شوف `balance_points` في الرد."
+          }
+        },
+        {
+          "name": "Invoice detail (points per line)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/invoices/{{distribution_id}}/detail",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "invoices", "{{distribution_id}}", "detail"]
+            },
+            "description": "`points_earned` = مجموع نقاط الفاتورة.\nكل بند: `points_value` ≈ quantity × points_per_unit (من إعداد المنتج/الفاتورة)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — قواعد التحويل (سعر النقطة → دينار)",
+      "item": [
+        {
+          "name": "App settings (includes conversion)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/settings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "settings"]
+            },
+            "description": "Public. انظر `data.conversion`:\n- `points_per_currency_unit`\n- `min_redeem_points` / `max_redeem_points`\n- `fee_percent` / `fee_fixed_cents`\n- `is_redemption_open`\n+ `withdrawal_methods`"
+          }
+        },
+        {
+          "name": "Conversion rules (detailed + formula)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/conversion-rules",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "conversion-rules"]
+            },
+            "description": "يرجع السعر + `how_it_works` + `formula` + `example`.\n\n**مهم:** التحويل يعتمد على إعداد الإدارة العام، وليس على سعر المنتج داخل الفاتورة."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — المحفظة",
+      "item": [
+        {
+          "name": "Wallet (mobile) — balance_points + balance_cents",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const d = json?.data || json;",
+                  "console.log('points=', d.balance_points, 'cents=', d.balance_cents, 'formatted=', d.balance_formatted);",
+                  "if (d.balance_points > 0) {",
+                  "  pm.collectionVariables.set('points_to_convert', String(d.balance_points));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet"]
+            },
+            "description": "- `balance_points` → قابل للتحويل\n- `balance_cents` → قابل للسحب (بعد convert)\n- `points_history` / `total_points_earned`"
+          }
+        },
+        {
+          "name": "Wallet (legacy plumber path)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "Transactions (points_only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/transactions?points_only=1&per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "transactions"],
+              "query": [
+                { "key": "points_only", "value": "1" },
+                { "key": "per_page", "value": "20" }
+              ]
+            },
+            "description": "حركات النقاط فقط (اكتساب / تحويل)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 — Convert points → money",
+      "item": [
+        {
+          "name": "Convert (mobile) — RECOMMENDED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "console.log(json);",
+                  "if (json?.data?.net_amount_cents) {",
+                  "  pm.collectionVariables.set('withdraw_amount_cents', String(json.data.net_amount_cents));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"points\": {{points_to_convert}},\n  \"currency\": \"LYD\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/convert",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "convert"]
+            },
+            "description": "## Body\n| field | required | notes |\n|-------|----------|-------|\n| points | ✅ | عدد النقاط (≥1) |\n| currency | ❌ | default LYD |\n| vendor_store_id | ❌ | legacy optional |\n\n## الحساب\n```\ngross_cents = floor((points / points_per_currency_unit) * 100)\nfee_cents   = floor(gross * fee_percent/100) + fee_fixed_cents\nnet_cents   → يُضاف لـ balance_cents\npoints      → يُخصم من balance_points\n```\n\n## قواعد\n- لازم `is_redemption_open`\n- لو أقل من `min_redeem_points` → ارفض إلا لو بتحوّل **كامل الرصيد**\n- لو أكبر من `max_redeem_points` → ارفض\n\n## Response data\n`points_converted`, `gross_amount_cents`, `fee_cents`, `net_amount_cents`, `net_amount_formatted`, أرصدة بعد التحويل"
+          }
+        },
+        {
+          "name": "Convert (legacy plumber path)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"points\": {{points_to_convert}},\n  \"currency\": \"LYD\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/wallet/convert",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "wallet", "convert"]
+            },
+            "description": "نفس منطق mobile convert."
+          }
+        },
+        {
+          "name": "Convert full balance (below minimum allowed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"points\": {{points_to_convert}},\n  \"currency\": \"LYD\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/convert",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "convert"]
+            },
+            "description": "لو رصيدك أقل من الحد الأدنى: ضع `points` = `balance_points` بالظبط — النظام يقبل تحويل الرصيد بالكامل."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 — Withdraw money",
+      "item": [
+        {
+          "name": "Create withdrawal — bank_transfer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const id = json?.data?.id;",
+                  "if (id) pm.collectionVariables.set('withdrawal_id', String(id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount_cents\": {{withdraw_amount_cents}},\n  \"method\": \"bank_transfer\",\n  \"details\": {\n    \"bank_name\": \"مصرف الجمهورية\",\n    \"account_holder\": \"اسم السباك\",\n    \"iban\": \"LY123456789012345678901234\",\n    \"account_number\": \"0123456789\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals"]
+            },
+            "description": "## Body\n| field | required |\n|-------|----------|\n| amount_cents | ✅ integer ≥ 100 (100 = 1.00 د.ل) |\n| method | ✅ `bank_transfer` \\| `mobile_wallet` |\n| details | ✅ object |\n\nيحجز المبلغ من `balance_cents` فوراً (status=pending) حتى يعتمد الأدمن.\n\nAlias: `POST /api/v1/plumber/wallet/withdrawals`"
+          }
+        },
+        {
+          "name": "Create withdrawal — mobile_wallet",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount_cents\": {{withdraw_amount_cents}},\n  \"method\": \"mobile_wallet\",\n  \"details\": {\n    \"provider\": \"moamalat\",\n    \"phone\": \"0912345678\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/wallet/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "wallet", "withdrawals"]
+            }
+          }
+        },
+        {
+          "name": "List withdrawals",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = json?.data?.items?.[0] || json?.data?.[0];",
+                  "if (first?.id) pm.collectionVariables.set('withdrawal_id', String(first.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals"]
+            }
+          }
+        },
+        {
+          "name": "Show withdrawal (with transfer_card)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals/{{withdrawal_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals", "{{withdrawal_id}}"]
+            },
+            "description": "بعد الدفع يظهر:\n- `transfer_card` بطاقة UX جاهزة للموبايل\n- `receipt_url` / `receipt_public_url` / `receipt_download_url`\n- `payment_proof`"
+          }
+        },
+        {
+          "name": "Open transfer receipt (HTML)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "text/html" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals/{{withdrawal_id}}/receipt",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals", "{{withdrawal_id}}", "receipt"]
+            },
+            "description": "صفحة إيصال التحويل للطباعة/المشاركة. متاحة فقط إذا status=paid.\nافتحها في WebView مع Bearer token."
+          }
+        },
+        {
+          "name": "Download transfer receipt",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals/{{withdrawal_id}}/receipt/download",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals", "{{withdrawal_id}}", "receipt", "download"]
+            }
+          }
+        },
+        {
+          "name": "Mobile notifications inbox",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "notifications"]
+            },
+            "description": "بعد تأكيد الدفع من الأدمن يظهر إشعار:\n«تم تحويل مستحقاتك ✓» مع زر **عرض الإيصال**."
+          }
+        }
+      ]
+    }
+  ]
+}

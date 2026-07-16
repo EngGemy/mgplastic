@@ -272,10 +272,17 @@ class WalletController extends Controller
             ], 400);
         }
 
+        $withdrawal->loadMissing('plumber');
+        \App\Services\WithdrawalRequestService::notifySubmitted($withdrawal);
+
         return response()->json([
             'status' => true,
-            'message' => 'تم إنشاء طلب السحب',
-            'data' => $withdrawal,
+            'message' => 'تم إنشاء طلب السحب — سنُعلمك عند التحويل',
+            'data' => (new \App\Http\Resources\Mobile\WithdrawalResource($withdrawal))->resolve(),
+            'ux' => [
+                'title' => 'طلبك قيد المراجعة',
+                'body' => 'استلمنا طلب سحب '.$withdrawal->formattedAmount().'. ستصلك إشعار وإيصال عند إتمام التحويل.',
+            ],
         ], 201);
     }
 }

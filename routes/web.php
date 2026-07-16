@@ -24,6 +24,11 @@ Route::middleware(['web', 'auth'])
         Route::get('{invoice}/export', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'exportJson'])->name('export');
     });
 
+// Signed shareable withdrawal receipt (opens without app token)
+Route::get('/withdrawals/{withdrawal}/receipt', [\App\Http\Controllers\WithdrawalReceiptWebController::class, 'show'])
+    ->middleware('signed')
+    ->name('withdrawals.receipt');
+
 if (AdminPanelPath::hidesLegacyAdminUrl()) {
     Route::any('admin/{path?}', fn () => abort(404))
         ->where('path', '.*')

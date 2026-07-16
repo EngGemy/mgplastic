@@ -152,4 +152,54 @@ class WithdrawalRequest extends Model
 
         return $parts !== [] ? implode(' · ', $parts) : null;
     }
+
+    /** Absolute URL for the printable transfer receipt (auth required). */
+    public function receiptUrl(): ?string
+    {
+        if ($this->status !== 'paid') {
+            return null;
+        }
+
+        return url('/api/v1/mobile/plumber/withdrawals/'.$this->id.'/receipt');
+    }
+
+    public function receiptDownloadUrl(): ?string
+    {
+        if ($this->status !== 'paid') {
+            return null;
+        }
+
+        return url('/api/v1/mobile/plumber/withdrawals/'.$this->id.'/receipt/download');
+    }
+
+    /** Shareable signed web link (no app token needed). */
+    public function receiptPublicUrl(): ?string
+    {
+        return \App\Http\Controllers\WithdrawalReceiptWebController::signedUrl($this);
+    }
+
+    /** Card-friendly payload for mobile UX after payout. */
+    public function transferCard(): ?array
+    {
+        if ($this->status !== 'paid') {
+            return null;
+        }
+
+        return [
+            'title' => 'تم تحويل مستحقاتك ✓',
+            'subtitle' => 'طلب سحب #'.$this->id,
+            'amount_formatted' => $this->formattedAmount(),
+            'method_label' => $this->methodLabel(),
+            'payout_summary' => $this->payoutDetailsSummary(),
+            'payment_proof' => $this->paymentProofSummary(),
+            'paid_at' => $this->paid_at?->toIso8601String(),
+            'paid_at_formatted' => $this->paid_at
+                ? $this->paid_at->timezone('Africa/Tripoli')->format('Y/m/d — h:i A')
+                : null,
+            'receipt_url' => $this->receiptUrl(),
+            'receipt_download_url' => $this->receiptDownloadUrl(),
+            'receipt_public_url' => $this->receiptPublicUrl(),
+            'cta_label' => 'عرض إيصال التحويل',
+        ];
+    }
 }

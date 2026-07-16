@@ -70,6 +70,8 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('withdrawals', [WithdrawalController::class, 'index']);
         Route::get('withdrawals/{withdrawal}', [WithdrawalController::class, 'show']);
+        Route::get('withdrawals/{withdrawal}/receipt', [\App\Http\Controllers\Api\Plumber\WithdrawalReceiptController::class, 'show']);
+        Route::get('withdrawals/{withdrawal}/receipt/download', [\App\Http\Controllers\Api\Plumber\WithdrawalReceiptController::class, 'download']);
         Route::post('withdrawals', [WalletController::class, 'requestWithdrawal']);
     });
 

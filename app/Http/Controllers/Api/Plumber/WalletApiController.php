@@ -52,15 +52,42 @@ class WalletApiController extends Controller
     public function conversionRules(): JsonResponse
     {
         $rule = ConversionRule::globalSettings();
+        $rate = (float) $rule->points_per_currency_unit;
+        $examplePoints = max((int) $rule->min_redeem_points, (int) $rate);
+        $grossCents = $rate > 0 ? (int) floor(($examplePoints / $rate) * 100) : 0;
+        $feeCents = (int) floor($grossCents * ((float) $rule->fee_percent / 100)) + (int) $rule->fee_fixed_cents;
+        $netCents = max(0, $grossCents - $feeCents);
 
         return $this->success([
             'is_active' => $rule->is_active,
             'is_redemption_open' => $rule->isRedemptionOpen(),
-            'points_per_currency_unit' => (float) $rule->points_per_currency_unit,
+            'currency' => $rule->currency ?? 'LYD',
+            'points_per_currency_unit' => $rate,
             'min_redeem_points' => (int) $rule->min_redeem_points,
             'max_redeem_points' => $rule->max_redeem_points ? (int) $rule->max_redeem_points : null,
             'fee_percent' => (float) $rule->fee_percent,
             'fee_fixed_cents' => (int) $rule->fee_fixed_cents,
+            'starts_at' => $rule->starts_at?->toIso8601String(),
+            'ends_at' => $rule->ends_at?->toIso8601String(),
+            // كيف تتحول النقاط لفلوس (مش سعر المنتج في الفاتورة)
+            'how_it_works' => [
+                'earn' => 'النقاط تُكتسب من الفاتورة: نقاط البند = الكمية × points_per_unit للمنتج',
+                'convert' => 'التحويل لفلوس يتم بسعر صرف عام من الإدارة: LYD = points ÷ points_per_currency_unit ثم تُخصم الرسوم',
+                'withdraw' => 'السحب من balance_cents بعد التحويل (مش مباشرة من النقاط)',
+            ],
+            'formula' => [
+                'gross_cents' => 'floor((points / points_per_currency_unit) * 100)',
+                'fee_cents' => 'floor(gross_cents * fee_percent / 100) + fee_fixed_cents',
+                'net_cents' => 'max(0, gross_cents - fee_cents)',
+                'note' => '100 cents = 1.00 د.ل',
+            ],
+            'example' => [
+                'points' => $examplePoints,
+                'gross_amount_cents' => $grossCents,
+                'fee_cents' => $feeCents,
+                'net_amount_cents' => $netCents,
+                'net_amount_formatted' => number_format($netCents / 100, 2).' د.ل',
+            ],
         ]);
     }
 }

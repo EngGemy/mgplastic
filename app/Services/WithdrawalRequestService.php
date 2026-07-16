@@ -52,6 +52,9 @@ class WithdrawalRequestService
                 'created_by' => auth()->id(),
             ]);
         });
+
+        $req->refresh()->loadMissing('plumber');
+        self::notifyPaid($req);
     }
 
     public static function rejectAndRefund(WithdrawalRequest $req, array $data): void
@@ -94,6 +97,69 @@ class WithdrawalRequestService
                 ],
             ]);
         });
+
+        $req->refresh()->loadMissing('plumber');
+        self::notifyRejected($req);
+    }
+
+    public static function notifySubmitted(WithdrawalRequest $req): void
+    {
+        $plumber = $req->plumber;
+        if (! $plumber) {
+            return;
+        }
+
+        AdminNotificationService::send(
+            $plumber,
+            'تم استلام طلب السحب ⏳',
+            'طلب سحب بمبلغ '.$req->formattedAmount().' عبر '.$req->methodLabel()
+                .' قيد المراجعة. رقم الطلب #'.$req->id.' — سنُعلمك فور إتمام التحويل.',
+            'info',
+        );
+    }
+
+    public static function notifyPaid(WithdrawalRequest $req): void
+    {
+        $plumber = $req->plumber;
+        if (! $plumber) {
+            return;
+        }
+
+        $proof = $req->paymentProofSummary();
+        $body = 'تم تحويل '.$req->formattedAmount().' إلى حسابك عبر '.$req->methodLabel().'.';
+        if ($proof) {
+            $body .= ' '.$proof.'.';
+        }
+        $body .= ' افتح إيصال التحويل للاطلاع أو الطباعة.';
+
+        AdminNotificationService::send(
+            $plumber,
+            'تم تحويل مستحقاتك ✓',
+            $body,
+            'success',
+            \App\Http\Controllers\WithdrawalReceiptWebController::signedUrl($req) ?? $req->receiptUrl(),
+            'عرض الإيصال',
+        );
+    }
+
+    public static function notifyRejected(WithdrawalRequest $req): void
+    {
+        $plumber = $req->plumber;
+        if (! $plumber) {
+            return;
+        }
+
+        $reason = data_get($req->rejection_reason, 'ar')
+            ?: data_get($req->rejection_reason, 'en')
+            ?: 'بدون تفاصيل إضافية';
+
+        AdminNotificationService::send(
+            $plumber,
+            'طلب السحب لم يُعتمد',
+            'طلب #'.$req->id.' بمبلغ '.$req->formattedAmount()
+                .' رُفض وأُعيد الرصيد لمحفظتك. السبب: '.$reason,
+            'danger',
+        );
     }
 
     /** @return array{pending: int, paid: int, rejected: int, total_amount_pending: int} */

@@ -62,6 +62,16 @@ class ViewWithdrawalRequest extends ViewRecord
                 ->action(fn (array $data) => ListWithdrawalRequests::rejectAndRefund($this->record, $data));
         }
 
+        if ($record->status === 'paid') {
+            $actions[] = \Filament\Actions\Action::make('openReceipt')
+                ->label('إيصال التحويل')
+                ->icon('heroicon-o-document-text')
+                ->color('info')
+                ->url(fn () => $this->record->receiptPublicUrl() ?? $this->record->receiptUrl())
+                ->openUrlInNewTab()
+                ->visible(fn () => filled($this->record->receiptPublicUrl() ?? $this->record->receiptUrl()));
+        }
+
         return $actions;
     }
 }

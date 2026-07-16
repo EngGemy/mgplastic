@@ -1,5 +1,6 @@
 @php
     /** @var \App\Models\User $record */
+    $record = $getRecord();
     $record->loadMissing(['storeMedia.product.translations']);
     $media = $record->storeMedia->where('is_active', true);
     $banners = $media->where('kind', 'banner');
