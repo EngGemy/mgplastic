@@ -20,6 +20,14 @@ class CreateDistributorRetailTrader extends Page
 
     protected static ?string $title = 'إضافة تاجر قطاعي';
 
+    /**
+     * Filament/Livewire may hydrate a legacy `$data` payload from CreateRecord
+     * routes — keep it declared so requests do not 500.
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $data = [];
+
     public string $mode = 'existing';
 
     public string $lookupCode = '';
