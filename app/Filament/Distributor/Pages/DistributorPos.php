@@ -43,6 +43,19 @@ class DistributorPos extends Page
 
     protected ?Collection $stockCache = null;
 
+    public function mount(): void
+    {
+        $traders = $this->retailTraders;
+        if ($traders->count() === 1) {
+            $this->retailTraderId = (int) $traders->first()->id;
+        }
+    }
+
+    public function updatedRetailTraderId(mixed $value): void
+    {
+        $this->retailTraderId = ($value === '' || $value === null) ? null : (int) $value;
+    }
+
     public function getRetailTradersProperty(): Collection
     {
         return app(\App\Services\RetailNetworkLinkService::class)
@@ -256,6 +269,13 @@ class DistributorPos extends Page
 
         } catch (\DomainException $e) {
             Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();
+        } catch (\Throwable $e) {
+            report($e);
+            Notification::make()
+                ->danger()
+                ->title('تعذّر إتمام البيع')
+                ->body('حدث خطأ غير متوقع — أعد المحاولة أو تواصل مع الدعم')
+                ->send();
         }
     }
 }

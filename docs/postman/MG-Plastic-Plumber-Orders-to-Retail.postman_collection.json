@@ -1,0 +1,297 @@
+{
+  "info": {
+    "name": "MG Plastic — Plumber Orders to Retail",
+    "_postman_id": "d8e9f0a1-plumb-ord-4000-9000-mgplumbord",
+    "description": "# طلبيات السباك → التاجر القطاعي\n\nنفس سياسة طلبيات الشبكة:\n`placed → confirmed → shipping → delivered` (أو cancel/reject)\n\n## التدفق\n1. Login سباك\n2. `GET .../plumber/products` اختَر منتجات\n3. `POST .../plumber/orders` مع `retail_trader_id`\n4. التاجر (لوحة `/trader/orders` تاب **طلبات السباكين** أو API):\n   - confirm → ship / reject\n5. السباك: `POST .../receive` → تُضاف النقاط لمحفظته\n\nAuth plumber: Bearer `plumber_token`\nAuth trader: Bearer `trader_token`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "plumber_phone", "value": "", "type": "string" },
+    { "key": "plumber_password", "value": "", "type": "string" },
+    { "key": "plumber_token", "value": "", "type": "string" },
+    { "key": "trader_phone", "value": "", "type": "string" },
+    { "key": "trader_password", "value": "", "type": "string" },
+    { "key": "trader_token", "value": "", "type": "string" },
+    { "key": "retail_trader_id", "value": "", "type": "string" },
+    { "key": "product_id", "value": "1", "type": "string" },
+    { "key": "order_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Auth",
+      "item": [
+        {
+          "name": "Login Plumber",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const token = json?.data?.token || json?.token;",
+                "if (token) pm.collectionVariables.set('plumber_token', token);"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{plumber_phone}}\",\n  \"password\": \"{{plumber_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Login Retail Trader",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const token = json?.data?.token || json?.token;",
+                "if (token) pm.collectionVariables.set('trader_token', token);",
+                "const id = json?.data?.user?.id || json?.data?.store?.id;",
+                "if (id) pm.collectionVariables.set('retail_trader_id', String(id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{trader_phone}}\",\n  \"password\": \"{{trader_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — Plumber: catalog + place order",
+      "item": [
+        {
+          "name": "List products",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const first = json?.data?.items?.[0];",
+                "if (first?.id) pm.collectionVariables.set('product_id', String(first.id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/products?per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "products"],
+              "query": [{ "key": "per_page", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "Place order to retail trader",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "if (json?.data?.id) pm.collectionVariables.set('order_id', String(json.data.id));",
+                "pm.test('placed', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"retail_trader_id\": {{retail_trader_id}},\n  \"lines\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 2 }\n  ],\n  \"note\": \"طلب من السباك للتاجر القطاعي\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders"]
+            },
+            "description": "`channel = retail_to_plumber`\n\nRequired: `retail_trader_id`, `lines[]`"
+          }
+        },
+        {
+          "name": "List my orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders"]
+            }
+          }
+        },
+        {
+          "name": "Show order",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders", "{{order_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Trader: fulfil plumber order",
+      "item": [
+        {
+          "name": "Incoming plumber orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders?scope=from_plumbers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders"],
+              "query": [{ "key": "scope", "value": "from_plumbers" }]
+            },
+            "description": "`scope=from_plumbers` أو `incoming` — طلبيات السباكين الواردة.\n\nفي اللوحة: `/trader/orders` → تاب **طلبات السباكين**"
+          }
+        },
+        {
+          "name": "Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"note\": \"تم قبول الطلب\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{order_id}}", "confirm"]
+            }
+          }
+        },
+        {
+          "name": "Ship",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carrier_name\": \"مندوب المحل\",\n  \"tracking_number\": \"\",\n  \"expected_delivery_at\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}/ship",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{order_id}}", "ship"]
+            }
+          }
+        },
+        {
+          "name": "Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"غير متوفر حالياً\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/orders/{{order_id}}/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "orders", "{{order_id}}", "reject"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — Plumber: receive / cancel",
+      "item": [
+        {
+          "name": "Receive (points to wallet)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders/{{order_id}}/receive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders", "{{order_id}}", "receive"]
+            },
+            "description": "بعد الشحن — يوزّع من مخزون القطاعي ويمنح النقاط لمحفظة السباك (tier 3)."
+          }
+        },
+        {
+          "name": "Cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"إلغاء الطلب\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/orders/{{order_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "orders", "{{order_id}}", "cancel"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -42,6 +42,8 @@
 }
 .pos-input  { flex:2; min-width:200px; padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:8px; font-family:'Cairo',sans-serif; font-size:13px; }
 .pos-select:focus, .pos-input:focus { outline:none; border-color:#1a56db; }
+.pos-select-warn { border-color:#f59e0b !important; background:#fffbeb; }
+.pos-hint { font-size:12px; color:#b45309; background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; padding:8px 10px; margin-bottom:8px; }
 .pos-cats { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
 .pos-cat  { padding:5px 14px; border-radius:999px; border:1.5px solid #e2e8f0; background:#fff; font-size:12px; font-weight:600; cursor:pointer; color:#475569; transition:.15s; }
 .pos-cat:hover, .pos-cat.active { background:#1a56db; color:white; border-color:#1a56db; }
@@ -109,8 +111,8 @@
     <div>
         <div class="pos-toolbar">
             <div class="pos-select-wrap">
-                <select wire:model.live="retailTraderId" class="pos-select">
-                    <option value="">اختر التاجر القطاعي</option>
+                <select wire:model.live="retailTraderId" class="pos-select {{ $retailTraderId ? '' : 'pos-select-warn' }}">
+                    <option value="">⚠️ اختر التاجر القطاعي أولاً</option>
                     @foreach($traders as $t)
                         <option value="{{ $t->id }}">
                             @if($t->network_code)[{{ $t->network_code }}] @endif{{ $t->brand_name ?: $t->name }}
@@ -217,13 +219,21 @@
                 </div>
                 <div class="pos-total-row" style="font-size:11px;color:#94a3b8;">
                     <span>التاجر:</span>
-                    <span>{{ $traders->firstWhere('id', $retailTraderId)?->name ?? '—' }}</span>
+                    <span style="font-weight:700;color:{{ $retailTraderId ? '#059669' : '#dc2626' }}">
+                        {{ $traders->firstWhere('id', (int) $retailTraderId)?->brand_name
+                            ?: $traders->firstWhere('id', (int) $retailTraderId)?->name
+                            ?: 'لم يُختَر — اختر من القائمة أعلاه' }}
+                    </span>
                 </div>
+
+                @if(! $retailTraderId)
+                    <div class="pos-hint">لازم تختار التاجر القطاعي من القائمة فوق عشان تقدر تأكد البيع.</div>
+                @endif
 
                 <button type="button" class="pos-btn-checkout"
                     wire:click="checkout"
                     wire:loading.attr="disabled"
-                    @disabled(empty($this->cart) || !$retailTraderId)>
+                    @disabled(empty($this->cart))>
                     <span wire:loading.remove wire:target="checkout">✓ تأكيد البيع</span>
                     <span wire:loading wire:target="checkout">جارٍ المعالجة...</span>
                 </button>

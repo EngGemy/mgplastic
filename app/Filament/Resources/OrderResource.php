@@ -156,7 +156,7 @@ class OrderResource extends Resource
                 Tables\Columns\TextColumn::make('channel')
                     ->label('النوع')
                     ->badge()
-                    ->color(fn ($state) => $state === OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE ? 'info' : 'warning')
+                    ->color(fn ($state) => OrderStatus::channelColor($state))
                     ->formatStateUsing(fn ($state) => OrderStatus::channelLabel($state)),
 
                 Tables\Columns\TextColumn::make('requester.name')

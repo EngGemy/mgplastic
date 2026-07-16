@@ -1,0 +1,446 @@
+{
+  "info": {
+    "name": "MG Plastic — Notifications (Plumber + Trader)",
+    "_postman_id": "e9f0a1b2-notif-4000-9000-mgnotifinbox",
+    "description": "# إشعارات الموبايل (قاعدة البيانات)\n\nتخزين Laravel: جدول `notifications` (UUID) مربوط بالمستخدم (`notifiable`).\n\n## مسارات متكافئة\nنفس الـ API متاح على:\n- `/api/v1/mobile/notifications/*` (أي دور بعد login)\n- `/api/v1/mobile/plumber/notifications/*`\n- `/api/v1/mobile/trader/notifications/*`\n\n## العمليات\n| Method | Path | معنى |\n|--------|------|------|\n| GET | `/` | قائمة + pagination + summary |\n| GET | `/summary` | total / unread / read |\n| GET | `/unread-count` | عداد غير المقروء |\n| GET | `/{id}` | تفاصيل إشعار |\n| POST | `/{id}/read` | تعليم مقروء |\n| POST | `/{id}/unread` | تعليم غير مقروء |\n| POST | `/read-all` | الكل مقروء |\n| POST | `/read-many` | `{ids:[...]}` |\n| DELETE | `/{id}` | حذف واحد |\n| POST | `/delete-many` | `{ids:[...]}` |\n| DELETE | `/read` | حذف المقروء فقط |\n| DELETE | `/` | حذف الكل |\n\n### Query على القائمة\n`per_page`, `page`, `filter=unread|read`, `unread_only=1`, `read_only=1`, `status=info|success|warning|danger`, `q=`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "plumber_phone", "value": "", "type": "string" },
+    { "key": "plumber_password", "value": "", "type": "string" },
+    { "key": "plumber_token", "value": "", "type": "string" },
+    { "key": "trader_phone", "value": "", "type": "string" },
+    { "key": "trader_password", "value": "", "type": "string" },
+    { "key": "trader_token", "value": "", "type": "string" },
+    { "key": "notification_id", "value": "", "type": "string" },
+    { "key": "per_page", "value": "20", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Auth",
+      "item": [
+        {
+          "name": "Login Plumber",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const token = json?.data?.token || json?.token;",
+                "if (token) pm.collectionVariables.set('plumber_token', token);"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{plumber_phone}}\",\n  \"password\": \"{{plumber_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Login Trader",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const token = json?.data?.token || json?.token;",
+                "if (token) pm.collectionVariables.set('trader_token', token);"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{trader_phone}}\",\n  \"password\": \"{{trader_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — Plumber notifications",
+      "item": [
+        {
+          "name": "List (paginated)",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const first = json?.data?.items?.[0];",
+                "if (first?.id) pm.collectionVariables.set('notification_id', String(first.id));",
+                "console.log('unread=', json?.data?.summary?.unread, 'total=', json?.data?.summary?.total);"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications?per_page={{per_page}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications"],
+              "query": [
+                { "key": "per_page", "value": "{{per_page}}" },
+                { "key": "filter", "value": "unread", "disabled": true },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "info", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "summary"]
+            }
+          }
+        },
+        {
+          "name": "Unread count",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/unread-count",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "unread-count"]
+            }
+          }
+        },
+        {
+          "name": "Show one",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Mark read",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}", "read"]
+            }
+          }
+        },
+        {
+          "name": "Mark unread",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}/unread",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}", "unread"]
+            }
+          }
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/read-all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "read-all"]
+            }
+          }
+        },
+        {
+          "name": "Mark many read",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\"{{notification_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/read-many",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "read-many"]
+            }
+          }
+        },
+        {
+          "name": "Delete one",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "{{notification_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete many",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\"{{notification_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/delete-many",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "delete-many"]
+            }
+          }
+        },
+        {
+          "name": "Delete all read",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications", "read"]
+            }
+          }
+        },
+        {
+          "name": "Delete all",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "notifications"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Trader notifications",
+      "item": [
+        {
+          "name": "List (paginated)",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "const json = pm.response.json();",
+                "const first = json?.data?.items?.[0];",
+                "if (first?.id) pm.collectionVariables.set('notification_id', String(first.id));"
+              ]
+            }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications?per_page={{per_page}}&filter=unread",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications"],
+              "query": [
+                { "key": "per_page", "value": "{{per_page}}" },
+                { "key": "filter", "value": "unread" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "summary"]
+            }
+          }
+        },
+        {
+          "name": "Unread count (badge)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/unread-count",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "unread-count"]
+            }
+          }
+        },
+        {
+          "name": "Mark read",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/{{notification_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "{{notification_id}}", "read"]
+            }
+          }
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/read-all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "read-all"]
+            }
+          }
+        },
+        {
+          "name": "Delete one",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/{{notification_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "{{notification_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete all read",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{trader_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/trader/notifications/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "trader", "notifications", "read"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — Shared mobile path (any role)",
+      "item": [
+        {
+          "name": "GET /mobile/notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/notifications?per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "notifications"],
+              "query": [{ "key": "per_page", "value": "20" }]
+            },
+            "description": "نفس المنطق — يعمل لأي Bearer (plumber / trader / distributor)."
+          }
+        }
+      ]
+    }
+  ]
+}

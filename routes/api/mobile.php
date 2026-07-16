@@ -17,6 +17,8 @@ use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
 use App\Http\Controllers\Api\Mobile\SettingsController;
 use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardController;
+use App\Http\Controllers\Api\Plumber\OrderController as PlumberOrderController;
+use App\Http\Controllers\Api\Plumber\ProductCatalogController as PlumberProductCatalogController;
 use App\Http\Controllers\Api\Plumber\WalletApiController;
 use App\Http\Controllers\Api\Plumber\WalletController;
 use App\Http\Controllers\Api\Plumber\WithdrawalController;
@@ -52,9 +54,17 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::prefix('notifications')->group(function () {
             Route::get('/', [NotificationController::class, 'index']);
+            Route::get('summary', [NotificationController::class, 'summary']);
             Route::get('unread-count', [NotificationController::class, 'unreadCount']);
             Route::post('read-all', [NotificationController::class, 'markAllRead']);
+            Route::post('read-many', [NotificationController::class, 'markManyRead']);
+            Route::delete('read', [NotificationController::class, 'destroyRead']);
+            Route::delete('/', [NotificationController::class, 'destroyAll']);
+            Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('{id}', [NotificationController::class, 'show']);
             Route::post('{id}/read', [NotificationController::class, 'markRead']);
+            Route::post('{id}/unread', [NotificationController::class, 'markUnread']);
+            Route::delete('{id}', [NotificationController::class, 'destroy']);
         });
     });
 
@@ -74,6 +84,32 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('withdrawals/{withdrawal}/receipt', [\App\Http\Controllers\Api\Plumber\WithdrawalReceiptController::class, 'show']);
         Route::get('withdrawals/{withdrawal}/receipt/download', [\App\Http\Controllers\Api\Plumber\WithdrawalReceiptController::class, 'download']);
         Route::post('withdrawals', [WalletController::class, 'requestWithdrawal']);
+
+        // Notifications inbox (same DB notifications table)
+        Route::prefix('notifications')->group(function () {
+            Route::get('/', [NotificationController::class, 'index']);
+            Route::get('summary', [NotificationController::class, 'summary']);
+            Route::get('unread-count', [NotificationController::class, 'unreadCount']);
+            Route::post('read-all', [NotificationController::class, 'markAllRead']);
+            Route::post('read-many', [NotificationController::class, 'markManyRead']);
+            Route::delete('read', [NotificationController::class, 'destroyRead']);
+            Route::delete('/', [NotificationController::class, 'destroyAll']);
+            Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('{id}', [NotificationController::class, 'show']);
+            Route::post('{id}/read', [NotificationController::class, 'markRead']);
+            Route::post('{id}/unread', [NotificationController::class, 'markUnread']);
+            Route::delete('{id}', [NotificationController::class, 'destroy']);
+        });
+
+        // Products catalog for placing orders to retail traders
+        Route::get('products', [PlumberProductCatalogController::class, 'index']);
+
+        // Orders to retail trader
+        Route::get('orders', [PlumberOrderController::class, 'index']);
+        Route::post('orders', [PlumberOrderController::class, 'store']);
+        Route::get('orders/{order}', [PlumberOrderController::class, 'show']);
+        Route::post('orders/{order}/receive', [PlumberOrderController::class, 'receive']);
+        Route::post('orders/{order}/cancel', [PlumberOrderController::class, 'cancel']);
     });
 
     // ── Retail trader (تاجر التجزئة) ───────────────────────────
@@ -86,13 +122,32 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('pos/stock', [TraderPosController::class, 'stock']);
         Route::post('pos/checkout', [TraderPosController::class, 'checkout']);
 
+        // Notifications inbox (same DB notifications table)
+        Route::prefix('notifications')->group(function () {
+            Route::get('/', [NotificationController::class, 'index']);
+            Route::get('summary', [NotificationController::class, 'summary']);
+            Route::get('unread-count', [NotificationController::class, 'unreadCount']);
+            Route::post('read-all', [NotificationController::class, 'markAllRead']);
+            Route::post('read-many', [NotificationController::class, 'markManyRead']);
+            Route::delete('read', [NotificationController::class, 'destroyRead']);
+            Route::delete('/', [NotificationController::class, 'destroyAll']);
+            Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('{id}', [NotificationController::class, 'show']);
+            Route::post('{id}/read', [NotificationController::class, 'markRead']);
+            Route::post('{id}/unread', [NotificationController::class, 'markUnread']);
+            Route::delete('{id}', [NotificationController::class, 'destroy']);
+        });
+
         // Catalog — pick products when placing supply order to wholesaler
         Route::get('products', [TraderProductCatalogController::class, 'index']);
 
-        // Orders placed to the wholesale distributor
+        // Orders — place to wholesaler + fulfil plumber orders
         Route::get('orders', [TraderOrderController::class, 'index']);
         Route::post('orders', [TraderOrderController::class, 'store']);
         Route::get('orders/{order}', [TraderOrderController::class, 'show']);
+        Route::post('orders/{order}/confirm', [TraderOrderController::class, 'confirm']);
+        Route::post('orders/{order}/ship', [TraderOrderController::class, 'ship']);
+        Route::post('orders/{order}/reject', [TraderOrderController::class, 'reject']);
         Route::post('orders/{order}/receive', [TraderOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [TraderOrderController::class, 'cancel']);
     });

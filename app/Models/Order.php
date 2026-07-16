@@ -89,6 +89,11 @@ class Order extends Model
         return $this->channel === OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL;
     }
 
+    public function isPlumberChannel(): bool
+    {
+        return $this->channel === OrderStatus::CHANNEL_RETAIL_TO_PLUMBER;
+    }
+
     public function statusLabel(): string
     {
         return OrderStatus::label($this->status);

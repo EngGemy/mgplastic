@@ -96,7 +96,7 @@
                 { "key": "category_id", "value": "{{category_id}}", "disabled": true }
               ]
             },
-            "description": "## GET `/api/v1/mobile/trader/products`\n\nكتالوج المنتجات لاختيار بنود الطلب.\n\n### Query\n| param | default | notes |\n|-------|---------|-------|\n| per_page | 20 | max 100 |\n| page | 1 | |\n| q / search | — | بحث بالاسم |\n| category_id | — | فلتر تصنيف |\n\n### Response `data`\n- `items[]`: id, name, description, image_url, points_per_unit, category_id, category_name\n- `pagination`: current_page, last_page, per_page, total\n\nيرجع منتجات بـ `points_per_unit > 0` فقط."
+            "description": "## GET `/api/v1/mobile/trader/products`\n\nكتالوج **كل** منتجات MG لاختيار بنود الطلب (بما فيها بدون نقاط).\n\n### Query\n| param | default | notes |\n|-------|---------|-------|\n| per_page | 20 | max 100 |\n| page | 1 | |\n| q / search | — | بحث بالاسم |\n| category_id | — | فلتر تصنيف |\n| has_points | — | اختياري: `1` نقاط فقط / `0` بدون نقاط |\n\n### Response `data`\n- `items[]`: id, name, description, image_url, points_per_unit, **has_points**, category_id, category_name\n- `pagination`: current_page, last_page, per_page, total"
           }
         },
         {

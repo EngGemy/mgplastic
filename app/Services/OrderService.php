@@ -22,13 +22,13 @@ class OrderService
      * Place a new order (buyer initiated).
      *
      * @param  array<int, array{product_id:int, quantity:int}>  $lines
-     * @param  array{note?:?string}  $meta
+     * @param  array{note?:?string, retail_trader_id?:?int, supplier_id?:?int}  $meta
      *
      * @throws \DomainException
      */
     public function place(User $requester, string $channel, array $lines, array $meta = []): Order
     {
-        $supplier = $this->resolveSupplier($requester, $channel);
+        $supplier = $this->resolveSupplier($requester, $channel, $meta);
         $prepared = $this->prepareLines($lines);
 
         if (empty($prepared['items'])) {
@@ -135,7 +135,11 @@ class OrderService
             $order->loadMissing('items', 'requester', 'supplier');
 
             $reference = $this->fulfilStock($order, $actor);
-            $this->creditRequesterPoints($order, $actor, $reference['invoice_id'] ?? null);
+
+            // Plumber channel credits points via tier-3 distribution — skip double credit.
+            if (! $order->isPlumberChannel()) {
+                $this->creditRequesterPoints($order, $actor, $reference['invoice_id'] ?? null);
+            }
 
             $order->update([
                 'status' => OrderStatus::DELIVERED,
@@ -146,7 +150,11 @@ class OrderService
             ]);
 
             $points = (int) $order->total_points;
-            $pointsNote = $points > 0 ? " وتم إضافة {$points} نقطة لمحفظتك." : '.';
+            $pointsNote = $points > 0
+                ? ($order->isPlumberChannel()
+                    ? " وتم إضافة {$points} نقطة لمحفظة السباك."
+                    : " وتم إضافة {$points} نقطة لمحفظتك.")
+                : '.';
 
             $this->notifyRequester(
                 $order,
@@ -237,7 +245,10 @@ class OrderService
 
     // ── internals ──────────────────────────────────────────────
 
-    protected function resolveSupplier(User $requester, string $channel): ?User
+    /**
+     * @param  array{retail_trader_id?:?int, supplier_id?:?int}  $meta
+     */
+    protected function resolveSupplier(User $requester, string $channel, array $meta = []): ?User
     {
         if ($channel === OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE) {
             if (! $requester->isWholesaleDistributor()) {
@@ -268,6 +279,33 @@ class OrderService
 
             if (! $supplier || ! $supplier->isWholesaleDistributor()) {
                 throw new \DomainException('لست مرتبطاً بموزّع جملة — تواصل مع موزّعك ليربط حسابك عبر الرقم الموحّد');
+            }
+
+            return $supplier;
+        }
+
+        if ($channel === OrderStatus::CHANNEL_RETAIL_TO_PLUMBER) {
+            if (! $requester->isPlumber()) {
+                throw new \DomainException('طلب المنتجات من التاجر القطاعي متاح للسباكين فقط');
+            }
+
+            $supplierId = (int) ($meta['retail_trader_id'] ?? $meta['supplier_id'] ?? 0);
+
+            if ($supplierId <= 0 && $requester->parent_distributor_id) {
+                $parent = User::find($requester->parent_distributor_id);
+                if ($parent?->isRetailTrader()) {
+                    $supplierId = (int) $parent->id;
+                }
+            }
+
+            $supplier = $supplierId > 0 ? User::find($supplierId) : null;
+
+            if (! $supplier || ! $supplier->isRetailTrader()) {
+                throw new \DomainException('اختر التاجر القطاعي (retail_trader_id) لإرسال الطلب إليه');
+            }
+
+            if (! $supplier->is_active || ! $supplier->is_approved) {
+                throw new \DomainException('هذا التاجر القطاعي غير مفعّل حالياً');
             }
 
             return $supplier;
@@ -368,6 +406,10 @@ class OrderService
             ];
         }
 
+        if ($order->isPlumberChannel()) {
+            return $this->fulfilRetailToPlumber($order, $lines);
+        }
+
         // wholesale → retail
         $wholesaler = $order->supplier;
         $retailTrader = $order->requester;
@@ -421,6 +463,56 @@ class OrderService
         return [
             'invoice_id' => null,
             'reference' => ['invoice_numbers' => $invoiceNumbers],
+        ];
+    }
+
+    /**
+     * @param  array<int, array{product_id:int, quantity:int, points_per_unit?:float}>  $lines
+     * @return array{invoice_id?:?int, reference?:?array<string, mixed>}
+     */
+    protected function fulfilRetailToPlumber(Order $order, array $lines): array
+    {
+        $retailTrader = $order->supplier;
+        $plumber = $order->requester;
+
+        if (! $retailTrader?->isRetailTrader() || ! $plumber?->isPlumber()) {
+            throw new \DomainException('تعذّر تحديد أطراف طلب السباك');
+        }
+
+        $stock = $this->inventory->stockForRetailTrader($retailTrader);
+
+        if ($stock->isEmpty()) {
+            throw new \DomainException('مخزون التاجر القطاعي فارغ حالياً — تعذّر تسليم الطلب');
+        }
+
+        $requested = [];
+        foreach ($lines as $line) {
+            $requested[$line['product_id']] = ($requested[$line['product_id']] ?? 0) + (int) $line['quantity'];
+        }
+
+        $groups = $this->inventory->allocateFromStock($stock, $requested);
+        $distributionIds = [];
+
+        foreach ($groups as $group) {
+            $invoice = Invoice::query()->findOrFail($group['invoice_id']);
+
+            $distribution = $this->distributions->createDistribution(
+                invoice: $invoice,
+                fromUser: $retailTrader,
+                toUser: $plumber,
+                tier: 3,
+                items: $group['items'],
+                parentId: $group['parent_distribution_id'],
+                skipCallerCheck: true,
+            );
+
+            $this->distributions->confirmDistribution($distribution->fresh(['items']));
+            $distributionIds[] = $distribution->id;
+        }
+
+        return [
+            'invoice_id' => null,
+            'reference' => ['distribution_ids' => $distributionIds],
         ];
     }
 

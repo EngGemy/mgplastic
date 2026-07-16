@@ -24,8 +24,7 @@ class ProductCatalogController extends Controller
         $perPage = min(max((int) $request->integer('per_page', 20), 1), 100);
 
         $query = Product::query()
-            ->with(['translations', 'images', 'category.translations'])
-            ->where('points_per_unit', '>', 0);
+            ->with(['translations', 'images', 'category.translations']);
 
         if ($request->filled('category_id')) {
             $query->where('product_category_id', (int) $request->query('category_id'));
@@ -38,6 +37,17 @@ class ProductCatalogController extends Controller
             }
         }
 
+        // Optional: ?has_points=1|0 — default returns ALL MG products (with or without points)
+        if ($request->filled('has_points')) {
+            if ($request->boolean('has_points')) {
+                $query->where('points_per_unit', '>', 0);
+            } else {
+                $query->where(function ($q) {
+                    $q->whereNull('points_per_unit')->orWhere('points_per_unit', '<=', 0);
+                });
+            }
+        }
+
         $page = $query->latest('id')->paginate($perPage);
 
         $items = collect($page->items())->map(function (Product $product) {
@@ -46,6 +56,7 @@ class ProductCatalogController extends Controller
                 ?? $product->main_image
                 ?? $gallery
                 ?? null;
+            $points = (float) ($product->points_per_unit ?? 0);
 
             return [
                 'id' => (int) $product->id,
@@ -54,7 +65,8 @@ class ProductCatalogController extends Controller
                 'image' => $image,
                 'image_url' => $product->display_image_url
                     ?? ($image ? asset('storage/'.ltrim($image, '/')) : null),
-                'points_per_unit' => (float) $product->points_per_unit,
+                'points_per_unit' => $points,
+                'has_points' => $points > 0,
                 'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
                 'category_name' => $product->category
                     ? localized_name($product->category, 'name', '')
@@ -70,7 +82,7 @@ class ProductCatalogController extends Controller
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
             ],
-        ], 'كتالوج المنتجات للطلب');
+        ], 'كتالوج منتجات MG');
     }
 
     private function language(Request $request): string

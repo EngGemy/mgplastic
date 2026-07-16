@@ -40,6 +40,27 @@ class TraderOrderResource extends Resource
             ->with(['requester:id,name,brand_name,role', 'supplier:id,name,brand_name,role']);
     }
 
+    public static function getNavigationBadge(): ?string
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return null;
+        }
+
+        $count = static::getEloquentQuery()
+            ->where('supplier_id', $user->id)
+            ->where('channel', \App\Support\OrderStatus::CHANNEL_RETAIL_TO_PLUMBER)
+            ->where('status', \App\Support\OrderStatus::PLACED)
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'success';
+    }
+
     public static function canCreate(): bool
     {
         return true;

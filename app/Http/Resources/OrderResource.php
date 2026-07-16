@@ -16,6 +16,7 @@ class OrderResource extends JsonResource
             'order_number' => $this->order_number,
             'channel' => $this->channel,
             'channel_label' => OrderStatus::channelLabel($this->channel),
+            'channel_color' => OrderStatus::channelColor($this->channel),
 
             'status' => $this->status,
             'status_label' => OrderStatus::label($this->status),
