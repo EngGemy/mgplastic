@@ -34,6 +34,8 @@ class PlumberPublicController extends Controller
                 'city_id',
                 'country_id',
                 'short_description',
+                'latitude',
+                'longitude',
             ]);
 
         if ($request->filled('search')) {

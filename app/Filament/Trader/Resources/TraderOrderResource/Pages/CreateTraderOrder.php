@@ -15,6 +15,11 @@ class CreateTraderOrder extends Page
 
     protected static string $view = 'filament.orders.place-order';
 
+    public function mount(): void
+    {
+        $this->prefillFromRequest();
+    }
+
     public function getTitle(): string
     {
         return 'طلب جديد من موزّع الجملة';

@@ -10,6 +10,8 @@ use Illuminate\Support\Collection;
 
 trait PlacesNetworkOrder
 {
+    use SetsCartQuantity;
+
     public string $search = '';
 
     public ?int $selectedCategoryId = null;
@@ -156,7 +158,7 @@ trait PlacesNetworkOrder
     public function increment(string $key): void
     {
         if (isset($this->cart[$key])) {
-            $this->cart[$key]['quantity']++;
+            $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
         }
     }
 
@@ -166,13 +168,20 @@ trait PlacesNetworkOrder
             return;
         }
 
-        if ($this->cart[$key]['quantity'] <= 1) {
-            unset($this->cart[$key]);
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] - 1);
+    }
 
+    public function prefillFromRequest(): void
+    {
+        $productId = (int) request()->query('product', 0);
+        $qty = max(1, (int) request()->query('qty', 1));
+
+        if ($productId <= 0) {
             return;
         }
 
-        $this->cart[$key]['quantity']--;
+        $this->addToCart($productId);
+        $this->setQuantity((string) $productId, $qty);
     }
 
     public function removeFromCart(string $key): void

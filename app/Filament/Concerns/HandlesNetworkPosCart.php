@@ -4,10 +4,11 @@ namespace App\Filament\Concerns;
 
 use Illuminate\Support\Collection;
 
-use Filament\Notifications\Notification;
-
 trait HandlesNetworkPosCart
 {
+    use SetsCartQuantity;
+    use NotifiesPosStockLimit;
+
     /** @var array<string, array{product_id:int, name:string, quantity:int, points_per_unit:float, image:?string, max_qty:int}> */
     public array $cart = [];
 
@@ -92,13 +93,7 @@ trait HandlesNetworkPosCart
             return;
         }
 
-        if ($this->cart[$key]['quantity'] >= $this->cart[$key]['max_qty']) {
-            $this->notifyPosStockLimit($this->cart[$key]['name'], (int) $this->cart[$key]['max_qty']);
-
-            return;
-        }
-
-        $this->cart[$key]['quantity']++;
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
     }
 
     public function decrementQty(string $key): void
@@ -107,11 +102,7 @@ trait HandlesNetworkPosCart
             return;
         }
 
-        if ($this->cart[$key]['quantity'] <= 1) {
-            unset($this->cart[$key]);
-        } else {
-            $this->cart[$key]['quantity']--;
-        }
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] - 1);
     }
 
     public function removeLine(string $key): void
@@ -130,10 +121,6 @@ trait HandlesNetworkPosCart
 
     protected function notifyPosStockLimit(string $productName, int $maxQty): void
     {
-        Notification::make()
-            ->warning()
-            ->title('حد المخزون لديك')
-            ->body("«{$productName}» — المخزون المتاح {$maxQty} وحدة فقط. لا يمكنك إضافة كمية أكثر من ذلك.")
-            ->send();
+        $this->notifyStockLimit($productName, $maxQty);
     }
 }

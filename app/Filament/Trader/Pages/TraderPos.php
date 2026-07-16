@@ -3,6 +3,8 @@
 namespace App\Filament\Trader\Pages;
 
 use App\Filament\Concerns\NotifiesPosStockLimit;
+use App\Filament\Concerns\SetsCartQuantity;
+use App\Filament\Trader\Resources\TraderOrderResource;
 use App\Models\Invoice;
 use App\Models\InvoiceDistributionItem;
 use App\Models\Product;
@@ -10,6 +12,7 @@ use App\Models\ProductCategory;
 use App\Models\User;
 use App\Services\DistributionService;
 use App\Services\NetworkInventoryService;
+use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Collection;
@@ -17,6 +20,7 @@ use Illuminate\Support\Collection;
 class TraderPos extends Page
 {
     use NotifiesPosStockLimit;
+    use SetsCartQuantity;
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
 
@@ -41,7 +45,11 @@ class TraderPos extends Page
     /** @var array<string, array<string, mixed>> */
     public array $cart = [];
 
-    protected ?Collection $stockCache = null;
+    public ?int $qtyModalProductId = null;
+
+    public int $qtyModalAmount = 1;
+
+    protected ?Collection $catalogCache = null;
 
     public function getPlumbersProperty(): Collection
     {
@@ -109,64 +117,89 @@ class TraderPos extends Page
 
     public function getCategoriesProperty(): Collection
     {
-        $stockProductIds = $this->stockRows()->pluck('product_id')->toArray();
+        $productIds = $this->catalogRows()->pluck('product_id')->all();
 
-        if ($stockProductIds === []) {
+        if ($productIds === []) {
             return collect();
         }
 
-        return ProductCategory::with('translations')
-            ->whereHas('products', fn ($q) => $q->whereIn('id', $stockProductIds))
+        return ProductCategory::query()
+            ->with('translations')
+            ->whereNull('parent_id')
+            ->where(function ($q) use ($productIds) {
+                $q->whereHas('products', fn ($p) => $p->whereIn('id', $productIds))
+                    ->orWhereHas('children.products', fn ($p) => $p->whereIn('id', $productIds));
+            })
+            ->orderBy('id')
             ->get();
     }
 
-    protected function stockRows(): Collection
+    /**
+     * All catalog products merged with network stock (points inventory).
+     */
+    protected function catalogRows(): Collection
     {
-        if ($this->stockCache !== null) {
-            return $this->stockCache;
+        if ($this->catalogCache !== null) {
+            return $this->catalogCache;
         }
 
-        $stock = app(NetworkInventoryService::class)->stockForRetailTrader(auth()->user());
+        $stockByProduct = app(NetworkInventoryService::class)
+            ->stockForRetailTrader(auth()->user())
+            ->keyBy('product_id');
 
-        $products = Product::whereIn('id', $stock->pluck('product_id')->toArray())
-            ->with(['translations', 'category.translations', 'images'])
+        $colors = ['blue', 'green', 'amber', 'purple', 'teal', 'indigo', 'pink', 'red'];
+
+        $this->catalogCache = Product::query()
+            ->with(['translations', 'category.translations'])
+            ->orderBy('id')
             ->get()
-            ->keyBy('id');
+            ->map(function (Product $product) use ($stockByProduct, $colors) {
+                $name = localized_name($product, 'name', "منتج #{$product->id}");
+                $stock = $stockByProduct->get($product->id);
+                $availableQty = (int) ($stock['available_qty'] ?? 0);
+                $ppu = (float) ($stock['points_per_unit'] ?? $product->points_per_unit ?? 0);
+                $image = $stock['image'] ?? $product->main_image;
+                $imageUrl = $product->display_image_url
+                    ?? ($image ? asset('storage/'.ltrim((string) $image, '/')) : null);
+                $initials = collect(explode(' ', $name))->take(2)->map(fn ($w) => mb_substr($w, 0, 1))->implode('');
 
-        $this->stockCache = $stock->map(function ($row) use ($products) {
-            $product = $products->get($row['product_id']);
-            if (! $product) {
-                return null;
-            }
+                return [
+                    'product_id' => $product->id,
+                    'name' => $name,
+                    'category_id' => $product->product_category_id,
+                    'points_per_unit' => $ppu,
+                    'available_qty' => $availableQty,
+                    'can_distribute' => $availableQty > 0 && $ppu > 0,
+                    'image' => $imageUrl,
+                    'initials' => $initials ?: 'MG',
+                    'color_class' => $colors[crc32($name) % count($colors)],
+                ];
+            })
+            ->values();
 
-            $name = $product->translate('ar')?->name ?? $product->translate('en')?->name ?? 'منتج';
-            $image = $row['image'] ?? $product->main_image;
-            $imageUrl = $image ? asset('storage/'.ltrim($image, '/')) : null;
-            $initials = collect(explode(' ', $name))->take(2)->map(fn ($w) => mb_substr($w, 0, 1))->implode('');
-            $colors = ['blue', 'green', 'amber', 'purple', 'teal', 'indigo', 'pink', 'red'];
+        return $this->catalogCache;
+    }
 
-            return [
-                'product_id' => $row['product_id'],
-                'name' => $name,
-                'category_id' => $product->product_category_id,
-                'points_per_unit' => $row['points_per_unit'],
-                'available_qty' => $row['available_qty'],
-                'image' => $imageUrl,
-                'initials' => $initials,
-                'color_class' => $colors[crc32($name) % count($colors)],
-            ];
-        })->filter()->values();
-
-        return $this->stockCache;
+    /** Alias for stock-limit helper compatibility */
+    protected function stockRows(): Collection
+    {
+        return $this->catalogRows();
     }
 
     public function getFilteredStockProperty(): Collection
     {
-        return $this->stockRows()
-            ->filter(fn ($r) => (float) ($r['points_per_unit'] ?? 0) > 0)
-            ->when($this->selectedCategoryId, fn ($c) => $c->filter(
-                fn ($r) => (int) $r['category_id'] === (int) $this->selectedCategoryId
-            ))
+        return $this->catalogRows()
+            ->when($this->selectedCategoryId, function (Collection $c) {
+                $catId = (int) $this->selectedCategoryId;
+                $allowed = ProductCategory::query()
+                    ->whereKey($catId)
+                    ->orWhere('parent_id', $catId)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                return $c->filter(fn ($r) => in_array((int) ($r['category_id'] ?? 0), $allowed, true));
+            })
             ->when($this->search, function ($c) {
                 $term = mb_strtolower(trim($this->search));
 
@@ -180,34 +213,76 @@ class TraderPos extends Page
         return (int) collect($this->cart)->sum(fn ($l) => floor($l['quantity'] * $l['points_per_unit']));
     }
 
+    public function getQtyModalProductProperty(): ?array
+    {
+        if (! $this->qtyModalProductId) {
+            return null;
+        }
+
+        return $this->catalogRows()->firstWhere('product_id', $this->qtyModalProductId);
+    }
+
     public function selectCategory(?int $id): void
     {
         $this->selectedCategoryId = $id;
     }
 
-    public function addToCart(int $productId): void
+    public function handleProductClick(int $productId): void
     {
-        $row = $this->stockRows()->firstWhere('product_id', $productId);
-        if (! $row || $row['available_qty'] <= 0) {
+        $row = $this->catalogRows()->firstWhere('product_id', $productId);
+
+        if (! $row) {
             return;
         }
 
-        $key = (string) $productId;
+        if (! ($row['can_distribute'] ?? false)) {
+            $this->offerOrderInstead($productId, (string) $row['name']);
+
+            return;
+        }
+
+        $this->qtyModalProductId = $productId;
+        $this->qtyModalAmount = 1;
+    }
+
+    public function closeQtyModal(): void
+    {
+        $this->qtyModalProductId = null;
+        $this->qtyModalAmount = 1;
+    }
+
+    public function confirmQtyModal(): void
+    {
+        $productId = $this->qtyModalProductId;
+        if (! $productId) {
+            return;
+        }
+
+        $row = $this->catalogRows()->firstWhere('product_id', $productId);
+        if (! $row || ! ($row['can_distribute'] ?? false)) {
+            $this->closeQtyModal();
+
+            return;
+        }
+
         $maxQty = (int) $row['available_qty'];
+        $qty = max(1, (int) $this->qtyModalAmount);
 
+        if ($qty > $maxQty) {
+            $this->notifyStockLimit($row['name'], $maxQty);
+            $qty = $maxQty;
+        }
+
+        $key = (string) $productId;
         if (isset($this->cart[$key])) {
-            if ($this->cart[$key]['quantity'] >= $maxQty) {
-                $this->notifyStockLimit($this->cart[$key]['name'], $maxQty);
-
-                return;
-            }
-            $this->cart[$key]['quantity']++;
+            $newQty = min($maxQty, (int) $this->cart[$key]['quantity'] + $qty);
+            $this->cart[$key]['quantity'] = $newQty;
             $this->cart[$key]['available_qty'] = $maxQty;
         } else {
             $this->cart[$key] = [
                 'product_id' => $productId,
                 'name' => $row['name'],
-                'quantity' => 1,
+                'quantity' => $qty,
                 'points_per_unit' => (float) $row['points_per_unit'],
                 'image' => $row['image'],
                 'initials' => $row['initials'],
@@ -215,6 +290,31 @@ class TraderPos extends Page
                 'available_qty' => $maxQty,
             ];
         }
+
+        $this->closeQtyModal();
+    }
+
+    protected function offerOrderInstead(int $productId, string $name): void
+    {
+        $url = TraderOrderResource::getUrl('create').'?product='.$productId;
+
+        Notification::make()
+            ->warning()
+            ->title('لا توجد نقاط متاحة لهذا المنتج')
+            ->body("«{$name}» غير متوفر في مخزون النقاط لديك. يمكنك طلبه من موزّع الجملة.")
+            ->persistent()
+            ->actions([
+                NotificationAction::make('order')
+                    ->label('إضافة للطلبيات')
+                    ->button()
+                    ->url($url),
+            ])
+            ->send();
+    }
+
+    public function addToCart(int $productId): void
+    {
+        $this->handleProductClick($productId);
     }
 
     public function increment(string $key): void
@@ -228,14 +328,7 @@ class TraderPos extends Page
             (int) $this->cart[$key]['available_qty'],
         );
         $this->cart[$key]['available_qty'] = $maxQty;
-
-        if ($this->cart[$key]['quantity'] >= $maxQty) {
-            $this->notifyStockLimit($this->cart[$key]['name'], $maxQty);
-
-            return;
-        }
-
-        $this->cart[$key]['quantity']++;
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
     }
 
     public function decrement(string $key): void
@@ -243,12 +336,8 @@ class TraderPos extends Page
         if (! isset($this->cart[$key])) {
             return;
         }
-        if ($this->cart[$key]['quantity'] <= 1) {
-            unset($this->cart[$key]);
 
-            return;
-        }
-        $this->cart[$key]['quantity']--;
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] - 1);
     }
 
     public function removeFromCart(string $key): void
@@ -324,7 +413,7 @@ class TraderPos extends Page
             $this->cart = [];
             $this->plumberId = null;
             $this->plumberSearch = '';
-            $this->stockCache = null;
+            $this->catalogCache = null;
 
         } catch (\DomainException $e) {
             Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();

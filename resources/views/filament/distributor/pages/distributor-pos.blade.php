@@ -193,7 +193,10 @@
 
                 <div class="pos-qty-ctrl">
                     <button type="button" class="pos-qty-btn" wire:click="decrement('{{ $key }}')">−</button>
-                    <span class="pos-qty-val">{{ $line['quantity'] }}</span>
+                    <input type="number" min="1" max="{{ $line['available_qty'] ?? '' }}"
+                        style="width:56px;height:28px;text-align:center;font-weight:800;border:1.5px solid #cbd5e1;border-radius:7px;font-family:inherit"
+                        value="{{ $line['quantity'] }}"
+                        wire:change="setQuantity('{{ $key }}', $event.target.value)">
                     @php $atMax = $line['quantity'] >= ($line['available_qty'] ?? 0); @endphp
                     <button type="button"
                         class="pos-qty-btn {{ $atMax ? 'maxed' : '' }}"

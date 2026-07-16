@@ -3,6 +3,7 @@
 namespace App\Filament\Distributor\Pages;
 
 use App\Filament\Concerns\NotifiesPosStockLimit;
+use App\Filament\Concerns\SetsCartQuantity;
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\InvoiceItem;
@@ -18,6 +19,7 @@ use Illuminate\Support\Collection;
 class DistributorPos extends Page
 {
     use NotifiesPosStockLimit;
+    use SetsCartQuantity;
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
 
@@ -185,14 +187,7 @@ class DistributorPos extends Page
             (int) $this->cart[$key]['available_qty'],
         );
         $this->cart[$key]['available_qty'] = $maxQty;
-
-        if ($this->cart[$key]['quantity'] >= $maxQty) {
-            $this->notifyStockLimit($this->cart[$key]['name'], $maxQty);
-
-            return;
-        }
-
-        $this->cart[$key]['quantity']++;
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
     }
 
     public function decrement(string $key): void
@@ -200,12 +195,8 @@ class DistributorPos extends Page
         if (! isset($this->cart[$key])) {
             return;
         }
-        if ($this->cart[$key]['quantity'] <= 1) {
-            unset($this->cart[$key]);
 
-            return;
-        }
-        $this->cart[$key]['quantity']--;
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] - 1);
     }
 
     public function removeFromCart(string $key): void

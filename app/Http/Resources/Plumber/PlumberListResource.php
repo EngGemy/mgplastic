@@ -22,6 +22,11 @@ class PlumberListResource extends JsonResource
             'profile_photo_url' => $this->profile_photo_url,
             'short_description' => $this->short_description,
 
+            'latitude'  => $this->latitude !== null ? (float) $this->latitude : null,
+            'longitude' => $this->longitude !== null ? (float) $this->longitude : null,
+            'lat'       => $this->latitude !== null ? (float) $this->latitude : null,
+            'long'      => $this->longitude !== null ? (float) $this->longitude : null,
+
             // Never touch ->id unless the relation exists
             'city' => $city ? [
                 'id'   => $city->id,

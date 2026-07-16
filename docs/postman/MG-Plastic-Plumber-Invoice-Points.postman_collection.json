@@ -1,0 +1,329 @@
+{
+  "info": {
+    "name": "MG Plastic — Plumber Invoice & Points",
+    "_postman_id": "a9f1e2d3-7777-4c00-9000-mgplumberpoints",
+    "description": "بعد ما التاجر القطاعي يعمل توزيع نقاط للسباك من الكاشير، السباك يشوف الفاتورة والنقاط والرصيد وطلبات السحب من التطبيق.\n\n## التدفق\n1. Login سباك → يحفظ `plumber_token`\n2. قائمة الفواتير الواصلة (توزيعات طبقة ③)\n3. تفاصيل فاتورة واحدة + النقاط المكتسبة\n4. رصيد النقاط في المحفظة\n5. حركات النقاط (تفاصيل)\n6. طلبات السحب + إنشاء طلب سحب\n\n## Setup\n1. عدّل `base_url` (محلي: `http://mgplastic.test` — إنتاج: `https://mg-plastic.com`)\n2. ضع هاتف/كلمة مرور السباك\n3. شغّل **Login Plumber** ثم باقي الطلبات",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "plumber_token", "value": "", "type": "string" },
+    { "key": "plumber_phone", "value": "0910000098", "type": "string" },
+    { "key": "plumber_password", "value": "secret123", "type": "string" },
+    { "key": "distribution_id", "value": "", "type": "string" },
+    { "key": "withdrawal_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 — Auth",
+      "item": [
+        {
+          "name": "Login Plumber",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token || json?.token;",
+                  "if (token) { pm.collectionVariables.set('plumber_token', token); }",
+                  "pm.test('login ok', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{plumber_phone}}\",\n  \"password\": \"{{plumber_password}}\"\n}"
+            },
+            "description": "تسجيل دخول السباك. يحفظ Bearer token في `plumber_token`.\nبديل: `POST /api/v1/auth/login-plumber` (نفس المنطق)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — الفاتورة كاملة (التوزيع الواصل)",
+      "item": [
+        {
+          "name": "قائمة الفواتير الواصلة للسباك",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = json?.data?.data?.[0] || json?.data?.[0];",
+                  "if (first?.id) { pm.collectionVariables.set('distribution_id', String(first.id)); }",
+                  "pm.test('received list ok', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/invoices/received",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "invoices", "received"]
+            },
+            "description": "**① الفاتورة / التوزيع الواصل**\n\nيرجع كل توزيعات الطبقة ③ المؤكدة للسباك الحالي مع:\n- رقم الفاتورة\n- من (التاجر القطاعي)\n- البنود والمنتجات\n- الحالة\n\nيحفظ أول `distribution_id` تلقائياً لاستخدامه في التفاصيل."
+          }
+        },
+        {
+          "name": "تفاصيل فاتورة واحدة كاملة",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('detail ok', () => pm.expect(pm.response.code).to.eql(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('has distribution + points', () => {",
+                  "  pm.expect(json.data).to.have.property('distribution');",
+                  "  pm.expect(json.data).to.have.property('points_earned');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/invoices/{{distribution_id}}/detail",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "invoices", "{{distribution_id}}", "detail"]
+            },
+            "description": "**① + ② معاً**\n\n`GET /api/v1/plumber/invoices/{distribution_id}/detail`\n\nيرجع:\n- `distribution` كامل (بنود، كميات، منتجات، من أرسل)\n- `points_earned` = مجموع نقاط هذه الفاتورة\n- `status_label` بالعربية"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — النقاط المكتسبة وتفاصيلها",
+      "item": [
+        {
+          "name": "نقاط فاتورة محددة (من التفاصيل)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/invoices/{{distribution_id}}/detail",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "invoices", "{{distribution_id}}", "detail"]
+            },
+            "description": "**② عدد النقاط اللي حصل عليها من الفاتورة**\n\nانظر الحقل `data.points_earned` + بنود `data.distribution.items[].points_value`."
+          }
+        },
+        {
+          "name": "سجل حركات النقاط (كل التفاصيل)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/transactions?per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "transactions"],
+              "query": [{ "key": "per_page", "value": "20" }]
+            },
+            "description": "**② تفاصيل النقاط عبر الزمن**\n\nكل حركة محفظة (إضافة من توزيع، تحويل، سحب...) مع `points_delta` و `amount_cents` ووصف."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — رصيد السباك من النقاط",
+      "item": [
+        {
+          "name": "رصيد المحفظة (v1 plumber)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "wallet"]
+            },
+            "description": "**③ رصيد النقاط الحالي**\n\nيرجع:\n- `balance_points` ← الرصيد بالنقاط\n- `balance_cents` ← رصيد مالي بعد التحويل (إن وُجد)\n- `recent_transactions` آخر 10 حركات"
+          }
+        },
+        {
+          "name": "رصيد المحفظة (mobile API)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet"]
+            },
+            "description": "نفس الرصيد بصيغة Mobile Resource:\n`balance_points` + `balance_cents` + `balance_formatted`."
+          }
+        },
+        {
+          "name": "Dashboard السباك (ملخص)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "dashboard"]
+            },
+            "description": "ملخص لوحة السباك (رصيد + إحصائيات سريعة إن وُجدت)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 — طلبات سحب النقاط / الرصيد",
+      "item": [
+        {
+          "name": "قائمة طلبات السحب",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const first = json?.data?.items?.[0] || json?.data?.[0];",
+                  "if (first?.id) { pm.collectionVariables.set('withdrawal_id', String(first.id)); }",
+                  "pm.test('withdrawals list ok', () => pm.expect(pm.response.code).to.eql(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals"]
+            },
+            "description": "**④ طلبات السحب**\n\nكل طلبات السحب الخاصة بالسباك: المبلغ، الحالة، الطريقة، بيانات الدفع."
+          }
+        },
+        {
+          "name": "تفاصيل طلب سحب",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals/{{withdrawal_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals", "{{withdrawal_id}}"]
+            },
+            "description": "تفاصيل طلب سحب واحد."
+          }
+        },
+        {
+          "name": "إنشاء طلب سحب (تحويل بنكي)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "withdrawals"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount_cents\": 5000,\n  \"method\": \"bank_transfer\",\n  \"details\": {\n    \"bank_name\": \"مصرف الجمهورية\",\n    \"account_holder\": \"اسم السباك\",\n    \"iban\": \"LY123456789012345678901234\",\n    \"account_number\": \"0123456789\"\n  }\n}"
+            },
+            "description": "**④ إنشاء طلب سحب**\n\n`amount_cents` بالمليم/هللة (5000 = 50.00 د.ل).\n\nبديل بنفس الجسم:\n`POST /api/v1/plumber/wallet/withdrawals`\n\nملاحظة: السحب حالياً من الرصيد المالي (`balance_cents`) بعد تحويل النقاط. لو الرصيد صفر حوّل نقاط أولاً عبر `POST /api/v1/mobile/plumber/wallet/convert`."
+          }
+        },
+        {
+          "name": "إنشاء طلب سحب (محفظة موبايل)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/plumber/wallet/withdrawals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "plumber", "wallet", "withdrawals"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount_cents\": 3000,\n  \"method\": \"mobile_wallet\",\n  \"details\": {\n    \"provider\": \"moamalat\",\n    \"phone\": \"0912345678\"\n  }\n}"
+            },
+            "description": "طلب سحب عبر محفظة إلكترونية — نفس منطق السحب من مسار v1 plumber."
+          }
+        },
+        {
+          "name": "تحويل نقاط → رصيد (قبل السحب)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{plumber_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mobile/plumber/wallet/convert",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mobile", "plumber", "wallet", "convert"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"points\": 100,\n  \"currency\": \"LYD\"\n}"
+            },
+            "description": "اختياري: تحويل نقاط إلى رصيد مالي قبل طلب السحب (حسب فترة الصرف في إعدادات النظام)."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -95,7 +95,10 @@
                                 <div class="pos-cart-line-mid">
                                     <div class="pos-qty">
                                         <button type="button" wire:click="decrementQty('{{ $key }}')">−</button>
-                                        <span>{{ $line['quantity'] }}</span>
+                                        <input type="number" min="1"
+                                            style="width:56px;text-align:center;font-weight:800;border:1px solid #cbd5e1;border-radius:6px"
+                                            value="{{ $line['quantity'] }}"
+                                            wire:change="setQuantity('{{ $key }}', $event.target.value)">
                                         <button type="button" wire:click="incrementQty('{{ $key }}')">+</button>
                                     </div>
                                 </div>

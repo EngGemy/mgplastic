@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
+use App\Filament\Concerns\SetsCartQuantity;
 use App\Filament\Resources\InvoiceResource;
 use App\Models\Product;
 use App\Models\ProductCategory;
@@ -14,6 +15,8 @@ use Illuminate\Support\Collection;
 
 class CreateWholesaleInvoice extends Page
 {
+    use SetsCartQuantity;
+
     protected static string $resource = InvoiceResource::class;
 
     protected static string $view = 'filament.resources.invoice-resource.pages.create-wholesale-invoice';
@@ -131,7 +134,7 @@ class CreateWholesaleInvoice extends Page
     public function incrementQty(string $key): void
     {
         if (isset($this->cart[$key])) {
-            $this->cart[$key]['quantity']++;
+            $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
         }
     }
 
@@ -141,11 +144,7 @@ class CreateWholesaleInvoice extends Page
             return;
         }
 
-        if ($this->cart[$key]['quantity'] <= 1) {
-            unset($this->cart[$key]);
-        } else {
-            $this->cart[$key]['quantity']--;
-        }
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] - 1);
     }
 
     public function removeLine(string $key): void

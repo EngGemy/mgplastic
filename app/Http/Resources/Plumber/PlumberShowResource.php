@@ -24,6 +24,12 @@ class PlumberShowResource extends JsonResource
             'website'           => $this->website,
             'show_social_links' => (bool) ($this->show_social_links ?? true),
 
+            'latitude'  => $this->latitude !== null ? (float) $this->latitude : null,
+            'longitude' => $this->longitude !== null ? (float) $this->longitude : null,
+            'lat'       => $this->latitude !== null ? (float) $this->latitude : null,
+            'long'      => $this->longitude !== null ? (float) $this->longitude : null,
+            'has_location' => $this->latitude !== null && $this->longitude !== null,
+
             'social_links' => $this->when(
                 $this->relationLoaded('socialLinks') && ($this->show_social_links ?? true),
                 fn () => $this->socialLinks->map->toApiArray()->values()

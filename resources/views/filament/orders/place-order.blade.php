@@ -127,7 +127,10 @@
                     </div>
                     <div class="ord-qty">
                         <button type="button" class="ord-qty-btn" wire:click="decrement('{{ $key }}')">−</button>
-                        <div class="ord-qty-val">{{ $line['quantity'] }}</div>
+                        <input type="number" min="1" class="ord-qty-val"
+                            style="width:56px;height:28px;text-align:center;font-weight:800;border:1.5px solid #cbd5e1;border-radius:7px;font-family:inherit;background:#fff"
+                            value="{{ $line['quantity'] }}"
+                            wire:change="setQuantity('{{ $key }}', $event.target.value)">
                         <button type="button" class="ord-qty-btn" wire:click="increment('{{ $key }}')">+</button>
                     </div>
                     <button type="button" class="ord-rm" wire:click="removeFromCart('{{ $key }}')">حذف</button>
