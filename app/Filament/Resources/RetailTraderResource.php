@@ -8,10 +8,13 @@ use App\Filament\Resources\RetailTraderResource\Pages;
 use App\Filament\Resources\RetailTraderResource\RelationManagers;
 use App\Models\SystemLabel;
 use App\Models\User;
+use App\Services\RetailNetworkLinkService;
+use App\Services\StoreApprovalService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -50,17 +53,42 @@ class RetailTraderResource extends Resource
         return SystemLabel::get('retail_trader', 'موزعون قطاعيون');
     }
 
+    public static function getNavigationBadge(): ?string
+    {
+        if (! in_array(auth()->user()?->role, ['super_admin', 'admin'], true)) {
+            return null;
+        }
+
+        $count = StoreApprovalService::pendingRetailCount();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
+
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'طلبات تفعيل تاجر قطاعي بانتظار الموافقة';
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
             ->where('role', 'retail_trader')
-            ->with(['parentDistributor', 'country', 'city', 'storeMedia', 'socialLinks'])
-            ->withCount('plumbers');
+            ->with(['parentDistributor', 'linkedWholesalers', 'country', 'city', 'storeMedia', 'socialLinks'])
+            ->withCount(['plumbers', 'linkedWholesalers']);
 
         $user = auth()->user();
 
         if ($user?->isWholesaleDistributor()) {
-            $query->where('parent_distributor_id', $user->id);
+            $wholesalerId = (int) $user->id;
+            $query->where(function (Builder $q) use ($wholesalerId) {
+                $q->where('parent_distributor_id', $wholesalerId)
+                    ->orWhereHas('linkedWholesalers', fn (Builder $lq) => $lq->where('users.id', $wholesalerId));
+            });
         }
 
         return $query;
@@ -285,6 +313,9 @@ class RetailTraderResource extends Resource
         return $table
             ->defaultSort('created_at', 'desc')
             ->striped()
+            ->recordClasses(fn (User $record) => ! $record->is_approved
+                ? 'bg-warning-50 dark:bg-warning-950/20'
+                : null)
             ->columns([
                 Tables\Columns\TextColumn::make('network_code')
                     ->label('الرقم الموحّد')
@@ -301,10 +332,17 @@ class RetailTraderResource extends Resource
                     ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('parentDistributor.name')
-                    ->label('الموزّع الأساسي')
+                    ->label('الجملة الأساسي')
                     ->default('—')
                     ->badge()
-                    ->color(fn ($state) => $state ? 'primary' : 'gray'),
+                    ->color(fn ($state) => $state ? 'primary' : 'gray')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('linked_wholesalers_count')
+                    ->label('موزّعي جملة')
+                    ->badge()
+                    ->color('info')
+                    ->tooltip('عدد موزّعي الجملة المرتبطين (يمكن أكثر من واحد)'),
 
                 Tables\Columns\TextColumn::make('phone')->label('الهاتف')->searchable(),
 
@@ -315,27 +353,129 @@ class RetailTraderResource extends Resource
 
                 Tables\Columns\IconColumn::make('is_independent')
                     ->label('منفرد')
-                    ->boolean(),
+                    ->boolean()
+                    ->tooltip('سجّل بدون موزّع جملة (يمكن ربطه لاحقاً بعدة موزّعين)'),
+
+                Tables\Columns\IconColumn::make('is_approved')
+                    ->label('معتمد')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-check-badge')
+                    ->falseIcon('heroicon-o-clock')
+                    ->trueColor('success')
+                    ->falseColor('warning'),
 
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('نشط')
                     ->boolean(),
+
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('التسجيل')
+                    ->since()
+                    ->sortable()
+                    ->toggleable(),
             ])
             ->filters([
+                Tables\Filters\TernaryFilter::make('is_approved')
+                    ->label('الاعتماد')
+                    ->placeholder('الكل')
+                    ->trueLabel('معتمد')
+                    ->falseLabel('بانتظار التفعيل'),
+                Tables\Filters\TernaryFilter::make('is_active')->label('نشط'),
                 Tables\Filters\TernaryFilter::make('is_independent')->label('منفرد'),
                 Tables\Filters\SelectFilter::make('parent_distributor_id')
-                    ->label('المتجر')
+                    ->label('الجملة الأساسي')
                     ->options(fn () => User::where('role', 'wholesale_distributor')->pluck('name', 'id')),
             ])
             ->actions([
+                Tables\Actions\Action::make('approve')
+                    ->label('تفعيل')
+                    ->icon('heroicon-o-check-badge')
+                    ->color('success')
+                    ->visible(fn (User $record) => ! $record->is_approved
+                        && in_array(auth()->user()?->role, ['super_admin', 'admin'], true))
+                    ->requiresConfirmation()
+                    ->modalHeading('تفعيل تاجر قطاعي')
+                    ->modalDescription(fn (User $record) => "اعتماد وتفعيل «{$record->name}» ليعمل على النظام؟")
+                    ->action(function (User $record) {
+                        app(StoreApprovalService::class)->approve($record, auth()->user());
+                        Notification::make()->success()->title('تم تفعيل التاجر القطاعي')->send();
+                    }),
+
+                Tables\Actions\Action::make('activate')
+                    ->label('إعادة تفعيل')
+                    ->icon('heroicon-o-bolt')
+                    ->color('success')
+                    ->visible(fn (User $record) => $record->is_approved && ! $record->is_active
+                        && in_array(auth()->user()?->role, ['super_admin', 'admin'], true))
+                    ->requiresConfirmation()
+                    ->action(function (User $record) {
+                        app(StoreApprovalService::class)->activate($record);
+                        Notification::make()->success()->title('تم تفعيل النشاط')->send();
+                    }),
+
+                Tables\Actions\Action::make('deactivate')
+                    ->label('إيقاف')
+                    ->icon('heroicon-o-no-symbol')
+                    ->color('danger')
+                    ->visible(fn (User $record) => (bool) $record->is_active
+                        && in_array(auth()->user()?->role, ['super_admin', 'admin'], true))
+                    ->form([
+                        Forms\Components\Textarea::make('reason')
+                            ->label('سبب الإيقاف (اختياري)')
+                            ->rows(2),
+                    ])
+                    ->requiresConfirmation()
+                    ->action(function (User $record, array $data) {
+                        app(StoreApprovalService::class)->deactivate($record, $data['reason'] ?? null);
+                        Notification::make()->success()->title('تم إيقاف النشاط')->send();
+                    }),
+
                 Tables\Actions\ViewAction::make()->label('عرض'),
                 Tables\Actions\EditAction::make()->label('تعديل'),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('bulkApprove')
+                        ->label('تفعيل المحدد')
+                        ->icon('heroicon-o-check-badge')
+                        ->color('success')
+                        ->visible(fn () => in_array(auth()->user()?->role, ['super_admin', 'admin'], true))
+                        ->requiresConfirmation()
+                        ->action(function ($records) {
+                            $service = app(StoreApprovalService::class);
+                            $records->each(fn (User $retail) => $service->approve($retail, auth()->user()));
+                            Notification::make()->success()->title('تم تفعيل المحددين')->send();
+                        }),
+                    Tables\Actions\BulkAction::make('bulkActivate')
+                        ->label('إعادة تفعيل المحدد')
+                        ->icon('heroicon-o-bolt')
+                        ->color('success')
+                        ->visible(fn () => in_array(auth()->user()?->role, ['super_admin', 'admin'], true))
+                        ->requiresConfirmation()
+                        ->action(function ($records) {
+                            $service = app(StoreApprovalService::class);
+                            $records->each(fn (User $retail) => $service->activate($retail));
+                            Notification::make()->success()->title('تم تفعيل النشاط')->send();
+                        }),
+                    Tables\Actions\BulkAction::make('bulkDeactivate')
+                        ->label('إيقاف المحدد')
+                        ->icon('heroicon-o-no-symbol')
+                        ->color('danger')
+                        ->visible(fn () => in_array(auth()->user()?->role, ['super_admin', 'admin'], true))
+                        ->requiresConfirmation()
+                        ->action(function ($records) {
+                            $service = app(StoreApprovalService::class);
+                            $records->each(fn (User $retail) => $service->deactivate($retail));
+                            Notification::make()->success()->title('تم إيقاف المحددين')->send();
+                        }),
+                ]),
             ]);
     }
 
     public static function getRelations(): array
     {
         return [
+            RelationManagers\LinkedWholesalersRelationManager::class,
             RelationManagers\PlumbersRelationManager::class,
             \App\Filament\RelationManagers\StoreMediaRelationManager::class,
             \App\Filament\RelationManagers\SocialLinksRelationManager::class,
@@ -372,8 +512,10 @@ class RetailTraderResource extends Resource
             return true;
         }
 
-        return auth()->user()?->isWholesaleDistributor()
-            && (int) $record->parent_distributor_id === (int) auth()->id();
+        $user = auth()->user();
+
+        return $user?->isWholesaleDistributor()
+            && app(RetailNetworkLinkService::class)->isLinked($user, $record);
     }
 
     public static function canEdit($record): bool

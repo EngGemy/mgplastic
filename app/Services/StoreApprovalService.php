@@ -17,8 +17,10 @@ class StoreApprovalService
 
         AdminNotificationService::send(
             $store,
-            'تم تفعيل متجرك ✓',
-            'وافق الإدارة على حساب متجرك. يمكنك الآن الظهور في الشبكة واستخدام كل الميزات.',
+            $store->isRetailTrader() ? 'تم تفعيل حسابك ✓' : 'تم تفعيل متجرك ✓',
+            $store->isRetailTrader()
+                ? 'وافقت الإدارة على حسابك كتاجر قطاعي. يمكنك الآن استخدام النظام والظهور في الشبكة.'
+                : 'وافق الإدارة على حساب متجرك. يمكنك الآن الظهور في الشبكة واستخدام كل الميزات.',
             'success',
         );
 
@@ -33,12 +35,19 @@ class StoreApprovalService
             'deactivated_at' => now(),
         ])->save();
 
-        $body = 'لم تتم الموافقة على حساب متجرك حالياً.';
+        $body = $store->isRetailTrader()
+            ? 'لم تتم الموافقة على حسابك كتاجر قطاعي حالياً.'
+            : 'لم تتم الموافقة على حساب متجرك حالياً.';
         if ($reason) {
             $body .= ' السبب: '.$reason;
         }
 
-        AdminNotificationService::send($store, 'طلب التفعيل مرفوض', $body, 'danger');
+        AdminNotificationService::send(
+            $store,
+            'طلب التفعيل مرفوض',
+            $body,
+            'danger'
+        );
 
         return $store;
     }
@@ -55,8 +64,10 @@ class StoreApprovalService
 
         AdminNotificationService::send(
             $store,
-            'تم تفعيل نشاط متجرك ✓',
-            'أعادت الإدارة تفعيل حسابك. يمكنك تسجيل الدخول والظهور في الشبكة مجدداً.',
+            $store->isRetailTrader() ? 'تم تفعيل نشاط حسابك ✓' : 'تم تفعيل نشاط متجرك ✓',
+            $store->isRetailTrader()
+                ? 'أعادت الإدارة تفعيل حسابك. يمكنك تسجيل الدخول والعمل على النظام مجدداً.'
+                : 'أعادت الإدارة تفعيل حسابك. يمكنك تسجيل الدخول والظهور في الشبكة مجدداً.',
             'success',
         );
 
@@ -71,12 +82,19 @@ class StoreApprovalService
             'deactivated_at' => now(),
         ])->save();
 
-        $body = 'تم إيقاف نشاط متجرك من قبل الإدارة.';
+        $body = $store->isRetailTrader()
+            ? 'تم إيقاف نشاط حسابك من قبل الإدارة.'
+            : 'تم إيقاف نشاط متجرك من قبل الإدارة.';
         if ($reason) {
             $body .= ' السبب: '.$reason;
         }
 
-        AdminNotificationService::send($store, 'تم إيقاف نشاط المتجر', $body, 'warning');
+        AdminNotificationService::send(
+            $store,
+            $store->isRetailTrader() ? 'تم إيقاف نشاط الحساب' : 'تم إيقاف نشاط المتجر',
+            $body,
+            'warning'
+        );
 
         return $store;
     }
@@ -85,6 +103,14 @@ class StoreApprovalService
     {
         return User::query()
             ->where('role', 'wholesale_distributor')
+            ->where('is_approved', false)
+            ->count();
+    }
+
+    public static function pendingRetailCount(): int
+    {
+        return User::query()
+            ->where('role', 'retail_trader')
             ->where('is_approved', false)
             ->count();
     }

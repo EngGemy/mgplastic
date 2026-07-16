@@ -251,10 +251,10 @@ trait HasStoreLocationForm
             Forms\Components\Radio::make('affiliation_type')
                 ->label('نوع الموزع')
                 ->options([
-                    'linked' => 'تابع لمتجر جملة',
-                    'independent' => 'موزع قطاعي منفرد',
+                    'independent' => 'منفرد (بدون جملة — يمكن ربطه لاحقاً بعدة موزّعين)',
+                    'linked' => 'تابع لموزّع جملة أساسي',
                 ])
-                ->default('linked')
+                ->default('independent')
                 ->inline()
                 ->live()
                 ->afterStateUpdated(function ($state, Set $set) {
@@ -277,12 +277,13 @@ trait HasStoreLocationForm
                     ->pluck('name', 'id'))
                 ->searchable()
                 ->preload()
-                ->required(fn (Get $get) => ($get('affiliation_type') ?? 'linked') === 'linked')
-                ->visible(fn (Get $get) => ($get('affiliation_type') ?? 'linked') === 'linked')
+                ->required(fn (Get $get) => ($get('affiliation_type') ?? 'independent') === 'linked')
+                ->visible(fn (Get $get) => ($get('affiliation_type') ?? 'independent') === 'linked')
+                ->helperText('الربط الأساسي فقط — يمكن إضافة موزّعين آخرين من تبويب «موزّعو الجملة المرتبطون» بعد الحفظ.')
                 ->columnSpanFull(),
 
             Forms\Components\Hidden::make('is_independent')
-                ->default(false)
+                ->default(true)
                 ->dehydrated(true),
         ];
     }

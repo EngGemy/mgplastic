@@ -96,6 +96,9 @@ class StoreRegisterController extends Controller
                 'is_active'         => true,
                 'is_phone_verified' => false,
                 'show_social_links' => true,
+                // Retail may register alone; wholesalers link later (many-to-many).
+                'is_independent'    => $role === 'retail_trader',
+                'parent_distributor_id' => null,
                 'otp_code'          => $localOtp,
                 'otp_expires_at'    => $isLibya ? null : now()->addMinutes(5),
             ]);

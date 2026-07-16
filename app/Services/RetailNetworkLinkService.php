@@ -160,6 +160,22 @@ class RetailNetworkLinkService
         }
     }
 
+    public function detach(User $wholesaler, User $retailTrader): void
+    {
+        $wholesaler->linkedRetailTraders()->detach($retailTrader->id);
+
+        if ((int) $retailTrader->parent_distributor_id === (int) $wholesaler->id) {
+            $nextId = $retailTrader->linkedWholesalers()
+                ->orderByPivot('linked_at')
+                ->value('users.id');
+
+            $retailTrader->forceFill([
+                'parent_distributor_id' => $nextId,
+                'is_independent' => $nextId === null,
+            ])->save();
+        }
+    }
+
     /** @return \Illuminate\Database\Eloquent\Collection<int, User> */
     public function linkedRetailersFor(User $wholesaler)
     {

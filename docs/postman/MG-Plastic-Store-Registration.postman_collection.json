@@ -2,7 +2,7 @@
   "info": {
     "name": "MG Plastic — Store Registration (Retail vs Wholesale)",
     "_postman_id": "d4e5f6a7-regstore-4000-9000-mgstorereg",
-    "description": "# تسجيل المتاجر من الموبايل\n\n## المهم للموبايل\nاستخدم **فقط**:\n\n`POST /api/v1/auth/register-retail`\n\n→ ينشئ `role = retail_trader` (تاجر تجزئة / قطاعي)\n\n**لا تستخدم** `register-store` من شاشة تسجيل المتاجر في الموبايل — ده لـ **موزّع الجملة** (`wholesale_distributor`).\n\nAlias بنفس السلوك: `POST /api/v1/auth/register-trader`\n\n## التدفق\n1. Register Retail (multipart أو JSON)\n2. Verify OTP\n3. انتظر موافقة الأدمن (`is_approved`)\n4. Login → استخدم `my-store/*`\n\n## Content-Type\n- بدون صور: `application/json`\n- مع صور: `multipart/form-data`",
+    "description": "# تسجيل المتاجر من الموبايل\n\n## المهم للموبايل\nاستخدم **فقط**:\n\n`POST /api/v1/auth/register-retail`\n\n→ ينشئ `role = retail_trader` (تاجر تجزئة / قطاعي)\n\n**لا تستخدم** `register-store` من شاشة تسجيل المتاجر في الموبايل — ده لـ **موزّع الجملة** (`wholesale_distributor`).\n\nAlias بنفس السلوك: `POST /api/v1/auth/register-trader`\n\n## بدون موزّع جملة\nالتسجيل **لا يحتاج** `parent_distributor_id` ولا أي ربط بجملة.\nالحساب يُنشأ `is_independent=true` و`is_approved=false` حتى يفعّله الأدمن من:\n`/mg-cp/retail-traders` → زر **تفعيل على النظام**\n\nبعد التفعيل يمكن ربطه بـ **أكثر من موزّع جملة** (من لوحة الأدمن أو من لوحة الموزّع عبر الرقم الموحّد).\n\n## التدفق\n1. Register Retail\n2. Verify OTP\n3. أدمن يضغط تفعيل\n4. Login → `my-store/*`\n\n## Content-Type\n- بدون صور: `application/json`\n- مع صور: `multipart/form-data`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
