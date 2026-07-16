@@ -107,6 +107,71 @@ class NetworkStoreController extends Controller
     }
 
     /**
+     * GET /api/v1/network-stores
+     * GET /api/v1/vendors  (alias)
+     *
+     * Public directory of approved + active network vendors (wholesale + retail).
+     * Query: role, city_id, country_id, q/search, per_page, page
+     */
+    public function publicIndex(Request $request): JsonResponse
+    {
+        $perPage = max(1, min((int) $request->input('per_page', 15), 50));
+
+        $query = User::query()
+            ->whereIn('role', ['wholesale_distributor', 'retail_trader'])
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->with(['city', 'country', 'storeMedia', 'socialLinks']);
+
+        $role = strtolower(trim((string) $request->input('role', '')));
+        if ($role !== '') {
+            $role = match ($role) {
+                'wholesale', 'distributor', 'wholesale_distributor' => 'wholesale_distributor',
+                'retail', 'trader', 'retail_trader', 'sectoral' => 'retail_trader',
+                default => $role,
+            };
+
+            if (in_array($role, ['wholesale_distributor', 'retail_trader'], true)) {
+                $query->where('role', $role);
+            }
+        }
+
+        if ($request->filled('city_id')) {
+            $query->where('city_id', (int) $request->input('city_id'));
+        }
+
+        if ($request->filled('country_id')) {
+            $query->where('country_id', (int) $request->input('country_id'));
+        }
+
+        $search = trim((string) ($request->input('q') ?? $request->input('search') ?? ''));
+        if ($search !== '') {
+            $like = '%'.$search.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('name', 'like', $like)
+                    ->orWhere('brand_name', 'like', $like)
+                    ->orWhere('phone', 'like', $like)
+                    ->orWhere('network_code', 'like', $like)
+                    ->orWhere('address', 'like', $like);
+            });
+        }
+
+        $stores = $query->orderByDesc('id')->paginate($perPage);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'قائمة المتاجر',
+            'data' => NetworkStoreResource::collection($stores->items()),
+            'meta' => [
+                'current_page' => $stores->currentPage(),
+                'per_page' => $stores->perPage(),
+                'total' => $stores->total(),
+                'last_page' => $stores->lastPage(),
+            ],
+        ]);
+    }
+
+    /**
      * GET /api/v1/network-stores/{store}
      * {store} = user id (e.g. 92) or network_code (e.g. MG-W-000092)
      */

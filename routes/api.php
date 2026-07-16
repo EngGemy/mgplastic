@@ -157,8 +157,14 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::delete('my-store/my-products/{mediaId}', [NetworkStoreController::class, 'deleteMyProduct'])->whereNumber('mediaId');
 });
 
+// Public network vendors directory (approved + active wholesale + retail)
+Route::get('v1/network-stores', [NetworkStoreController::class, 'publicIndex']);
+Route::get('v1/vendors', [NetworkStoreController::class, 'publicIndex']); // mobile-friendly alias
+
 // Public store profile: numeric user id OR network_code (e.g. MG-W-000092)
 Route::get('v1/network-stores/{store}', [NetworkStoreController::class, 'publicShow'])
+    ->where('store', '[A-Za-z0-9\-]+');
+Route::get('v1/vendors/{store}', [NetworkStoreController::class, 'publicShow'])
     ->where('store', '[A-Za-z0-9\-]+');
 
 

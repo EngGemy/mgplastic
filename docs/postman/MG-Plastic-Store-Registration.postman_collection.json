@@ -305,6 +305,95 @@
       ]
     },
     {
+      "name": "4 — Vendors directory (قائمة المتاجر الجديدة)",
+      "description": "متاجر الشبكة المعتمدة فقط (جملة + تجزئة). مش plumber-stores القديمة.",
+      "item": [
+        {
+          "name": "List all vendors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/network-stores?per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "network-stores"],
+              "query": [
+                { "key": "per_page", "value": "15" },
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "role", "value": "", "disabled": true, "description": "retail | wholesale | retail_trader | wholesale_distributor" },
+                { "key": "city_id", "value": "{{city_id}}", "disabled": true },
+                { "key": "country_id", "value": "{{country_id}}", "disabled": true },
+                { "key": "q", "value": "", "disabled": true, "description": "بحث: اسم / هاتف / network_code" }
+              ]
+            },
+            "description": "يرجع `data[]` + `meta` pagination.\nكل عنصر فيه `id` (User ID)، `network_code`، `role`، `my_products`، إلخ.\nاستخدم الـ id ده في `GET /network-stores/{id}`."
+          }
+        },
+        {
+          "name": "List retail traders only",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/network-stores?role=retail&per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "network-stores"],
+              "query": [
+                { "key": "role", "value": "retail" },
+                { "key": "per_page", "value": "15" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List wholesale distributors only",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/network-stores?role=wholesale&per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "network-stores"],
+              "query": [
+                { "key": "role", "value": "wholesale" },
+                { "key": "per_page", "value": "15" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List vendors (alias /vendors)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vendors?per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "vendors"],
+              "query": [{ "key": "per_page", "value": "15" }]
+            },
+            "description": "نفس network-stores بالظبط — اسم أوضح للموبايل."
+          }
+        },
+        {
+          "name": "Search vendors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/vendors?q=اسامة&per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "vendors"],
+              "query": [
+                { "key": "q", "value": "اسامة" },
+                { "key": "per_page", "value": "15" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "3 — Field reference",
       "item": [
         {
