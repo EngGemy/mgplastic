@@ -160,18 +160,20 @@
                 @endif
 
                 <div class="pos-name">{{ $row['name'] }}</div>
-                <div class="pos-pts">⭐ {{ $row['points_per_unit'] }} نقطة/وحدة</div>
+                <div class="pos-pts">⭐ {{ number_format((float) $row['points_per_unit'], 2) }} نقطة لكل قطعة</div>
                 @if($row['available_qty'] <= 0)
                     <div class="pos-no-stock">نفذ المخزون</div>
                 @else
-                    <div class="pos-avail">متاح: {{ number_format($row['available_qty']) }}</div>
+                    <div class="pos-avail">مخزون: {{ number_format($row['available_qty']) }} قطعة</div>
+                    <div class="pos-avail" style="opacity:.75;font-size:.72rem;margin-top:2px;">
+                        أقصى نقاط لو بِعت الكل: {{ number_format((int) floor($row['available_qty'] * $row['points_per_unit'])) }}
+                    </div>
                 @endif
             </div>
             @endforeach
         </div>
         @endif
     </div>
-
     <aside class="pos-sidebar">
         <div class="pos-cart-hdr">🛒 السلة ({{ count($this->cart) }} صنف)</div>
 

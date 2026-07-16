@@ -2,7 +2,7 @@
   "info": {
     "name": "MG Plastic — Points Convert & Withdraw (Accurate)",
     "_postman_id": "e8f9a0b1-pts-conv-4000-9000-mgptsconv",
-    "description": "# تحويل النقاط → فلوس → سحب\n\n## الفكرة الصحيحة في النظام\n\n### ① اكتساب النقاط (من الفاتورة / المنتج)\nكل منتج له `points_per_unit` (نقاط لكل وحدة — إعداد أدمن).\nعند توزيع الفاتورة للسباك:\n\n`points_value = floor(quantity × points_per_unit)`\n\nتُضاف إلى `balance_points` في المحفظة.\n\n**مش** سعر البيع بالدينار اللي بيحدد قيمة التحويل لاحقاً.\n\n### ② تحويل النقاط → رصيد مالي\nسعر صرف **عام** من لوحة الإدارة (`ConversionRule`):\n\n```\ngross_LYD = points ÷ points_per_currency_unit\nfee = % + ثابت\nnet يروح لـ balance_cents\n```\n\nمثال: لو `points_per_currency_unit = 100` → كل 100 نقطة = 1.00 د.ل (قبل الرسوم).\n\n### ③ طلب السحب\nالسحب من **`balance_cents`** (فلوس) بعد التحويل — مش من النقاط مباشرة.\n\n## التدفق في Postman\n1. Login\n2. Settings / conversion-rules (اعرف السعر والحد الأدنى)\n3. Wallet (شوف balance_points)\n4. Convert\n5. Wallet تاني (شوف balance_cents)\n6. Create withdrawal\n7. List withdrawals\n\nAuth: Bearer `plumber_token` (role=plumber)",
+    "description": "# تحويل النقاط → فلوس → سحب\n\n## الفكرة الصحيحة في النظام\n\n### ① اكتساب النقاط (من الفاتورة / المنتج)\nكل منتج له `points_per_unit` (نقاط لكل وحدة — إعداد أدمن).\nعند توزيع الفاتورة للسباك:\n\n`points_value = floor(quantity × points_per_unit)`\n\nتُضاف إلى `balance_points` في المحفظة.\n\n### ② تحويل النقاط → رصيد مالي (**حسب كل منتج**)\nكل منتج له تحويله الخاص في إعداد المنتج:\n- `point_value_type=fixed` → `point_value_fixed` د.ل لكل نقطة\n- `point_value_type=percent` → نسبة من `reference_unit_price_cents` موزّعة على نقاط الوحدة\n\nعند `POST .../convert` النظام:\n1. يبني دفعات (lots) من بنود الفواتير المُوزَّعة (FIFO)\n2. يطبّق سعر تحويل **كل منتج** على نقاطه\n3. لو منتج بدون إعداد → fallback للسعر العام `points_per_currency_unit`\n4. يخصم الرسوم من الإجمالي\n\nالرد يحتوي `breakdown` يوضح كم نقطة من أي منتج وبأي سعر.\n\nمعاينة الدفعات: `GET .../wallet/conversion-rules` → `product_lots` + `estimated_full_balance`\n\n### ③ طلب السحب\nالسحب من **`balance_cents`** (فلوس) بعد التحويل — مش من النقاط مباشرة.\n\n## التدفق في Postman\n1. Login\n2. conversion-rules (شوف product_lots لكل منتج)\n3. Wallet (شوف balance_points)\n4. Convert → راجع `data.breakdown`\n5. Wallet تاني (شوف balance_cents)\n6. Create withdrawal\n7. List / receipt\n\nAuth: Bearer `plumber_token` (role=plumber)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -136,7 +136,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "mobile", "plumber", "wallet", "conversion-rules"]
             },
-            "description": "يرجع السعر + `how_it_works` + `formula` + `example`.\n\n**مهم:** التحويل يعتمد على إعداد الإدارة العام، وليس على سعر المنتج داخل الفاتورة."
+            "description": "يرجع الحدود + الرسوم + **`product_lots`** (نقاط كل منتج المتبقية وسعر تحويله) + `estimated_full_balance`.\n\n**مهم:** التحويل لم يعد بسعر عام واحد فقط — كل منتج له `lyd_per_point` من إعداد المنتج."
           }
         }
       ]
@@ -249,7 +249,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "mobile", "plumber", "wallet", "convert"]
             },
-            "description": "## Body\n| field | required | notes |\n|-------|----------|-------|\n| points | ✅ | عدد النقاط (≥1) |\n| currency | ❌ | default LYD |\n| vendor_store_id | ❌ | legacy optional |\n\n## الحساب\n```\ngross_cents = floor((points / points_per_currency_unit) * 100)\nfee_cents   = floor(gross * fee_percent/100) + fee_fixed_cents\nnet_cents   → يُضاف لـ balance_cents\npoints      → يُخصم من balance_points\n```\n\n## قواعد\n- لازم `is_redemption_open`\n- لو أقل من `min_redeem_points` → ارفض إلا لو بتحوّل **كامل الرصيد**\n- لو أكبر من `max_redeem_points` → ارفض\n\n## Response data\n`points_converted`, `gross_amount_cents`, `fee_cents`, `net_amount_cents`, `net_amount_formatted`, أرصدة بعد التحويل"
+            "description": "## Body\n| field | required | notes |\n|-------|----------|-------|\n| points | ✅ | عدد النقاط (≥1) |\n| currency | ❌ | default LYD |\n| vendor_store_id | ❌ | legacy optional |\n\n## الحساب (per-product)\n```\nلكل دفعة منتج (FIFO من الفواتير):\n  lot_cents = floor(points × product.lyd_per_point × 100)\ngross_cents = sum(lot_cents)\nfee_cents   = floor(gross * fee_percent/100) + fee_fixed_cents\nnet_cents   → يُضاف لـ balance_cents\npoints      → يُخصم من balance_points\n```\n\nمعاينة قبل التحويل: `GET .../conversion-rules` → `product_lots`\n\n## قواعد\n- لازم `is_redemption_open`\n- لو أقل من `min_redeem_points` → ارفض إلا لو بتحوّل **كامل الرصيد**\n- لو أكبر من `max_redeem_points` → ارفض\n\n## Response data\n`points_converted`, `gross_amount_cents`, `fee_cents`, `net_amount_cents`, `net_amount_formatted`, `breakdown[]` (منتج / نقاط / سعر / مبلغ), `mode=per_product`"
           }
         },
         {

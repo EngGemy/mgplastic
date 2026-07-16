@@ -4,8 +4,7 @@ namespace App\Http\Controllers\Api\Plumber;
 
 use App\Http\Controllers\Controller;
 use App\Models\ConversionRule;
-use App\Models\PointsEntry;
-use App\Models\WalletTransaction;
+use App\Services\PointsConversionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -51,133 +50,30 @@ class WalletController extends Controller
         $points = (int) $request->input('points');
         $currency = $request->input('currency', 'LYD');
 
-        $rule = ConversionRule::globalSettings();
-        $minPoints = (int) $rule->min_redeem_points;
-        $maxPoints = $rule->max_redeem_points ? (int) $rule->max_redeem_points : null;
-        $rate = (float) $rule->points_per_currency_unit;
+        try {
+            $result = app(PointsConversionService::class)
+                ->convert($user, $points, $currency);
+        } catch (\DomainException $e) {
+            $rule = ConversionRule::globalSettings();
+            $wallet = $user->wallet($currency);
 
-        if (! $rule->isRedemptionOpen()) {
             return response()->json([
                 'status' => false,
-                'message' => 'صرف النقاط غير متاح حالياً — خارج فترة السماح',
+                'message' => $e->getMessage(),
                 'data' => [
-                    'is_redemption_open' => false,
-                    'starts_at' => $rule->starts_at?->toIso8601String(),
-                    'ends_at' => $rule->ends_at?->toIso8601String(),
-                    'min_redeem_points' => $minPoints,
-                    'max_redeem_points' => $maxPoints,
-                ],
-            ], 400);
-        }
-
-        if ($rate <= 0) {
-            return response()->json([
-                'status' => false,
-                'message' => 'إعدادات التحويل غير مكتملة — تواصل مع الإدارة',
-            ], 400);
-        }
-
-        $wallet = $user->wallet($currency);
-        $balance = (int) $wallet->balance_points;
-
-        if ($balance < $points) {
-            return response()->json([
-                'status' => false,
-                'message' => "رصيدك غير كافٍ. رصيدك الحالي {$balance} نقطة وطلبت تحويل {$points}",
-                'data' => [
-                    'balance_points' => $balance,
+                    'balance_points' => (int) $wallet->balance_points,
                     'requested_points' => $points,
-                    'min_redeem_points' => $minPoints,
-                    'max_redeem_points' => $maxPoints,
-                ],
-            ], 400);
-        }
-
-        // اسمح بتحويل الرصيد بالكامل حتى لو أقل من الحد الأدنى
-        $isFullBalance = $points === $balance;
-
-        if ($points < $minPoints && ! $isFullBalance) {
-            return response()->json([
-                'status' => false,
-                'message' => "الحد الأدنى للتحويل هو {$minPoints} نقطة. رصيدك {$balance} نقطة — يمكنك تحويل الرصيد بالكامل.",
-                'data' => [
-                    'balance_points' => $balance,
-                    'requested_points' => $points,
-                    'min_redeem_points' => $minPoints,
-                    'max_redeem_points' => $maxPoints,
-                    'can_convert_full_balance' => $balance > 0,
-                    'hint' => $balance > 0
-                        ? "أرسل points={$balance} لتحويل كامل الرصيد"
+                    'min_redeem_points' => (int) $rule->min_redeem_points,
+                    'max_redeem_points' => $rule->max_redeem_points ? (int) $rule->max_redeem_points : null,
+                    'can_convert_full_balance' => (int) $wallet->balance_points > 0,
+                    'hint' => (int) $wallet->balance_points > 0
+                        ? 'أرسل points='.(int) $wallet->balance_points.' لتحويل كامل الرصيد'
                         : 'لا يوجد رصيد نقاط للتحويل',
                 ],
             ], 400);
         }
 
-        if ($maxPoints && $points > $maxPoints) {
-            return response()->json([
-                'status' => false,
-                'message' => "الحد الأقصى للتحويل هو {$maxPoints} نقطة",
-                'data' => [
-                    'balance_points' => $balance,
-                    'requested_points' => $points,
-                    'min_redeem_points' => $minPoints,
-                    'max_redeem_points' => $maxPoints,
-                ],
-            ], 400);
-        }
-
-        $result = DB::transaction(function () use ($wallet, $user, $rule, $points, $rate) {
-            $locked = $wallet->newQuery()->whereKey($wallet->id)->lockForUpdate()->firstOrFail();
-
-            if ((int) $locked->balance_points < $points) {
-                throw new \DomainException('رصيد النقاط تغيّر — أعد المحاولة');
-            }
-
-            $amountCents = (int) floor(($points / $rate) * 100);
-            $feeCents = (int) floor($amountCents * ((float) $rule->fee_percent / 100)) + (int) $rule->fee_fixed_cents;
-            $netCents = max(0, $amountCents - $feeCents);
-
-            $locked->decrement('balance_points', $points);
-            $locked->increment('balance_cents', $netCents);
-
-            if (class_exists(PointsEntry::class) && Schema::hasTable('points_entries')) {
-                PointsEntry::create([
-                    'plumber_id' => $user->id,
-                    'points_delta' => -$points,
-                    'source_type' => WalletTransaction::class,
-                    'source_id' => null,
-                    'meta' => ['reason' => 'conversion', 'rule_id' => $rule->id],
-                ]);
-            }
-
-            $locked->transactions()->create([
-                'type' => 'conversion',
-                'amount_cents' => $netCents,
-                'points_delta' => -$points,
-                'description' => 'تحويل نقاط إلى رصيد مالي',
-                'meta' => [
-                    'reason' => 'conversion',
-                    'gross_amount_cents' => $amountCents,
-                    'fee_cents' => $feeCents,
-                    'rule_id' => $rule->id,
-                    'points_per_currency_unit' => $rate,
-                ],
-                'related_type' => ConversionRule::class,
-                'related_id' => $rule->id,
-                'created_by' => $user->id,
-            ]);
-
-            return [
-                'points_converted' => $points,
-                'gross_amount_cents' => $amountCents,
-                'fee_cents' => $feeCents,
-                'net_amount_cents' => $netCents,
-                'net_amount_formatted' => number_format($netCents / 100, 2).' د.ل',
-                'balance_points' => (int) $locked->fresh()->balance_points,
-                'balance_cents' => (int) $locked->fresh()->balance_cents,
-            ];
-        });
-
+        $rule = ConversionRule::globalSettings();
         if ($rule->notify_on_conversion && filled($rule->notification_message_ar)) {
             \Filament\Notifications\Notification::make()
                 ->title('تحويل نقاط')
@@ -188,7 +84,7 @@ class WalletController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'تم تحويل النقاط بنجاح',
+            'message' => 'تم تحويل النقاط بنجاح حسب تحويل كل منتج',
             'data' => $result,
         ]);
     }
