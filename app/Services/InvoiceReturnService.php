@@ -76,6 +76,7 @@ class InvoiceReturnService
             }
 
             $return = InvoiceReturn::create([
+                'return_number' => sprintf('RET-%s-%s', now()->format('YmdHis'), strtoupper(substr(uniqid(), -5))),
                 'invoice_id' => $documentInvoice->id,
                 'distribution_id' => $distribution->id,
                 'from_user_id' => $distribution->to_user_id,

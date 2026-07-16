@@ -25,10 +25,7 @@ class WithdrawalRequestService
                 throw new \DomainException('الطلب ليس قيد المراجعة');
             }
 
-            $wallet = WalletAccount::query()
-                ->whereKey($locked->wallet_account_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+            $wallet = self::resolveWalletForRequest($locked);
 
             $locked->update([
                 'status' => 'paid',
@@ -69,10 +66,7 @@ class WithdrawalRequestService
                 throw new \DomainException('الطلب ليس قيد المراجعة');
             }
 
-            $wallet = WalletAccount::query()
-                ->whereKey($locked->wallet_account_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+            $wallet = self::resolveWalletForRequest($locked);
 
             $wallet->increment('balance_cents', $locked->amount_cents);
 
@@ -118,5 +112,40 @@ class WithdrawalRequestService
                 ? (int) WithdrawalRequest::query()->pending()->sum('amount_cents')
                 : 0,
         ];
+    }
+
+    protected static function resolveWalletForRequest(WithdrawalRequest $request): WalletAccount
+    {
+        if ($request->wallet_account_id) {
+            $wallet = WalletAccount::query()
+                ->whereKey($request->wallet_account_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($wallet) {
+                return $wallet;
+            }
+        }
+
+        if ($request->plumber_id) {
+            $wallet = WalletAccount::query()
+                ->where('owner_id', $request->plumber_id)
+                ->where('currency', 'LYD')
+                ->lockForUpdate()
+                ->first();
+
+            if ($wallet) {
+                if (
+                    Schema::hasColumn('withdrawal_requests', 'wallet_account_id')
+                    && ! $request->wallet_account_id
+                ) {
+                    $request->forceFill(['wallet_account_id' => $wallet->id])->save();
+                }
+
+                return $wallet;
+            }
+        }
+
+        throw new \DomainException('تعذّر العثور على محفظة طلب السحب');
     }
 }
