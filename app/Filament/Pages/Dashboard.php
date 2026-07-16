@@ -25,6 +25,7 @@ class Dashboard extends BaseDashboard
     {
         return [
             \App\Filament\Widgets\MgCrmDashboardWidget::class,
+            \App\Filament\Widgets\GeneralControlsWidget::class,
             \App\Filament\Widgets\QuickAccessWidget::class,
         ];
     }
