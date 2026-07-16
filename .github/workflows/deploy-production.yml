@@ -153,13 +153,15 @@ jobs:
           chmod 700 ~/.ssh ~/.ssh/cm
 
           # ControlMaster: all later ssh/scp share one TCP session (avoids MaxStartups / fail2ban)
+          # Do NOT set IdentitiesOnly=yes — it blocks keys loaded by webfactory/ssh-agent.
           {
             echo "Host cpanel-deploy"
             echo "  HostName ${CPANEL_HOST}"
             echo "  User ${CPANEL_USER}"
             echo "  Port ${PORT}"
             echo "  BatchMode yes"
-            echo "  IdentitiesOnly yes"
+            echo "  PreferredAuthentications publickey"
+            echo "  PubkeyAuthentication yes"
             echo "  StrictHostKeyChecking accept-new"
             echo "  ConnectTimeout ${SSH_CONNECT_TIMEOUT}"
             echo "  ConnectionAttempts ${SSH_CONNECTION_ATTEMPTS}"
@@ -170,6 +172,9 @@ jobs:
             echo "  ControlPersist 10m"
           } > ~/.ssh/config
           chmod 600 ~/.ssh/config
+
+          echo "SSH agent keys loaded:"
+          ssh-add -l || echo "(ssh-add -l failed — CPANEL_SSH_KEY may be empty/malformed)"
 
           for i in 1 2 3 4 5; do
             if ssh-keyscan -p "${PORT}" -T 15 -H "${CPANEL_HOST}" >> ~/.ssh/known_hosts 2>/dev/null; then
@@ -197,9 +202,11 @@ jobs:
             exit 1
           fi
           echo "Opening ControlMaster SSH session..."
-          if ! ssh -o ConnectTimeout=15 cpanel-deploy 'echo ok && uname -a'; then
+          if ! ssh -vv -o ConnectTimeout=15 cpanel-deploy 'echo ok && uname -a' 2> /tmp/ssh-probe.err; then
             echo "::error::SSH auth/probe failed for ${CPANEL_HOST}:${PORT}."
-            echo "Check: authorized_keys, CPANEL_SSH_KEY, CSF/firewall allowlist for GitHub Actions."
+            echo "--- ssh -vv excerpt (no secrets) ---"
+            grep -E 'Offering|Authentications|Permission denied|identity file|Agent|Trying' /tmp/ssh-probe.err | head -40 || true
+            echo "Check: 1) ssh-add -l shows a key  2) matching public key in ~/.ssh/authorized_keys for CPANEL_USER  3) CPANEL_SSH_KEY secret has full PEM with newlines"
             exit 255
           fi
 
