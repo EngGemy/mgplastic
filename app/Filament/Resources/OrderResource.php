@@ -303,65 +303,13 @@ class OrderResource extends Resource
 
     public static function infolist(Infolist $infolist): Infolist
     {
-        return $infolist->schema([
-            Infolists\Components\Section::make()
-                ->schema([
-                    Infolists\Components\Split::make([
-                        Infolists\Components\Group::make([
-                            Infolists\Components\TextEntry::make('order_number')
-                                ->label('رقم الطلب')
-                                ->weight('bold')
-                                ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
-                                ->copyable(),
-                            Infolists\Components\TextEntry::make('channel')
-                                ->label('نوع الطلب')
-                                ->badge()
-                                ->formatStateUsing(fn ($state) => OrderStatus::channelLabel($state)),
-                        ]),
-                        Infolists\Components\Group::make([
-                            Infolists\Components\TextEntry::make('status')
-                                ->label('الحالة')
-                                ->badge()
-                                ->icon(fn ($state) => OrderStatus::icon($state))
-                                ->color(fn ($state) => OrderStatus::color($state))
-                                ->formatStateUsing(fn ($state) => OrderStatus::label($state)),
-                            Infolists\Components\TextEntry::make('status')
-                                ->label('')
-                                ->formatStateUsing(fn ($state) => OrderStatus::description($state)),
-                        ]),
-                    ]),
-                ]),
-
-            Infolists\Components\Section::make('الأطراف والشحن')
-                ->icon('heroicon-o-truck')
-                ->columns(3)
-                ->schema([
-                    Infolists\Components\TextEntry::make('requester.name')->label('الطالب'),
-                    Infolists\Components\TextEntry::make('supplier.name')->label('المورّد')->placeholder('المصنع'),
-                    Infolists\Components\TextEntry::make('total_quantity')->label('إجمالي الكمية')->badge(),
-                    Infolists\Components\TextEntry::make('carrier_name')->label('شركة الشحن')->placeholder('—'),
-                    Infolists\Components\TextEntry::make('tracking_number')->label('رقم التتبّع')->placeholder('—')->copyable(),
-                    Infolists\Components\TextEntry::make('expected_delivery_at')->label('التسليم المتوقع')->date()->placeholder('—'),
-                    Infolists\Components\TextEntry::make('placed_at')->label('تاريخ الطلب')->dateTime()->placeholder('—'),
-                    Infolists\Components\TextEntry::make('confirmed_at')->label('تاريخ التأكيد')->dateTime()->placeholder('—'),
-                    Infolists\Components\TextEntry::make('delivered_at')->label('تاريخ التسليم')->dateTime()->placeholder('—'),
-                    Infolists\Components\TextEntry::make('supplier_note')->label('ملاحظة المورّد')->placeholder('—')->columnSpanFull(),
-                    Infolists\Components\TextEntry::make('note')->label('ملاحظة الطالب')->placeholder('—')->columnSpanFull(),
-                ]),
-
-            Infolists\Components\Section::make('الأصناف المطلوبة')
-                ->icon('heroicon-o-cube')
-                ->schema([
-                    Infolists\Components\RepeatableEntry::make('items')
-                        ->label('')
-                        ->schema([
-                            Infolists\Components\TextEntry::make('name_snapshot')->label('المنتج')->columnSpan(2),
-                            Infolists\Components\TextEntry::make('quantity')->label('الكمية')->badge(),
-                            Infolists\Components\TextEntry::make('line_points')->label('النقاط')->badge()->color('success'),
-                        ])
-                        ->columns(4),
-                ]),
-        ]);
+        return $infolist
+            ->columns(1)
+            ->schema([
+                Infolists\Components\ViewEntry::make('profile')
+                    ->view('filament.infolists.order-profile')
+                    ->columnSpanFull(),
+            ]);
     }
 
     protected static function runTransition(callable $fn, string $successTitle): void

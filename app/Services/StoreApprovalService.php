@@ -12,6 +12,7 @@ class StoreApprovalService
             'is_approved' => true,
             'approved_at' => now(),
             'is_active' => true,
+            'deactivated_at' => null,
         ])->save();
 
         AdminNotificationService::send(
@@ -38,6 +39,44 @@ class StoreApprovalService
         }
 
         AdminNotificationService::send($store, 'طلب التفعيل مرفوض', $body, 'danger');
+
+        return $store;
+    }
+
+    /** Start / resume store activity (after it was already approved). */
+    public function activate(User $store): User
+    {
+        $store->forceFill([
+            'is_active' => true,
+            'deactivated_at' => null,
+            'is_approved' => true,
+            'approved_at' => $store->approved_at ?? now(),
+        ])->save();
+
+        AdminNotificationService::send(
+            $store,
+            'تم تفعيل نشاط متجرك ✓',
+            'أعادت الإدارة تفعيل حسابك. يمكنك تسجيل الدخول والظهور في الشبكة مجدداً.',
+            'success',
+        );
+
+        return $store;
+    }
+
+    /** Suspend store activity without deleting the account. */
+    public function deactivate(User $store, ?string $reason = null): User
+    {
+        $store->forceFill([
+            'is_active' => false,
+            'deactivated_at' => now(),
+        ])->save();
+
+        $body = 'تم إيقاف نشاط متجرك من قبل الإدارة.';
+        if ($reason) {
+            $body .= ' السبب: '.$reason;
+        }
+
+        AdminNotificationService::send($store, 'تم إيقاف نشاط المتجر', $body, 'warning');
 
         return $store;
     }

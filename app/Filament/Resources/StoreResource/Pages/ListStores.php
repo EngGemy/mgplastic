@@ -4,7 +4,6 @@ namespace App\Filament\Resources\StoreResource\Pages;
 
 use App\Filament\Resources\StoreResource;
 use App\Models\User;
-use App\Services\StoreApprovalService;
 use Filament\Actions;
 use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ListRecords;
@@ -44,9 +43,15 @@ class ListStores extends ListRecords
 
             'approved' => Tab::make('معتمدة')
                 ->icon('heroicon-o-check-badge')
-                ->badge((clone $base)->where('is_approved', true)->count())
+                ->badge((clone $base)->where('is_approved', true)->where('is_active', true)->count())
                 ->badgeColor('success')
-                ->modifyQueryUsing(fn (Builder $query) => $query->where('is_approved', true)),
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('is_approved', true)->where('is_active', true)),
+
+            'inactive' => Tab::make('موقوفة')
+                ->icon('heroicon-o-no-symbol')
+                ->badge((clone $base)->where('is_active', false)->count())
+                ->badgeColor('danger')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('is_active', false)),
         ];
     }
 }

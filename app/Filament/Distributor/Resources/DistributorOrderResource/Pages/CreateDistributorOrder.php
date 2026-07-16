@@ -2,48 +2,41 @@
 
 namespace App\Filament\Distributor\Resources\DistributorOrderResource\Pages;
 
+use App\Filament\Concerns\PlacesNetworkOrder;
 use App\Filament\Distributor\Resources\DistributorOrderResource;
-use App\Services\OrderService;
 use App\Support\OrderStatus;
-use Filament\Notifications\Notification;
-use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Validation\ValidationException;
+use Filament\Resources\Pages\Page;
 
-class CreateDistributorOrder extends CreateRecord
+class CreateDistributorOrder extends Page
 {
+    use PlacesNetworkOrder;
+
     protected static string $resource = DistributorOrderResource::class;
+
+    protected static string $view = 'filament.orders.place-order';
 
     public function getTitle(): string
     {
         return 'طلب جديد من المصنع';
     }
 
-    protected function getRedirectUrl(): string
+    public function getHeading(): string
     {
-        return $this->getResource()::getUrl('index');
+        return 'اختر المنتجات وأرسل طلبك للمصنع';
     }
 
-    protected function handleRecordCreation(array $data): Model
+    protected function orderChannel(): string
     {
-        $lines = collect($data['items'] ?? [])
-            ->map(fn ($item) => [
-                'product_id' => (int) ($item['product_id'] ?? 0),
-                'quantity' => (int) ($item['quantity'] ?? 0),
-            ])
-            ->all();
+        return OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE;
+    }
 
-        try {
-            return app(OrderService::class)->place(
-                requester: auth()->user(),
-                channel: OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE,
-                lines: $lines,
-                meta: ['note' => $data['note'] ?? null],
-            );
-        } catch (\DomainException $e) {
-            Notification::make()->danger()->title('تعذّر إنشاء الطلب')->body($e->getMessage())->send();
+    protected function successRedirectUrl(): string
+    {
+        return DistributorOrderResource::getUrl('index');
+    }
 
-            throw ValidationException::withMessages(['items' => $e->getMessage()]);
-        }
+    protected function emptyCartMessage(): string
+    {
+        return 'أضف منتجاً واحداً على الأقل للطلب';
     }
 }

@@ -187,23 +187,54 @@ class StoreResource extends Resource
             ])
             ->actions([
                 Tables\Actions\Action::make('approve')
-                    ->label('تفعيل المتجر')
+                    ->label('اعتماد المتجر')
                     ->icon('heroicon-o-check-badge')
                     ->color('success')
                     ->visible(fn (User $record) => ! $record->is_approved)
                     ->requiresConfirmation()
-                    ->modalHeading('تفعيل المتجر')
+                    ->modalHeading('اعتماد المتجر')
                     ->modalDescription(fn (User $record) => "هل تريد اعتماد وتفعيل متجر «{$record->name}»؟ سيظهر في الشبكة ويُبلَّغ صاحبه.")
                     ->action(function (User $record) {
                         app(StoreApprovalService::class)->approve($record, auth()->user());
-                        Notification::make()->success()->title('تم تفعيل المتجر')->send();
+                        Notification::make()->success()->title('تم اعتماد المتجر')->send();
+                    }),
+
+                Tables\Actions\Action::make('activate')
+                    ->label('تفعيل النشاط')
+                    ->icon('heroicon-o-bolt')
+                    ->color('success')
+                    ->visible(fn (User $record) => $record->is_approved && ! $record->is_active)
+                    ->requiresConfirmation()
+                    ->modalHeading('تفعيل نشاط المتجر')
+                    ->modalDescription(fn (User $record) => "إعادة تفعيل «{$record->name}» ليتمكن من الدخول والظهور في الشبكة.")
+                    ->action(function (User $record) {
+                        app(StoreApprovalService::class)->activate($record);
+                        Notification::make()->success()->title('تم تفعيل نشاط المتجر')->send();
+                    }),
+
+                Tables\Actions\Action::make('deactivate')
+                    ->label('إيقاف النشاط')
+                    ->icon('heroicon-o-no-symbol')
+                    ->color('danger')
+                    ->visible(fn (User $record) => (bool) $record->is_active)
+                    ->form([
+                        Forms\Components\Textarea::make('reason')
+                            ->label('سبب الإيقاف (اختياري)')
+                            ->rows(2),
+                    ])
+                    ->requiresConfirmation()
+                    ->modalHeading('إيقاف نشاط المتجر')
+                    ->modalDescription(fn (User $record) => "سيتم إيقاف «{$record->name}» ولن يتمكن من تسجيل الدخول حتى تعيد تفعيله.")
+                    ->action(function (User $record, array $data) {
+                        app(StoreApprovalService::class)->deactivate($record, $data['reason'] ?? null);
+                        Notification::make()->success()->title('تم إيقاف نشاط المتجر')->send();
                     }),
 
                 Tables\Actions\Action::make('add_retail')
                     ->label('إضافة موزع قطاعي')
                     ->icon('heroicon-o-plus')
-                    ->color('success')
-                    ->visible(fn (User $record) => (bool) $record->is_approved)
+                    ->color('info')
+                    ->visible(fn (User $record) => (bool) $record->is_approved && (bool) $record->is_active)
                     ->url(fn (User $record) => \App\Filament\Resources\RetailTraderResource::getUrl('create').'?store='.$record->id),
 
                 Tables\Actions\ViewAction::make()->label('عرض'),
@@ -212,14 +243,34 @@ class StoreResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('bulkApprove')
-                        ->label('تفعيل المحدد')
+                        ->label('اعتماد المحدد')
                         ->icon('heroicon-o-check-badge')
                         ->color('success')
                         ->requiresConfirmation()
                         ->action(function ($records) {
                             $service = app(StoreApprovalService::class);
                             $records->each(fn (User $store) => $service->approve($store, auth()->user()));
-                            Notification::make()->success()->title('تم تفعيل المتاجر المحددة')->send();
+                            Notification::make()->success()->title('تم اعتماد المتاجر المحددة')->send();
+                        }),
+                    Tables\Actions\BulkAction::make('bulkActivate')
+                        ->label('تفعيل نشاط المحدد')
+                        ->icon('heroicon-o-bolt')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->action(function ($records) {
+                            $service = app(StoreApprovalService::class);
+                            $records->each(fn (User $store) => $service->activate($store));
+                            Notification::make()->success()->title('تم تفعيل نشاط المتاجر')->send();
+                        }),
+                    Tables\Actions\BulkAction::make('bulkDeactivate')
+                        ->label('إيقاف نشاط المحدد')
+                        ->icon('heroicon-o-no-symbol')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->action(function ($records) {
+                            $service = app(StoreApprovalService::class);
+                            $records->each(fn (User $store) => $service->deactivate($store));
+                            Notification::make()->success()->title('تم إيقاف نشاط المتاجر')->send();
                         }),
                 ]),
             ])
