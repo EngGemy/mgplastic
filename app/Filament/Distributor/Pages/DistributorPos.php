@@ -4,14 +4,11 @@ namespace App\Filament\Distributor\Pages;
 
 use App\Filament\Concerns\NotifiesPosStockLimit;
 use App\Filament\Concerns\SetsCartQuantity;
-use App\Models\Invoice;
-use App\Models\InvoiceDistribution;
-use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
-use App\Services\DistributionService;
 use App\Services\NetworkInventoryService;
+use App\Services\RetailDistributionPosService;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Collection;
@@ -233,42 +230,24 @@ class DistributorPos extends Page
         }
 
         try {
-            $items = $this->buildDistributionItems();
+            $lines = collect($this->cart)->map(fn ($line) => [
+                'product_id' => (int) $line['product_id'],
+                'quantity' => (int) $line['quantity'],
+            ])->values()->all();
 
-            if (empty($items)) {
-                Notification::make()->danger()->title('لا توجد كميات متاحة للتوزيع')->send();
-
-                return;
-            }
-
-            $grouped = collect($items)->groupBy('invoice_id');
-            $distributionCount = 0;
             $totalPoints = $this->cartPoints;
 
-            foreach ($grouped as $invoiceId => $groupItems) {
-                $invoice = Invoice::findOrFail($invoiceId);
-                $first = $groupItems->first();
-
-                $distribution = app(DistributionService::class)->createDistribution(
-                    invoice: $invoice,
-                    fromUser: $wholesaler,
-                    toUser: $trader,
-                    tier: 2,
-                    items: $groupItems->map(fn ($i) => [
-                        'invoice_item_id' => $i['invoice_item_id'],
-                        'quantity' => $i['quantity'],
-                    ])->values()->all(),
-                    parentId: $first['parent_distribution_id'] ?? null,
-                );
-
-                app(DistributionService::class)->confirmDistribution($distribution->fresh(['items']));
-                $distributionCount++;
-            }
+            $outgoing = app(RetailDistributionPosService::class)->issueToRetailTrader(
+                $wholesaler,
+                $trader,
+                $lines,
+                $wholesaler,
+            );
 
             Notification::make()
                 ->success()
                 ->title('تم البيع بنجاح ✓')
-                ->body("{$distributionCount} توزيع مؤكد — {$totalPoints} نقطة للتاجر {$trader->name}")
+                ->body(count($outgoing).' فاتورة — '.$totalPoints.' نقطة للتاجر '.$trader->name)
                 ->send();
 
             $this->cart = [];
@@ -278,51 +257,5 @@ class DistributorPos extends Page
         } catch (\DomainException $e) {
             Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();
         }
-    }
-
-    /**
-     * @return array<int, array{invoice_item_id:int, quantity:int, invoice_id:int, parent_distribution_id:int}>
-     */
-    private function buildDistributionItems(): array
-    {
-        $items = [];
-        $wholesaler = auth()->user();
-
-        foreach ($this->cart as $line) {
-            $productId = $line['product_id'];
-            $qty = $line['quantity'];
-
-            $invoiceItem = InvoiceItem::query()
-                ->join('invoices', 'invoices.id', '=', 'invoice_items.invoice_id')
-                ->where('invoices.wholesale_distributor_id', $wholesaler->id)
-                ->where('invoices.invoice_type', 'wholesale_pos')
-                ->where('invoices.invoice_flow', 'incoming')
-                ->where('invoices.status', 'approved')
-                ->where('invoice_items.product_id', $productId)
-                ->select('invoice_items.*')
-                ->first();
-
-            if (! $invoiceItem) {
-                continue;
-            }
-
-            $tier1 = InvoiceDistribution::where('invoice_id', $invoiceItem->invoice_id)
-                ->where('tier', 1)
-                ->whereIn('status', ['confirmed', 'points_awarded'])
-                ->first();
-
-            if (! $tier1) {
-                continue;
-            }
-
-            $items[] = [
-                'invoice_item_id' => $invoiceItem->id,
-                'quantity' => $qty,
-                'invoice_id' => $invoiceItem->invoice_id,
-                'parent_distribution_id' => $tier1->id,
-            ];
-        }
-
-        return $items;
     }
 }

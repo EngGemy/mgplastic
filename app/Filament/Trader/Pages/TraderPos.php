@@ -5,13 +5,11 @@ namespace App\Filament\Trader\Pages;
 use App\Filament\Concerns\NotifiesPosStockLimit;
 use App\Filament\Concerns\SetsCartQuantity;
 use App\Filament\Trader\Resources\TraderOrderResource;
-use App\Models\Invoice;
-use App\Models\InvoiceDistributionItem;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
-use App\Services\DistributionService;
 use App\Services\NetworkInventoryService;
+use App\Services\PlumberDistributionPosService;
 use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -442,35 +440,19 @@ class TraderPos extends Page
         }
 
         try {
-            $items = $this->buildDistributionItems();
+            $lines = collect($this->cart)->map(fn ($line) => [
+                'product_id' => (int) $line['product_id'],
+                'quantity' => (int) $line['quantity'],
+            ])->values()->all();
 
-            if (empty($items)) {
-                Notification::make()->danger()->title('لا توجد فواتير متاحة للتوزيع')->send();
-
-                return;
-            }
-
-            $grouped = collect($items)->groupBy('invoice_id');
             $totalPoints = $this->cartPoints;
 
-            foreach ($grouped as $invoiceId => $groupItems) {
-                $invoice = Invoice::findOrFail($invoiceId);
-                $first = $groupItems->first();
-
-                $distribution = app(DistributionService::class)->createDistribution(
-                    invoice: $invoice,
-                    fromUser: $trader,
-                    toUser: $plumber,
-                    tier: 3,
-                    items: $groupItems->map(fn ($i) => [
-                        'invoice_item_id' => $i['invoice_item_id'],
-                        'quantity' => $i['quantity'],
-                    ])->values()->all(),
-                    parentId: $first['parent_distribution_id'] ?? null,
-                );
-
-                app(DistributionService::class)->confirmDistribution($distribution->fresh(['items']));
-            }
+            app(PlumberDistributionPosService::class)->issueToPlumber(
+                $trader,
+                $plumber,
+                $lines,
+                $trader,
+            );
 
             Notification::make()
                 ->success()
@@ -486,43 +468,5 @@ class TraderPos extends Page
         } catch (\DomainException $e) {
             Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();
         }
-    }
-
-    /**
-     * @return array<int, array{invoice_item_id:int, quantity:int, invoice_id:int, parent_distribution_id:int}>
-     */
-    private function buildDistributionItems(): array
-    {
-        $items = [];
-        $trader = auth()->user();
-
-        foreach ($this->cart as $line) {
-            $distItem = InvoiceDistributionItem::query()
-                ->join('invoice_distributions as d', 'd.id', '=', 'invoice_distribution_items.distribution_id')
-                ->join('invoice_items as ii', 'ii.id', '=', 'invoice_distribution_items.invoice_item_id')
-                ->where('d.to_user_id', $trader->id)
-                ->where('d.tier', 2)
-                ->whereIn('d.status', ['confirmed', 'points_awarded'])
-                ->where('ii.product_id', $line['product_id'])
-                ->select(
-                    'invoice_distribution_items.invoice_item_id',
-                    'ii.invoice_id',
-                    'd.id as parent_dist_id'
-                )
-                ->first();
-
-            if (! $distItem) {
-                continue;
-            }
-
-            $items[] = [
-                'invoice_item_id' => $distItem->invoice_item_id,
-                'quantity' => $line['quantity'],
-                'invoice_id' => $distItem->invoice_id,
-                'parent_distribution_id' => $distItem->parent_dist_id,
-            ];
-        }
-
-        return $items;
     }
 }
