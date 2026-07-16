@@ -14,23 +14,35 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * Self-registration for wholesale stores (موزع الجملة).
+ * Store self-registration (network stores).
  *
- * Route: POST /api/v1/auth/register-store
+ * - POST /api/v1/auth/register-retail  → retail_trader (تاجر التجزئة / القطاعي) — use this from the mobile store app
+ * - POST /api/v1/auth/register-store   → wholesale_distributor (موزّع جملة) — kept for wholesale flows
  *
- * A store registers itself, optionally uploading a profile photo / brand logo
- * and attaching social links. The account is created as `wholesale_distributor`
- * pending admin approval (is_approved = false). An OTP is sent so the store can
- * verify its phone via the existing /auth/verify-otp endpoint.
- *
- * After verifying + receiving a token, the store manages its slider/videos/social
- * through the /api/v1/my-store/* endpoints.
+ * Accounts are created pending admin approval. OTP is sent; verify via /auth/verify-otp.
+ * After login, manage profile via /api/v1/my-store/*.
  */
 class StoreRegisterController extends Controller
 {
     use SendsMarsolSmsOtp;
 
+    /**
+     * Mobile store registration: تاجر تجزئة / قطاعي فقط.
+     */
+    public function registerRetail(Request $request): JsonResponse
+    {
+        return $this->registerWithRole($request, 'retail_trader');
+    }
+
+    /**
+     * Wholesale distributor self-registration (موزّع جملة).
+     */
     public function register(Request $request): JsonResponse
+    {
+        return $this->registerWithRole($request, 'wholesale_distributor');
+    }
+
+    protected function registerWithRole(Request $request, string $role): JsonResponse
     {
         $data = $request->validate([
             'name'              => ['required', 'string', 'max:255'],
@@ -38,7 +50,6 @@ class StoreRegisterController extends Controller
             'email'             => ['nullable', 'email', 'max:255', 'unique:users,email'],
             'password'          => ['required', 'string', 'min:6', 'max:255'],
 
-            // Optional store profile (كلها اختيارية)
             'brand_name'        => ['nullable', 'string', 'max:150'],
             'address'           => ['nullable', 'string', 'max:500'],
             'store_description' => ['nullable', 'string'],
@@ -53,25 +64,24 @@ class StoreRegisterController extends Controller
             'profile_photo'     => ['nullable', 'image', 'max:4096'],
             'brand_logo'        => ['nullable', 'image', 'max:4096'],
 
-            // Optional social links registered up-front
             'social_links'                 => ['nullable', 'array'],
             'social_links.*.platform'      => ['required_with:social_links', 'string', 'max:32'],
             'social_links.*.url'           => ['required_with:social_links', 'url', 'max:500'],
             'social_links.*.sort_order'    => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $phone   = $data['phone'];
+        $phone = $data['phone'];
         $isLibya = $this->isLibyaPhone($phone);
         $localOtp = $isLibya ? null : random_int(100000, 999999);
 
-        $user = DB::transaction(function () use ($request, $data, $localOtp, $isLibya) {
+        $user = DB::transaction(function () use ($request, $data, $localOtp, $isLibya, $role) {
             $user = new User();
             $user->fill([
                 'name'              => $data['name'],
                 'email'             => $data['email'] ?? null,
                 'phone'             => $data['phone'],
                 'password'          => Hash::make($data['password']),
-                'role'              => 'wholesale_distributor',
+                'role'              => $role,
                 'brand_name'        => $data['brand_name'] ?? null,
                 'address'           => $data['address'] ?? null,
                 'store_description' => $data['store_description'] ?? null,
@@ -110,7 +120,6 @@ class StoreRegisterController extends Controller
             return $user;
         });
 
-        // ── Send OTP ────────────────────────────────────────────────
         if ($isLibya) {
             $otpResp = $this->initiateMarsolOtp(
                 $phone, 6, 300, 'WEB',
@@ -136,9 +145,11 @@ class StoreRegisterController extends Controller
 
         $this->notifyAdminsOfPendingStore($user);
 
+        $roleLabel = $role === 'retail_trader' ? 'تاجر التجزئة' : 'موزّع الجملة';
+
         return response()->json([
             'status'  => true,
-            'message' => 'تم تسجيل المتجر. تم إرسال رمز التحقق، وحسابك بانتظار موافقة الإدارة.',
+            'message' => "تم تسجيل {$roleLabel}. تم إرسال رمز التحقق، وحسابك بانتظار موافقة الإدارة.",
             'store_status' => [
                 'code' => 'pending_approval',
                 'is_approved' => false,
@@ -155,10 +166,15 @@ class StoreRegisterController extends Controller
 
     protected function notifyAdminsOfPendingStore(User $store): void
     {
-        $title = 'طلب تفعيل متجر جديد 🛎️';
-        $body = "المتجر «{$store->name}»".($store->brand_name ? " ({$store->brand_name})" : '')
+        $roleLabel = $store->isRetailTrader() ? 'تاجر تجزئة' : 'موزّع جملة';
+        $title = "طلب تفعيل {$roleLabel} جديد 🛎️";
+        $body = "«{$store->name}»".($store->brand_name ? " ({$store->brand_name})" : '')
             ." سجّل عبر التطبيق وبانتظار موافقتك — الهاتف: {$store->phone}";
-        $url = AdminPanelPath::url('stores/'.$store->id);
+
+        $adminPath = $store->isRetailTrader()
+            ? 'retail-traders/'.$store->id
+            : 'stores/'.$store->id;
+        $url = AdminPanelPath::url($adminPath);
 
         AdminNotificationService::sendToRole('super_admin', $title, $body, 'warning', $url, 'مراجعة الطلب');
         AdminNotificationService::sendToRole('admin', $title, $body, 'warning', $url, 'مراجعة الطلب');

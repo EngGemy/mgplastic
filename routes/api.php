@@ -60,6 +60,9 @@ Route::middleware('api')->prefix('v1/auth')->group(function () {
     // Wholesale store self-registration (موزع الجملة) — pending admin approval
     Route::post('register-store', [StoreRegisterController::class, 'register']);
 
+    // Retail trader self-registration (تاجر التجزئة / القطاعي) — use this from the mobile store app
+    Route::post('register-retail', [StoreRegisterController::class, 'registerRetail']);
+    Route::post('register-trader', [StoreRegisterController::class, 'registerRetail']); // alias
     Route::post('verify-otp', [VerifyOtpController::class, 'verify'])->middleware('throttle:6,1');
     Route::post('resend-otp', [VerifyOtpController::class, 'resend'])->middleware('throttle:3,1');
 

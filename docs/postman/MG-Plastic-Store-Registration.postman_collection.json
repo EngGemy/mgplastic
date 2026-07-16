@@ -1,0 +1,338 @@
+{
+  "info": {
+    "name": "MG Plastic — Store Registration (Retail vs Wholesale)",
+    "_postman_id": "d4e5f6a7-regstore-4000-9000-mgstorereg",
+    "description": "# تسجيل المتاجر من الموبايل\n\n## المهم للموبايل\nاستخدم **فقط**:\n\n`POST /api/v1/auth/register-retail`\n\n→ ينشئ `role = retail_trader` (تاجر تجزئة / قطاعي)\n\n**لا تستخدم** `register-store` من شاشة تسجيل المتاجر في الموبايل — ده لـ **موزّع الجملة** (`wholesale_distributor`).\n\nAlias بنفس السلوك: `POST /api/v1/auth/register-trader`\n\n## التدفق\n1. Register Retail (multipart أو JSON)\n2. Verify OTP\n3. انتظر موافقة الأدمن (`is_approved`)\n4. Login → استخدم `my-store/*`\n\n## Content-Type\n- بدون صور: `application/json`\n- مع صور: `multipart/form-data`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "retail_name", "value": "محل تجريبي قطاعي", "type": "string" },
+    { "key": "retail_phone", "value": "0912000001", "type": "string" },
+    { "key": "retail_password", "value": "secret123", "type": "string" },
+    { "key": "retail_email", "value": "", "type": "string" },
+    { "key": "retail_brand_name", "value": "براند تجريبي", "type": "string" },
+    { "key": "retail_address", "value": "طرابلس - ليبيا", "type": "string" },
+    { "key": "country_id", "value": "1", "type": "string" },
+    { "key": "city_id", "value": "1", "type": "string" },
+    { "key": "latitude", "value": "32.8872", "type": "string" },
+    { "key": "longitude", "value": "13.1913", "type": "string" },
+    { "key": "otp", "value": "", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "store_user_id", "value": "", "type": "string" },
+    { "key": "wholesale_phone", "value": "0912000002", "type": "string" },
+    { "key": "wholesale_password", "value": "secret123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1 — Retail (تاجر تجزئة) — USE THIS ON MOBILE",
+      "item": [
+        {
+          "name": "Register Retail — JSON (minimal)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token;",
+                  "const store = json?.data?.store;",
+                  "if (token) pm.collectionVariables.set('token', token);",
+                  "if (store?.id) pm.collectionVariables.set('store_user_id', String(store.id));",
+                  "pm.test('created as retail_trader', () => {",
+                  "  pm.expect(pm.response.code).to.eql(201);",
+                  "  pm.expect(store?.role).to.eql('retail_trader');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{retail_name}}\",\n  \"phone\": \"{{retail_phone}}\",\n  \"password\": \"{{retail_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register-retail",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register-retail"]
+            },
+            "description": "**الصح للموبايل.**\n\nRequired: `name`, `phone`, `password`\n\nResponse `data.store.role` يجب أن يكون `retail_trader` و `network_code` مثل `MG-R-000xxx`."
+          }
+        },
+        {
+          "name": "Register Retail — JSON (full profile)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.token) pm.collectionVariables.set('token', json.data.token);",
+                  "if (json?.data?.store?.id) pm.collectionVariables.set('store_user_id', String(json.data.store.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{retail_name}}\",\n  \"phone\": \"{{retail_phone}}\",\n  \"email\": \"{{retail_email}}\",\n  \"password\": \"{{retail_password}}\",\n  \"brand_name\": \"{{retail_brand_name}}\",\n  \"address\": \"{{retail_address}}\",\n  \"store_description\": \"متجر قطاعي لمواد السباكة\",\n  \"short_description\": \"تجزئة MG Plastic\",\n  \"long_description\": \"وصف أطول للمتجر يظهر في الملف العام بعد الموافقة.\",\n  \"website\": \"https://example.com\",\n  \"country_id\": {{country_id}},\n  \"city_id\": {{city_id}},\n  \"latitude\": {{latitude}},\n  \"longitude\": {{longitude}},\n  \"social_links\": [\n    { \"platform\": \"facebook\", \"url\": \"https://facebook.com/mystore\", \"sort_order\": 0 },\n    { \"platform\": \"whatsapp\", \"url\": \"https://wa.me/218912000001\", \"sort_order\": 1 }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register-retail",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register-retail"]
+            },
+            "description": "كل الحقول الاختيارية + social_links.\n\nملاحظة: `website` و `social_links.*.url` لازم URL كامل يبدأ بـ https:// في الـ validation الحالي."
+          }
+        },
+        {
+          "name": "Register Retail — multipart (with photos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.token) pm.collectionVariables.set('token', json.data.token);",
+                  "if (json?.data?.store?.id) pm.collectionVariables.set('store_user_id', String(json.data.store.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "{{retail_name}}", "type": "text" },
+                { "key": "phone", "value": "{{retail_phone}}", "type": "text" },
+                { "key": "password", "value": "{{retail_password}}", "type": "text" },
+                { "key": "brand_name", "value": "{{retail_brand_name}}", "type": "text" },
+                { "key": "address", "value": "{{retail_address}}", "type": "text" },
+                { "key": "country_id", "value": "{{country_id}}", "type": "text" },
+                { "key": "city_id", "value": "{{city_id}}", "type": "text" },
+                { "key": "latitude", "value": "{{latitude}}", "type": "text" },
+                { "key": "longitude", "value": "{{longitude}}", "type": "text" },
+                { "key": "profile_photo", "type": "file", "src": [], "description": "اختياري — صورة الملف" },
+                { "key": "brand_logo", "type": "file", "src": [], "description": "اختياري — شعار المتجر" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register-retail",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register-retail"]
+            },
+            "description": "multipart/form-data لرفع الصور. اختَر ملفات لـ profile_photo و brand_logo في Postman."
+          }
+        },
+        {
+          "name": "Register Retail — alias register-trader",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{retail_name}}\",\n  \"phone\": \"{{retail_phone}}\",\n  \"password\": \"{{retail_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register-trader",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register-trader"]
+            },
+            "description": "نفس `register-retail` بالظبط (alias)."
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.token || json?.data?.token;",
+                  "if (token) pm.collectionVariables.set('token', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{retail_phone}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/verify-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "verify-otp"]
+            }
+          }
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{retail_phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/resend-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "resend-otp"]
+            }
+          }
+        },
+        {
+          "name": "Login Retail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json?.data?.token || json?.token;",
+                  "if (token) pm.collectionVariables.set('token', token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{retail_phone}}\",\n  \"password\": \"{{retail_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "My Store (after login)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/my-store",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "my-store"]
+            },
+            "description": "تأكد إن `role` = `retail_trader`"
+          }
+        },
+        {
+          "name": "Public store profile (after admin approval)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/network-stores/{{store_user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "network-stores", "{{store_user_id}}"]
+            },
+            "description": "يستخدم User ID (مش plumber-stores id). قبل الموافقة → 404 غير متاح."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Wholesale (موزّع جملة) — NOT for retail mobile screen",
+      "item": [
+        {
+          "name": "Register Wholesale (register-store)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"موزع جملة تجريبي\",\n  \"phone\": \"{{wholesale_phone}}\",\n  \"password\": \"{{wholesale_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register-store",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register-store"]
+            },
+            "description": "⚠️ هذا ينشئ `wholesale_distributor`.\nلا تستخدمه في شاشة تسجيل تاجر التجزئة بالموبايل.\nنفس الحقول الاختيارية زي register-retail."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — Field reference",
+      "item": [
+        {
+          "name": "GET countries (for country_id)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/countries",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "countries"]
+            }
+          }
+        },
+        {
+          "name": "GET cities (for city_id)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cities?country_id={{country_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "cities"],
+              "query": [{ "key": "country_id", "value": "{{country_id}}" }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
