@@ -19,20 +19,27 @@ class WalletApiController extends Controller
     public function show(Request $request): JsonResponse
     {
         $wallet = $request->user()->wallet('LYD');
+        $wallet->load(['transactions' => fn ($q) => $q->latest()->limit(30)]);
 
-        return $this->success(new WalletResource($wallet));
+        return $this->success((new WalletResource($wallet))->resolve());
     }
 
     public function transactions(Request $request): JsonResponse
     {
         $wallet = $request->user()->wallet('LYD');
 
-        $transactions = $wallet->transactions()
-            ->latest()
-            ->paginate($request->integer('per_page', 20));
+        $query = $wallet->transactions()->latest();
+
+        // ?points_only=1 → حركات النقاط فقط
+        if ($request->boolean('points_only')) {
+            $query->where('points_delta', '!=', 0);
+        }
+
+        $transactions = $query->paginate($request->integer('per_page', 20));
 
         return $this->success([
-            'items' => WalletTransactionResource::collection($transactions->items()),
+            'balance_points' => (int) $wallet->balance_points,
+            'items' => WalletTransactionResource::collection($transactions->items())->resolve(),
             'pagination' => [
                 'current_page' => $transactions->currentPage(),
                 'last_page' => $transactions->lastPage(),

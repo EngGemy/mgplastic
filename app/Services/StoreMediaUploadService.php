@@ -24,6 +24,7 @@ class StoreMediaUploadService
         string $kind,
         ?int $productId = null,
         ?string $title = null,
+        ?string $description = null,
     ): array {
         if ($productId && ! Product::whereKey($productId)->exists()) {
             throw new \InvalidArgumentException('Product not found');
@@ -32,7 +33,7 @@ class StoreMediaUploadService
         $created = [];
         $skipped = [];
 
-        DB::transaction(function () use ($owner, $files, $kind, $productId, $title, &$created, &$skipped) {
+        DB::transaction(function () use ($owner, $files, $kind, $productId, $title, $description, &$created, &$skipped) {
             $baseSort = (int) $owner->storeMedia()->where('kind', $kind)->max('sort_order');
 
             foreach ($files as $index => $file) {
@@ -49,7 +50,7 @@ class StoreMediaUploadService
                     continue;
                 }
 
-                if (in_array($kind, ['banner', 'product_image', 'gallery'], true) && ! $isImage) {
+                if (in_array($kind, ['banner', 'product_image', 'gallery', 'my_product'], true) && ! $isImage) {
                     $skipped[] = ['filename' => $file->getClientOriginalName(), 'reason' => 'يجب أن يكون الملف صورة'];
                     continue;
                 }
@@ -59,6 +60,7 @@ class StoreMediaUploadService
                         'video' => 'store_media/videos',
                         'banner' => 'store_media/banners',
                         'product_image' => 'store_media/products',
+                        'my_product' => 'store_media/my-products',
                         default => 'store_media/gallery',
                     };
 
@@ -75,6 +77,7 @@ class StoreMediaUploadService
                         'file_path' => $path,
                         'thumbnail_path' => $thumbnailPath,
                         'title' => $title,
+                        'description' => $description,
                         'sort_order' => $baseSort + $index + 1,
                         'is_active' => true,
                     ]);

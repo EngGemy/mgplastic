@@ -49,6 +49,7 @@ class TraderPanelProvider extends PanelProvider
             ->pages([
                 \App\Filament\Trader\Pages\TraderDashboard::class,
                 \App\Filament\Trader\Pages\TraderPos::class,
+                \App\Filament\Trader\Pages\MyProducts::class,
             ])
             ->renderHook('panels::head.end', fn () => view('filament.hooks.admin-styles'))
             ->renderHook('panels::topbar.start', fn () => view('filament.hooks.distributor-brand-bar'))

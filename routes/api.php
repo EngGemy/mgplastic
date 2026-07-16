@@ -146,6 +146,12 @@ Route::middleware(['auth:sanctum'])->prefix('v1')->group(function () {
     Route::post('my-store/slider', [NetworkStoreController::class, 'uploadSlider']);
     Route::delete('my-store/slider/{mediaId}', [NetworkStoreController::class, 'deleteSlider'])->whereNumber('mediaId');
     Route::put('my-store/slider/order', [NetworkStoreController::class, 'reorderSlider']);
+
+    // منتجاتي — معرض صور المتجر (بدون نقاط)
+    Route::get('my-store/my-products', [NetworkStoreController::class, 'listMyProducts']);
+    Route::post('my-store/my-products', [NetworkStoreController::class, 'uploadMyProduct']);
+    Route::match(['put', 'patch', 'post'], 'my-store/my-products/{mediaId}', [NetworkStoreController::class, 'updateMyProduct'])->whereNumber('mediaId');
+    Route::delete('my-store/my-products/{mediaId}', [NetworkStoreController::class, 'deleteMyProduct'])->whereNumber('mediaId');
 });
 
 Route::get('v1/network-stores/{user}', [NetworkStoreController::class, 'publicShow'])->whereNumber('user');

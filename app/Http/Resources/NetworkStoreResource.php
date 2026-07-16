@@ -61,6 +61,7 @@ class NetworkStoreResource extends JsonResource
                 ['product_name' => $item->product?->name ?? null],
             )),
             'gallery' => $media->where('kind', 'gallery')->values()->map->toApiArray(),
+            'my_products' => $media->where('kind', 'my_product')->where('is_active', true)->values()->map->toApiArray(),
             'show_social_links' => $showSocial,
             'social_links' => $showSocial ? $social->map->toApiArray() : [],
         ];

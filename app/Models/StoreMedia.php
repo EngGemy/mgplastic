@@ -28,6 +28,7 @@ class StoreMedia extends Model
         'file_path',
         'thumbnail_path',
         'title',
+        'description',
         'sort_order',
         'is_active',
     ];
@@ -80,13 +81,21 @@ class StoreMedia extends Model
             'id' => $this->id,
             'kind' => $this->kind,
             'type' => $this->media_type,
+            'name' => $this->title,
             'title' => $this->title,
+            'description' => $this->description,
             'url' => $this->url,
+            'image_url' => $this->url,
             'thumbnail' => $this->thumbnail_url,
             'product_id' => $this->product_id,
             'sort_order' => $this->sort_order,
             'is_active' => $this->is_active,
             'created_at' => $this->created_at?->toISOString(),
-        ];
+        ] + ($this->kind === 'my_product' ? ['has_points' => false] : []);
+    }
+
+    public function scopeMyProducts($query)
+    {
+        return $query->where('kind', 'my_product')->where('is_active', true)->orderBy('sort_order');
     }
 }

@@ -6,9 +6,29 @@
     $gallery = $media->where('kind', 'gallery');
     $products = $media->where('kind', 'product_image');
     $videos = $media->where('kind', 'video');
+    $myProducts = $media->where('kind', 'my_product');
 @endphp
 
 <div style="font-family:'Cairo',sans-serif;direction:rtl;">
+    @if($myProducts->isNotEmpty())
+    <div style="margin-bottom:1rem;">
+        <div style="font-size:0.75rem;font-weight:700;color:#6b7280;margin-bottom:0.5rem;">منتجاتي</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.6rem;">
+            @foreach($myProducts as $item)
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+                    <img src="{{ $item->url }}" alt="" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;">
+                    <div style="padding:6px 8px;">
+                        <div style="font-size:0.7rem;font-weight:800;line-height:1.3;">{{ $item->title ?: '—' }}</div>
+                        @if($item->description)
+                            <div style="font-size:0.6rem;color:#64748b;margin-top:2px;">{{ \Illuminate\Support\Str::limit($item->description, 40) }}</div>
+                        @endif
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    </div>
+    @endif
+
     @if($banners->isNotEmpty())
     <div style="margin-bottom:1rem;">
         <div style="font-size:0.75rem;font-weight:700;color:#6b7280;margin-bottom:0.5rem;">بانرات</div>

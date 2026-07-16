@@ -1,0 +1,119 @@
+{
+  "info": {
+    "name": "MG Plastic — My Products (Store Gallery)",
+    "_postman_id": "b2c8e4f1-myprod-4000-9000-mgmyproducts",
+    "description": "معرض «منتجاتي» لموزّع الجملة وتاجر التجزئة.\nصورة + اسم + وصف — بدون نقاط.\n\nAuth: Bearer token لتاجر/موزّع.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://mg-plastic.com", "type": "string" },
+    { "key": "store_token", "value": "", "type": "string" },
+    { "key": "my_product_id", "value": "", "type": "string" },
+    { "key": "store_user_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "قائمة منتجاتي",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{store_token}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/my-store/my-products",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "my-store", "my-products"]
+        },
+        "description": "يرجع `data.items[]` كل عنصر: id, name, description, image_url, has_points=false"
+      }
+    },
+    {
+      "name": "إضافة منتج (صورة + اسم + وصف)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json?.data?.id) pm.collectionVariables.set('my_product_id', String(json.data.id));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{store_token}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "image", "type": "file", "src": [] },
+            { "key": "name", "type": "text", "value": "محبس نحاس" },
+            { "key": "description", "type": "text", "value": "محبس جودة عالية — منتج خاص بالمتجر" }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/my-store/my-products",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "my-store", "my-products"]
+        }
+      }
+    },
+    {
+      "name": "تحديث منتج",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{store_token}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "name", "type": "text", "value": "محبس نحاس مطوّر" },
+            { "key": "description", "type": "text", "value": "وصف محدّث" },
+            { "key": "is_active", "type": "text", "value": "1" },
+            { "key": "image", "type": "file", "src": [], "disabled": true }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/my-store/my-products/{{my_product_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "my-store", "my-products", "{{my_product_id}}"]
+        }
+      }
+    },
+    {
+      "name": "حذف منتج",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{store_token}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/my-store/my-products/{{my_product_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "my-store", "my-products", "{{my_product_id}}"]
+        }
+      }
+    },
+    {
+      "name": "عرض متجر عام (يشمل my_products)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": {
+          "raw": "{{base_url}}/api/v1/network-stores/{{store_user_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "network-stores", "{{store_user_id}}"]
+        },
+        "description": "الحقل `my_products` في رد المتجر العام — للمعرض في التطبيق."
+      }
+    }
+  ]
+}

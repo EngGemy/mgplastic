@@ -191,7 +191,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "mobile", "plumber", "wallet"]
             },
-            "description": "نفس الرصيد بصيغة Mobile Resource:\n`balance_points` + `balance_cents` + `balance_formatted`."
+            "description": "رصيد المحفظة + تاريخ النقاط:\n- `balance_points` الرصيد الحالي\n- `total_points_earned` إجمالي ما اكتسبه\n- `points_history` قائمة الحركات مع التاريخ (`created_at_formatted`)\n- `recent_transactions` آخر 10 حركات"
           }
         },
         {

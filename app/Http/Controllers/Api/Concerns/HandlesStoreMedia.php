@@ -22,8 +22,139 @@ trait HandlesStoreMedia
             'videos' => $owner->storeMedia->where('kind', 'video')->values()->map->toApiArray(),
             'product_images' => $owner->storeMedia->where('kind', 'product_image')->values()->map->toApiArray(),
             'gallery' => $owner->storeMedia->where('kind', 'gallery')->values()->map->toApiArray(),
+            'my_products' => $owner->storeMedia->where('kind', 'my_product')->values()->map->toApiArray(),
             'social_links' => $owner->socialLinks->map->toApiArray(),
         ];
+    }
+
+    public function listMyProducts(Request $request): JsonResponse
+    {
+        $owner = $this->resolveStoreMediaOwner($request);
+        $owner->loadMissing('storeMedia');
+
+        $items = $owner->storeMedia
+            ->where('kind', 'my_product')
+            ->sortBy('sort_order')
+            ->values()
+            ->map->toApiArray();
+
+        return response()->json([
+            'status' => true,
+            'data' => [
+                'items' => $items,
+                'count' => $items->count(),
+            ],
+        ]);
+    }
+
+    public function uploadMyProduct(Request $request, StoreMediaUploadService $uploader): JsonResponse
+    {
+        $owner = $this->resolveStoreMediaOwner($request);
+
+        $request->validate([
+            'image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
+            'name' => ['required', 'string', 'max:255'],
+            'title' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $name = $request->input('name') ?: $request->input('title');
+
+        $result = $uploader->upload(
+            $owner,
+            [$request->file('image')],
+            'my_product',
+            null,
+            $name,
+            $request->input('description'),
+        );
+
+        return response()->json([
+            'status' => true,
+            'message' => 'تمت إضافة المنتج',
+            'data' => $result['created'][0] ?? null,
+            'skipped' => $result['skipped'],
+        ], 201);
+    }
+
+    public function updateMyProduct(Request $request, int $mediaId): JsonResponse
+    {
+        $owner = $this->resolveStoreMediaOwner($request);
+
+        $request->validate([
+            'name' => ['nullable', 'string', 'max:255'],
+            'title' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:2000'],
+            'is_active' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
+        ]);
+
+        $media = StoreMedia::query()
+            ->where('owner_type', $owner->getMorphClass())
+            ->where('owner_id', $owner->getKey())
+            ->where('kind', 'my_product')
+            ->whereKey($mediaId)
+            ->first();
+
+        if (! $media) {
+            return response()->json(['status' => false, 'message' => 'المنتج غير موجود'], 404);
+        }
+
+        $data = [];
+        $name = $request->input('name', $request->input('title'));
+        if ($name !== null) {
+            $data['title'] = $name;
+        }
+        if ($request->exists('description')) {
+            $data['description'] = $request->input('description');
+        }
+        if ($request->exists('is_active')) {
+            $data['is_active'] = $request->boolean('is_active');
+        }
+        if ($request->exists('sort_order')) {
+            $data['sort_order'] = $request->integer('sort_order');
+        }
+
+        if ($request->hasFile('image')) {
+            if ($media->file_path) {
+                Storage::disk('public')->delete($media->file_path);
+            }
+            $data['file_path'] = $request->file('image')->store('store_media/my-products', 'public');
+        }
+
+        if ($data !== []) {
+            $media->update($data);
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'تم التحديث',
+            'data' => $media->fresh()->toApiArray(),
+        ]);
+    }
+
+    public function deleteMyProduct(Request $request, int $mediaId, StoreMediaUploadService $uploader): JsonResponse
+    {
+        $owner = $this->resolveStoreMediaOwner($request);
+
+        $media = StoreMedia::query()
+            ->where('owner_type', $owner->getMorphClass())
+            ->where('owner_id', $owner->getKey())
+            ->where('kind', 'my_product')
+            ->whereKey($mediaId)
+            ->first();
+
+        if (! $media) {
+            return response()->json(['status' => false, 'message' => 'المنتج غير موجود'], 404);
+        }
+
+        $uploader->deleteMedia($owner, $mediaId);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'تم حذف المنتج',
+        ]);
     }
 
     public function uploadStoreMedia(Request $request, StoreMediaUploadService $uploader): JsonResponse
@@ -31,11 +162,13 @@ trait HandlesStoreMedia
         $owner = $this->resolveStoreMediaOwner($request);
 
         $request->validate([
-            'kind' => ['required', 'in:banner,slider,video,product_image,gallery'],
+            'kind' => ['required', 'in:banner,slider,video,product_image,gallery,my_product'],
             'media' => ['required', 'array', 'min:1'],
             'media.*' => ['required', 'file', 'max:512000'],
             'product_id' => ['nullable', 'integer', 'exists:products,id'],
             'title' => ['nullable', 'string', 'max:255'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:2000'],
         ]);
 
         // "slider" is the public-facing name for store banners.
@@ -54,7 +187,8 @@ trait HandlesStoreMedia
             $request->file('media', []),
             $kind,
             $request->integer('product_id') ?: null,
-            $request->input('title'),
+            $request->input('name') ?: $request->input('title'),
+            $request->input('description'),
         );
 
         return response()->json([
