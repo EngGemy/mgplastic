@@ -45,8 +45,10 @@ class LoginController extends Controller
             ], 200);
         }
 
-        // (Optional) Enforce approval/active
-        if (method_exists($user, 'isApprovedAndActive') && ! $user->isApprovedAndActive()) {
+        // Network stores may log in while pending approval to manage their profile.
+        $isNetworkStore = $user->isNetworkStore();
+
+        if (! $isNetworkStore && method_exists($user, 'isApprovedAndActive') && ! $user->isApprovedAndActive()) {
             return response()->json([
                 'status'  => false,
                 'message' => $user->is_approved
@@ -57,9 +59,16 @@ class LoginController extends Controller
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
+        $message = 'Logged in successfully';
+        if ($isNetworkStore && ! $user->is_approved) {
+            $message = 'تم تسجيل الدخول. متجرك لم يُفعَّل بعد — بانتظار موافقة الإدارة.';
+        } elseif ($isNetworkStore && ! $user->is_active) {
+            $message = 'تم تسجيل الدخول. نشاط المتجر موقوف حالياً.';
+        }
+
         return response()->json([
             'status'  => true,
-            'message' => 'Logged in successfully',
+            'message' => $message,
             'token'   => $token,
             'user'    => $user->makeHidden(['otp_code','otp_expires_at']),
         ], 200);

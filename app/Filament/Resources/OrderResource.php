@@ -45,7 +45,7 @@ class OrderResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->with(['requester:id,name,brand_name', 'supplier:id,name,brand_name']);
+            ->with(['requester:id,name,brand_name,role', 'supplier:id,name,brand_name,role']);
     }
 
     public static function canCreate(): bool
@@ -82,14 +82,13 @@ class OrderResource extends Resource
     public static function productOptions(?string $search = null): array
     {
         return Product::query()
-            ->where('points_per_unit', '>', 0)
             ->with('translations')
             ->when($search, fn ($q) => $q->whereHas(
                 'translations',
                 fn ($t) => $t->where('name', 'like', '%'.$search.'%')
             ))
             ->orderBy('id')
-            ->limit(50)
+            ->limit(200)
             ->get()
             ->mapWithKeys(fn (Product $p) => [
                 $p->id => localized_name($p, 'name', "منتج #{$p->id}"),

@@ -139,6 +139,13 @@ class StoreRegisterController extends Controller
         return response()->json([
             'status'  => true,
             'message' => 'تم تسجيل المتجر. تم إرسال رمز التحقق، وحسابك بانتظار موافقة الإدارة.',
+            'store_status' => [
+                'code' => 'pending_approval',
+                'is_approved' => false,
+                'is_active' => true,
+                'is_public' => false,
+                'notice' => 'متجرك لم يُفعَّل بعد — طلبك قيد مراجعة الإدارة.',
+            ],
             'data'    => [
                 'token' => $user->createToken('auth_token')->plainTextToken,
                 'store' => new NetworkStoreResource($user),

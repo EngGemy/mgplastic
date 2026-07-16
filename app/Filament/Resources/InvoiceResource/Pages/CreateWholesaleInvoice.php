@@ -34,7 +34,7 @@ class CreateWholesaleInvoice extends Page
 
     public string $search = '';
 
-    /** @var array<string, array{product_id:int, name:string, quantity:int, unit_price_dinars:float, points_per_unit:float, image:?string}> */
+    /** @var array<string, array{product_id:int, name:string, quantity:int, points_per_unit:float, image:?string}> */
     public array $cart = [];
 
     public static function getNavigationGroup(): ?string
@@ -122,7 +122,6 @@ class CreateWholesaleInvoice extends Page
                 'product_id' => $productId,
                 'name' => $name,
                 'quantity' => 1,
-                'unit_price_dinars' => 0,
                 'points_per_unit' => (float) ($product->points_per_unit ?? 0),
                 'image' => $product->main_image,
             ];
@@ -152,13 +151,6 @@ class CreateWholesaleInvoice extends Page
     public function removeLine(string $key): void
     {
         unset($this->cart[$key]);
-    }
-
-    public function getSubtotalDinarsProperty(): float
-    {
-        return (float) collect($this->cart)->sum(
-            fn ($line) => $line['quantity'] * (float) ($line['unit_price_dinars'] ?? 0)
-        );
     }
 
     public function getTotalPointsProperty(): int

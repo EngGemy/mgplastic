@@ -219,6 +219,37 @@ class User extends Authenticatable
         return $this->role === 'retail_trader';
     }
 
+    public function isNetworkStore(): bool
+    {
+        return $this->isWholesaleDistributor() || $this->isRetailTrader();
+    }
+
+    /** @return array{code: string, message: ?string, is_public: bool} */
+    public function networkStoreStatus(): array
+    {
+        if (! $this->is_approved) {
+            return [
+                'code' => 'pending_approval',
+                'message' => 'متجرك لم يُفعَّل بعد — طلبك قيد مراجعة الإدارة. يمكنك تجهيز بيانات المتجر الآن وسيظهر للجميع بعد الموافقة.',
+                'is_public' => false,
+            ];
+        }
+
+        if (! $this->is_active) {
+            return [
+                'code' => 'inactive',
+                'message' => 'تم إيقاف نشاط المتجر. تواصل مع الإدارة لإعادة التفعيل.',
+                'is_public' => false,
+            ];
+        }
+
+        return [
+            'code' => 'active',
+            'message' => null,
+            'is_public' => true,
+        ];
+    }
+
     public function isSuperAdmin(): bool
     {
         return $this->role === 'super_admin';

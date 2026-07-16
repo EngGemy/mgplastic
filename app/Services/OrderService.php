@@ -135,6 +135,7 @@ class OrderService
             $order->loadMissing('items', 'requester', 'supplier');
 
             $reference = $this->fulfilStock($order, $actor);
+            $this->creditRequesterPoints($order, $actor, $reference['invoice_id'] ?? null);
 
             $order->update([
                 'status' => OrderStatus::DELIVERED,
@@ -143,6 +144,16 @@ class OrderService
                 'delivered_invoice_id' => $reference['invoice_id'] ?? null,
                 'delivered_reference' => $reference['reference'] ?? null,
             ]);
+
+            $points = (int) $order->total_points;
+            $pointsNote = $points > 0 ? " وتم إضافة {$points} نقطة لمحفظتك." : '.';
+
+            $this->notifyRequester(
+                $order,
+                'تم استلام طلبك ✓',
+                "طلب رقم {$order->order_number} تم تسليمه{$pointsNote}",
+                'success',
+            );
 
             $this->notifySupplierAndAdmins(
                 $order,
@@ -153,6 +164,33 @@ class OrderService
 
             return $order;
         });
+    }
+
+    /**
+     * عند التسليم: تُضاف نقاط الطلب تلقائياً لمحفظة طالب الطلب
+     * (موزّع جملة أو تاجر قطاعي) ليستطيع التوزيع/البيع لاحقاً.
+     */
+    protected function creditRequesterPoints(Order $order, User $actor, ?int $invoiceId): void
+    {
+        $points = (int) $order->total_points;
+        $requester = $order->requester;
+
+        if ($points <= 0 || ! $requester) {
+            return;
+        }
+
+        $requester->wallet()->creditPoints($points, [
+            'reason' => 'order_delivery',
+            'order_id' => $order->id,
+            'order_number' => $order->order_number,
+            'invoice_id' => $invoiceId,
+        ], $actor, "نقاط تسليم طلب {$order->order_number}");
+
+        if ($invoiceId) {
+            Invoice::query()->whereKey($invoiceId)->update([
+                'points_awarded' => $points,
+            ]);
+        }
     }
 
     /** Supplier rejects the order. */
@@ -295,10 +333,17 @@ class OrderService
         ])->all();
 
         if ($order->isFactoryChannel()) {
-            $wholesaler = $order->requester;
+            $wholesaler = User::query()->find($order->requester_id);
 
-            if (! $wholesaler) {
-                throw new \DomainException('تعذّر تحديد موزّع الجملة صاحب الطلب');
+            // Confirming buyer is the wholesaler — use the actor if the relation is stale.
+            if ((! $wholesaler || ! $wholesaler->isWholesaleDistributor())
+                && $actor->isWholesaleDistributor()
+                && (int) $actor->id === (int) $order->requester_id) {
+                $wholesaler = $actor;
+            }
+
+            if (! $wholesaler || ! $wholesaler->isWholesaleDistributor()) {
+                throw new \DomainException('تعذّر تسليم الطلب: صاحب الطلب ليس موزّع جملة');
             }
 
             $invoice = $this->wholesaleInvoices->issueFromCart(

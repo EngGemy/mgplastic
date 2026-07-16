@@ -98,19 +98,10 @@
                                         <span>{{ $line['quantity'] }}</span>
                                         <button type="button" wire:click="incrementQty('{{ $key }}')">+</button>
                                     </div>
-                                    <div class="pos-price-field">
-                                        <label>سعر الوحدة (د.ل)</label>
-                                        <input type="number" min="0" step="0.01"
-                                            wire:model.live="cart.{{ $key }}.unit_price_dinars"
-                                            class="pos-input-sm">
-                                    </div>
                                 </div>
                                 <div class="pos-cart-line-bot">
                                     <span class="pos-line-points">
                                         ⭐ {{ (int) floor($line['quantity'] * $line['points_per_unit']) }} نقطة
-                                    </span>
-                                    <span class="pos-line-money">
-                                        {{ number_format($line['quantity'] * ($line['unit_price_dinars'] ?? 0), 2) }} د.ل
                                     </span>
                                 </div>
                             </div>
@@ -119,10 +110,6 @@
                 @endif
 
                 <div class="pos-totals">
-                    <div class="pos-total-row">
-                        <span>إجمالي المبلغ</span>
-                        <strong>{{ number_format($this->subtotalDinars, 2) }} د.ل</strong>
-                    </div>
                     <div class="pos-total-row pos-total-row--points">
                         <span>إجمالي النقاط (للتوزيع)</span>
                         <strong>{{ number_format($this->totalPoints) }} نقطة</strong>

@@ -288,8 +288,6 @@
                 <tr>
                     <th class="col-product">المنتج</th>
                     <th>الكمية</th>
-                    <th>سعر الوحدة (د.ل)</th>
-                    <th>إجمالي (د.ل)</th>
                     <th>نقاط/وحدة</th>
                     <th>إجمالي النقاط</th>
                 </tr>
@@ -299,14 +297,12 @@
                     <tr>
                         <td class="col-product">{{ localized_name($item->product, 'name') }}</td>
                         <td><strong>{{ number_format($item->quantity) }}</strong></td>
-                        <td>{{ number_format($item->unit_price_cents / 100, 2) }}</td>
-                        <td>{{ number_format($item->quantity * $item->unit_price_cents / 100, 2) }}</td>
                         <td>{{ number_format($item->points_per_unit, 2) }}</td>
                         <td class="col-points">{{ number_format($item->total_points) }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6">لا توجد بنود</td>
+                        <td colspan="4">لا توجد بنود</td>
                     </tr>
                 @endforelse
             </tbody>
@@ -315,19 +311,13 @@
         <div class="totals">
             <div></div>
             <div>
-                <div class="totals-box">
+                <div class="totals-box points">
                     <div class="total-row">
                         <span>إجمالي الكميات</span>
                         <strong>{{ number_format($invoice->items->sum('quantity')) }} وحدة</strong>
                     </div>
-                    <div class="total-row grand">
-                        <span>إجمالي المبلغ</span>
-                        <strong>{{ number_format($invoice->total_cents / 100, 2) }} د.ل</strong>
-                    </div>
-                </div>
-                <div class="totals-box points" style="margin-top: 0.75rem;">
-                    <div class="total-row">
-                        <span>إجمالي النقاط (للتوزيع)</span>
+                    <div class="total-row grand grand-points">
+                        <span>إجمالي النقاط</span>
                         <strong>{{ number_format($invoice->items->sum('total_points')) }} نقطة</strong>
                     </div>
                 </div>

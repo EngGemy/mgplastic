@@ -201,18 +201,16 @@ class Invoice extends Model
 
     /**
      * اعتماد الفاتورة بواسطة الأدمن:
-     * - يحدد نسبة الربح (مثلاً 1.00 = 1%)
-     * - يحسب النقاط: floor( (total_cents/100 دينار) * (profit_percent/100) )
-     * - ينشئ حركة نقاط بالمحفظة
+     * - يمنح النقاط المحددة (افتراضياً مجموع نقاط البنود)
+     * - ينشئ حركة نقاط بالمحفظة للسباك
      */
-    public function approveByAdmin(User $admin, float $profitPercent): void
+    public function approveByAdmin(User $admin, int $points, ?float $profitPercent = null): void
     {
-        DB::transaction(function () use ($admin, $profitPercent) {
-            $dinars = (int) floor($this->total_cents / 100);
-            $points = (int) floor($dinars * ($profitPercent / 100));
+        DB::transaction(function () use ($admin, $points, $profitPercent) {
+            $awarded = max(0, $points);
 
             $this->profit_percent = $profitPercent;
-            $this->points_awarded = max(0, $points);
+            $this->points_awarded = $awarded;
             $this->status = 'approved';
             $this->approved_at = now();
             $this->reviewed_by = $admin->id;
@@ -223,12 +221,11 @@ class Invoice extends Model
                     ['owner_id' => $this->plumber_id, 'currency' => $this->currency ?: 'LYD'],
                     ['balance_cents' => 0, 'balance_points' => 0]
                 );
-                $wallet->creditPoints(max(0, $points), [
+                $wallet->creditPoints($awarded, [
                     'reason' => 'invoice_approval',
                     'invoice_id' => $this->id,
                     'invoice_number' => $this->number,
                     'profit_percent' => $profitPercent,
-                    'total_cents' => $this->total_cents,
                 ], $admin);
             }
         });

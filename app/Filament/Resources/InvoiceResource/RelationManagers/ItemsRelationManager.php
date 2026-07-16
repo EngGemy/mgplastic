@@ -45,14 +45,9 @@ class ItemsRelationManager extends RelationManager
                 ->minValue(1)
                 ->required(),
 
-            Forms\Components\TextInput::make('unit_price_cents')
-                ->label('سعر الوحدة (د.ل)')
-                ->numeric()
-                ->minValue(0)
-                ->helperText('أدخل السعر بالدينار الليبي')
-                ->dehydrateStateUsing(fn ($state) => (int) round(((float) $state) * 100))
-                ->formatStateUsing(fn ($state) => $state ? number_format($state / 100, 2, '.', '') : '0')
-                ->required(),
+            Forms\Components\Hidden::make('unit_price_cents')
+                ->default(0)
+                ->dehydrated(),
 
             Forms\Components\TextInput::make('points_per_unit')
                 ->label('النقاط/وحدة (snapshot)')
@@ -78,10 +73,6 @@ class ItemsRelationManager extends RelationManager
                     ->badge()
                     ->color('primary'),
 
-                Tables\Columns\TextColumn::make('unit_price_cents')
-                    ->label('سعر الوحدة')
-                    ->formatStateUsing(fn ($state) => number_format($state / 100, 2).' د.ل'),
-
                 Tables\Columns\TextColumn::make('points_per_unit')
                     ->label('النقاط/وحدة')
                     ->badge()
@@ -97,6 +88,7 @@ class ItemsRelationManager extends RelationManager
                 Tables\Actions\CreateAction::make()
                     ->label('إضافة منتج')
                     ->mutateFormDataUsing(function (array $data): array {
+                        $data['unit_price_cents'] = (int) ($data['unit_price_cents'] ?? 0);
                         $data['total_points'] = (int) floor(
                             $data['quantity'] * $data['points_per_unit']
                         );
@@ -109,6 +101,7 @@ class ItemsRelationManager extends RelationManager
             ->actions([
                 Tables\Actions\EditAction::make()
                     ->mutateFormDataUsing(function (array $data): array {
+                        $data['unit_price_cents'] = (int) ($data['unit_price_cents'] ?? 0);
                         $data['total_points'] = (int) floor(
                             $data['quantity'] * $data['points_per_unit']
                         );

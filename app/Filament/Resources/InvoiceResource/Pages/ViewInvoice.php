@@ -165,46 +165,18 @@ class ViewInvoice extends ViewRecord
                     && $this->record->status === 'pending_review'
                     && ! $this->record->isWholesalePos())
                 ->form([
-                    Forms\Components\Grid::make(3)->schema([
-                        Forms\Components\TextInput::make('subtotal_dinars')
-                            ->label('المجموع الفرعي (د.ل)')
-                            ->numeric()
-                            ->minValue(0)
-                            ->default(fn () => number_format(($this->record->subtotal_cents ?? 0) / 100, 2, '.', ''))
-                            ->required(),
-
-                        Forms\Components\TextInput::make('tax_dinars')
-                            ->label('الضريبة (د.ل)')
-                            ->numeric()
-                            ->minValue(0)
-                            ->default(fn () => number_format(($this->record->tax_cents ?? 0) / 100, 2, '.', ''))
-                            ->required(),
-
-                        Forms\Components\TextInput::make('profit_percent')
-                            ->label('نسبة الربح %')
-                            ->numeric()
-                            ->minValue(0)
-                            ->maxValue(100)
-                            ->default(fn () => $this->record->profit_percent ?? 1.00)
-                            ->suffix('%')
-                            ->required(),
-                    ]),
+                    Forms\Components\TextInput::make('points_awarded')
+                        ->label('النقاط الممنوحة')
+                        ->numeric()
+                        ->minValue(0)
+                        ->default(fn () => (int) ($this->record->items->sum('total_points') ?: $this->record->points_awarded ?: 0))
+                        ->suffix('نقطة')
+                        ->helperText('افتراضياً مجموع نقاط بنود الفاتورة')
+                        ->required(),
                 ])
                 ->action(function (array $data) {
                     $invoice = $this->record;
-
-                    $subtotalCents = (int) round(((float) $data['subtotal_dinars']) * 100);
-                    $taxCents = (int) round(((float) $data['tax_dinars']) * 100);
-                    $totalCents = $subtotalCents + $taxCents;
-
-                    $invoice->update([
-                        'subtotal_cents' => max(0, $subtotalCents),
-                        'tax_cents' => max(0, $taxCents),
-                        'total_cents' => max(0, $totalCents),
-                        'currency' => $invoice->currency ?? 'LYD',
-                    ]);
-
-                    $invoice->approveByAdmin(auth()->user(), (float) $data['profit_percent']);
+                    $invoice->approveByAdmin(auth()->user(), (int) $data['points_awarded']);
 
                     $this->redirect(InvoiceResource::getUrl('view', ['record' => $invoice]));
                 })

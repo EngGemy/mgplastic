@@ -15,7 +15,13 @@ class ListDistributorOrders extends ListRecords
         return [
             Actions\CreateAction::make()
                 ->label('طلب جديد من المصنع')
-                ->icon('heroicon-o-plus-circle'),
+                ->icon('heroicon-o-plus-circle')
+                ->color('primary'),
         ];
+    }
+
+    public function getTitle(): string
+    {
+        return 'الطلبيات';
     }
 }

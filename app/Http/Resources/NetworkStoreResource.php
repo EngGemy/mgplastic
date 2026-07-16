@@ -13,6 +13,7 @@ class NetworkStoreResource extends JsonResource
         $social = $this->whenLoaded('socialLinks', fn () => $this->socialLinks, collect());
 
         $showSocial = (bool) ($this->show_social_links ?? true);
+        $storeStatus = $this->networkStoreStatus();
 
         return [
             'id' => $this->id,
@@ -27,6 +28,9 @@ class NetworkStoreResource extends JsonResource
             },
             'is_approved' => (bool) $this->is_approved,
             'is_active' => (bool) $this->is_active,
+            'status_code' => $storeStatus['code'],
+            'status_message' => $storeStatus['message'],
+            'is_public' => $storeStatus['is_public'],
             'address' => $this->address,
             'store_description' => $this->store_description,
             'short_description' => $this->short_description,

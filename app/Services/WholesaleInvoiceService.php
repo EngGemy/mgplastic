@@ -20,8 +20,8 @@ class WholesaleInvoiceService
      */
     public function issueFromCart(User $wholesaler, array $lines, User $issuedBy): Invoice
     {
-        if ($wholesaler->role !== 'wholesale_distributor') {
-            throw new \DomainException('يجب اختيار موزع جملة');
+        if (! $wholesaler->isWholesaleDistributor()) {
+            throw new \DomainException('يجب أن يكون المستلم موزّع جملة');
         }
 
         if (empty($lines)) {
@@ -29,26 +29,19 @@ class WholesaleInvoiceService
         }
 
         return DB::transaction(function () use ($wholesaler, $lines, $issuedBy) {
-            $subtotalCents = 0;
             $preparedLines = [];
 
             foreach ($lines as $line) {
                 $product = Product::with('translations')->findOrFail($line['product_id']);
                 $qty = max(1, (int) $line['quantity']);
 
-                $unitPriceCents = isset($line['unit_price_dinars'])
-                    ? (int) round(((float) $line['unit_price_dinars']) * 100)
-                    : (int) round((float) ($line['unit_price_cents'] ?? 0));
-
                 $pointsPerUnit = (float) ($line['points_per_unit'] ?? $product->points_per_unit ?? 0);
                 $linePoints = (int) floor($qty * $pointsPerUnit);
-
-                $subtotalCents += $unitPriceCents * $qty;
 
                 $preparedLines[] = [
                     'product_id' => $product->id,
                     'quantity' => $qty,
-                    'unit_price_cents' => $unitPriceCents,
+                    'unit_price_cents' => 0,
                     'points_per_unit' => $pointsPerUnit,
                     'total_points' => $linePoints,
                 ];
@@ -63,9 +56,9 @@ class WholesaleInvoiceService
                 'wholesale_distributor_id' => $wholesaler->id,
                 'plumber_id' => null,
                 'vendor_store_id' => null,
-                'subtotal_cents' => $subtotalCents,
+                'subtotal_cents' => 0,
                 'tax_cents' => 0,
-                'total_cents' => $subtotalCents,
+                'total_cents' => 0,
                 'currency' => 'LYD',
                 'number' => $number,
                 'attachment_path' => null,
@@ -73,7 +66,7 @@ class WholesaleInvoiceService
                 'approved_at' => now(),
                 'reviewed_by' => $issuedBy->id,
                 'issued_by' => $issuedBy->id,
-                'points_awarded' => 0,
+                'points_awarded' => array_sum(array_column($preparedLines, 'total_points')),
                 'profit_percent' => null,
             ]);
 

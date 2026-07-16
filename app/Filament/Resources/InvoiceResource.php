@@ -180,14 +180,6 @@ class InvoiceResource extends Resource
                     ->formatStateUsing(fn ($state) => number_format((int) $state))
                     ->suffix(' نقطة'),
 
-                Tables\Columns\TextColumn::make('total_cents')
-                    ->label('المبلغ')
-                    ->alignEnd()
-                    ->sortable()
-                    ->weight('bold')
-                    ->color('success')
-                    ->formatStateUsing(fn ($state) => number_format((($state ?? 0) / 100), 2).' د.ل'),
-
                 Tables\Columns\TextColumn::make('status')
                     ->label('الحالة')
                     ->badge()
@@ -261,44 +253,20 @@ class InvoiceResource extends Resource
                             && ! $record->isWholesalePos()
                             && static::isNetworkAdmin())
                         ->form([
-                            Forms\Components\Grid::make(3)->schema([
-                                Forms\Components\TextInput::make('subtotal_dinars')
-                                    ->label('المجموع الفرعي (د.ل)')
-                                    ->numeric()
-                                    ->minValue(0)
-                                    ->default(fn (Invoice $r) => number_format((($r->subtotal_cents ?? 0) / 100), 2, '.', ''))
-                                    ->required(),
-                                Forms\Components\TextInput::make('tax_dinars')
-                                    ->label('الضريبة (د.ل)')
-                                    ->numeric()
-                                    ->minValue(0)
-                                    ->default(fn (Invoice $r) => number_format((($r->tax_cents ?? 0) / 100), 2, '.', ''))
-                                    ->required(),
-                                Forms\Components\TextInput::make('profit_percent')
-                                    ->label('نسبة الربح %')
-                                    ->numeric()
-                                    ->minValue(0)
-                                    ->maxValue(100)
-                                    ->default(fn (Invoice $r) => $r->profit_percent ?? 1.00)
-                                    ->suffix('%')
-                                    ->required(),
-                            ]),
+                            Forms\Components\TextInput::make('points_awarded')
+                                ->label('النقاط الممنوحة')
+                                ->numeric()
+                                ->minValue(0)
+                                ->default(fn (Invoice $r) => (int) ($r->items->sum('total_points') ?: $r->points_awarded ?: 0))
+                                ->suffix('نقطة')
+                                ->helperText('افتراضياً مجموع نقاط بنود الفاتورة')
+                                ->required(),
                         ])
                         ->requiresConfirmation()
                         ->modalHeading('اعتماد الفاتورة')
                         ->modalSubmitActionLabel('اعتماد')
                         ->action(function (Invoice $record, array $data) {
-                            $subtotalCents = (int) round(((float) $data['subtotal_dinars']) * 100);
-                            $taxCents = (int) round(((float) $data['tax_dinars']) * 100);
-
-                            $record->update([
-                                'subtotal_cents' => max(0, $subtotalCents),
-                                'tax_cents' => max(0, $taxCents),
-                                'total_cents' => max(0, $subtotalCents + $taxCents),
-                                'currency' => 'LYD',
-                            ]);
-
-                            $record->approveByAdmin(auth()->user(), (float) $data['profit_percent']);
+                            $record->approveByAdmin(auth()->user(), (int) $data['points_awarded']);
                         }),
                     Tables\Actions\Action::make('refuse')
                         ->label('رفض')
@@ -348,15 +316,11 @@ class InvoiceResource extends Resource
                                 ->badge()
                                 ->color('info'),
 
-                            Infolists\Components\TextEntry::make('unit_price_cents')
-                                ->label('سعر الوحدة')
-                                ->formatStateUsing(fn ($state) => number_format(((int) $state) / 100, 2).' د.ل'),
-
                             Infolists\Components\TextEntry::make('points_per_unit')
                                 ->label('نقطة/وحدة')
                                 ->badge()
                                 ->color('warning')
-                                ->visible(fn ($record) => (int) ($record->points_per_unit ?? 0) > 0),
+                                ->visible(fn ($record) => (float) ($record->points_per_unit ?? 0) > 0),
 
                             Infolists\Components\TextEntry::make('total_points')
                                 ->label('إجمالي النقاط')
@@ -364,7 +328,7 @@ class InvoiceResource extends Resource
                                 ->color('success')
                                 ->visible(fn ($record) => (int) ($record->total_points ?? 0) > 0),
                         ])
-                        ->columns(5),
+                        ->columns(4),
                 ])
                 ->visible(fn ($record) => $record->items->isNotEmpty()),
 

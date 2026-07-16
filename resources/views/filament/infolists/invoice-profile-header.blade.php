@@ -2,8 +2,7 @@
     $record = $getRecord();
     $isWholesale = $record->isWholesalePos();
     $totalQty = (int) $record->items->sum('quantity');
-    $totalPoints = (int) $record->items->sum('total_points');
-    $totalDinars = number_format($record->total_cents / 100, 2);
+    $totalPoints = (int) ($record->points_awarded ?: $record->items->sum('total_points'));
 
     $statusLabel = match ($record->status) {
         'approved' => 'معتمدة',
@@ -29,20 +28,14 @@
             <p class="inv-profile-serial">الرقم الأساسي: <strong>{{ $record->serial_number }}</strong></p>
         </div>
         <div class="inv-profile-stats">
-            <div class="net-stat net-stat--green">
-                <span class="net-stat-num">{{ $totalDinars }}</span>
-                <span class="net-stat-label">د.ل</span>
-            </div>
             <div class="net-stat net-stat--blue">
                 <span class="net-stat-num">{{ number_format($totalQty) }}</span>
                 <span class="net-stat-label">وحدة</span>
             </div>
-            @if($isWholesale)
-                <div class="net-stat net-stat--amber">
-                    <span class="net-stat-num">{{ number_format($totalPoints) }}</span>
-                    <span class="net-stat-label">نقطة</span>
-                </div>
-            @endif
+            <div class="net-stat net-stat--amber">
+                <span class="net-stat-num">{{ number_format($totalPoints) }}</span>
+                <span class="net-stat-label">نقطة</span>
+            </div>
             <div class="net-stat net-stat--{{ $statusClass }}">
                 <span class="net-stat-num" style="font-size:0.85rem">{{ $statusLabel }}</span>
                 <span class="net-stat-label">الحالة</span>

@@ -74,12 +74,28 @@ class VerifyOtpController extends Controller
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        return response()->json([
+        $payload = [
             'status' => true,
             'message' => 'Phone verified successfully.',
             'token' => $token,
             'user'  => $user,
-        ]);
+        ];
+
+        if ($user->isNetworkStore()) {
+            $status = $user->networkStoreStatus();
+            $payload['store_status'] = [
+                'code' => $status['code'],
+                'is_approved' => (bool) $user->is_approved,
+                'is_active' => (bool) $user->is_active,
+                'is_public' => $status['is_public'],
+                'notice' => $status['message'],
+            ];
+            if ($status['message']) {
+                $payload['message'] = $status['message'];
+            }
+        }
+
+        return response()->json($payload);
     }
 
     /* ============================================================

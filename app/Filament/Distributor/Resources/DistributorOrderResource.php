@@ -21,10 +21,15 @@ class DistributorOrderResource extends Resource
 
     protected static ?string $navigationLabel = 'الطلبيات';
 
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 1;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'الطلبيات';
+    }
 
     public static function getModelLabel(): string { return 'طلبية'; }
-    public static function getPluralModelLabel(): string { return 'الطلبيات'; }
+    public static function getPluralModelLabel(): string { return 'كل الطلبيات'; }
 
     public static function getNavigationBadge(): ?string
     {
@@ -50,7 +55,7 @@ class DistributorOrderResource extends Resource
 
         return parent::getEloquentQuery()
             ->when($user, fn (Builder $q) => $q->forNetworkUser($user))
-            ->with(['requester:id,name,brand_name', 'supplier:id,name,brand_name']);
+            ->with(['requester:id,name,brand_name,role', 'supplier:id,name,brand_name,role']);
     }
 
     public static function canCreate(): bool

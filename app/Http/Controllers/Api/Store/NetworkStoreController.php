@@ -9,7 +9,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
 class NetworkStoreController extends Controller
@@ -18,26 +17,28 @@ class NetworkStoreController extends Controller
 
     protected function resolveStoreMediaOwner(Request $request): Model
     {
-        return $this->networkStoreUser();
+        return $this->networkStoreUser($request);
     }
 
-    protected function networkStoreUser(): User
+    protected function networkStoreUser(?Request $request = null): User
     {
-        $user = Auth::user();
+        $user = $request?->user();
 
-        if (! $user || ! $this->isNetworkStoreRole($user)) {
+        if (! $user) {
             abort(response()->json([
                 'status' => false,
-                'message' => 'هذه الخدمة متاحة لمتاجر شبكة النقاط فقط',
+                'message' => 'يجب تسجيل الدخول أولاً',
+            ], 401));
+        }
+
+        if (! $user->isNetworkStore()) {
+            abort(response()->json([
+                'status' => false,
+                'message' => 'هذه الخدمة متاحة لموزّعي الجملة وتجار التجزئة فقط',
             ], 403));
         }
 
         return $user;
-    }
-
-    protected function isNetworkStoreRole(User $user): bool
-    {
-        return $user->isWholesaleDistributor() || $user->isRetailTrader();
     }
 
     /**
@@ -45,13 +46,9 @@ class NetworkStoreController extends Controller
      */
     public function show(Request $request): JsonResponse
     {
-        $user = $this->networkStoreUser();
-        $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);
+        $user = $this->networkStoreUser($request);
 
-        return response()->json([
-            'status' => true,
-            'data' => new NetworkStoreResource($user),
-        ]);
+        return $this->storeJsonResponse($user);
     }
 
     /**
@@ -59,7 +56,7 @@ class NetworkStoreController extends Controller
      */
     public function update(Request $request): JsonResponse
     {
-        $user = $this->networkStoreUser();
+        $user = $this->networkStoreUser($request);
 
         $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
@@ -105,13 +102,8 @@ class NetworkStoreController extends Controller
         }
 
         $user->save();
-        $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);
 
-        return response()->json([
-            'status' => true,
-            'message' => 'تم تحديث بيانات المتجر',
-            'data' => new NetworkStoreResource($user),
-        ]);
+        return $this->storeJsonResponse($user, 'تم تحديث بيانات المتجر');
     }
 
     /**
@@ -119,7 +111,7 @@ class NetworkStoreController extends Controller
      */
     public function publicShow(User $user): JsonResponse
     {
-        if (! $this->isNetworkStoreRole($user)) {
+        if (! $user->isNetworkStore()) {
             return response()->json(['status' => false, 'message' => 'المتجر غير موجود'], 404);
         }
 
@@ -131,6 +123,25 @@ class NetworkStoreController extends Controller
 
         return response()->json([
             'status' => true,
+            'data' => new NetworkStoreResource($user),
+        ]);
+    }
+
+    protected function storeJsonResponse(User $user, ?string $actionMessage = null): JsonResponse
+    {
+        $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);
+        $storeStatus = $user->networkStoreStatus();
+
+        return response()->json([
+            'status' => true,
+            'message' => $actionMessage ?? $storeStatus['message'] ?? 'تم تحميل بيانات المتجر',
+            'store_status' => [
+                'code' => $storeStatus['code'],
+                'is_approved' => (bool) $user->is_approved,
+                'is_active' => (bool) $user->is_active,
+                'is_public' => $storeStatus['is_public'],
+                'notice' => $storeStatus['message'],
+            ],
             'data' => new NetworkStoreResource($user),
         ]);
     }

@@ -15,7 +15,13 @@ class ListTraderOrders extends ListRecords
         return [
             Actions\CreateAction::make()
                 ->label('طلب جديد من موزّع الجملة')
-                ->icon('heroicon-o-plus-circle'),
+                ->icon('heroicon-o-plus-circle')
+                ->color('primary'),
         ];
+    }
+
+    public function getTitle(): string
+    {
+        return 'الطلبيات';
     }
 }

@@ -40,9 +40,14 @@ trait PlacesNetworkOrder
             return collect();
         }
 
+        // Top-level categories only (avoids duplicate child labels like «حسب النظام الأمريكي»).
         return ProductCategory::query()
             ->with('translations')
-            ->whereHas('products', fn ($q) => $q->whereIn('id', $productIds))
+            ->whereNull('parent_id')
+            ->where(function ($q) use ($productIds) {
+                $q->whereHas('products', fn ($p) => $p->whereIn('id', $productIds))
+                    ->orWhereHas('children.products', fn ($p) => $p->whereIn('id', $productIds));
+            })
             ->orderBy('id')
             ->get()
             ->map(function (ProductCategory $c) {
@@ -55,9 +60,17 @@ trait PlacesNetworkOrder
     public function getFilteredCatalogProperty(): Collection
     {
         return $this->catalogRows()
-            ->when($this->selectedCategoryId, fn (Collection $c) => $c->filter(
-                fn ($row) => (int) ($row['category_id'] ?? 0) === (int) $this->selectedCategoryId
-            ))
+            ->when($this->selectedCategoryId, function (Collection $c) {
+                $catId = (int) $this->selectedCategoryId;
+                $allowed = ProductCategory::query()
+                    ->whereKey($catId)
+                    ->orWhere('parent_id', $catId)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                return $c->filter(fn ($row) => in_array((int) ($row['category_id'] ?? 0), $allowed, true));
+            })
             ->when($this->search, function (Collection $c) {
                 $term = mb_strtolower(trim($this->search));
 
@@ -85,10 +98,8 @@ trait PlacesNetworkOrder
         }
 
         $this->catalogCache = Product::query()
-            ->where('points_per_unit', '>', 0)
             ->with(['translations', 'category.translations'])
             ->orderBy('id')
-            ->limit(120)
             ->get()
             ->map(function (Product $p) {
                 $name = localized_name($p, 'name', "منتج #{$p->id}");
