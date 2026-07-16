@@ -26,8 +26,8 @@ class PlumberDistributionPosService
             throw new \DomainException('يجب اختيار سباك');
         }
 
-        if ((int) $plumber->parent_distributor_id !== (int) $retailTrader->id) {
-            throw new \DomainException('هذا السباك غير تابع لشبكتك');
+        if (! $plumber->is_active) {
+            throw new \DomainException('هذا السباك موقوف');
         }
 
         if (empty($lines)) {

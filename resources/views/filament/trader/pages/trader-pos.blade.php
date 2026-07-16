@@ -84,6 +84,31 @@
 .pos-btn-checkout:hover { opacity:.92; }
 .pos-btn-checkout:disabled { background:#94a3b8; cursor:not-allowed; }
 .pos-btn-clear { width:100%; padding:8px; background:#fff; color:#dc2626; border:1.5px solid #fca5a5; border-radius:8px; font-family:'Cairo',sans-serif; font-size:12px; font-weight:600; cursor:pointer; margin-top:6px; }
+.pos-plumber-box { position:relative; flex:1.2; min-width:220px; }
+.pos-plumber-selected {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:8px 10px; border:1.5px solid #059669; border-radius:8px; background:#ecfdf5;
+}
+.pos-plumber-selected-main { min-width:0; }
+.pos-plumber-selected-name { font-size:13px; font-weight:800; color:#065f46; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pos-plumber-selected-meta { font-size:11px; color:#047857; margin-top:1px; }
+.pos-plumber-clear {
+    border:none; background:#fee2e2; color:#b91c1c; width:28px; height:28px; border-radius:7px;
+    cursor:pointer; font-weight:800; flex-shrink:0;
+}
+.pos-plumber-dropdown {
+    position:absolute; z-index:40; top:calc(100% + 4px); right:0; left:0;
+    background:#fff; border:1.5px solid #e2e8f0; border-radius:10px;
+    box-shadow:0 10px 30px rgba(15,23,42,.12); max-height:280px; overflow:auto;
+}
+.pos-plumber-option {
+    width:100%; text-align:right; padding:10px 12px; border:none; background:#fff; cursor:pointer;
+    border-bottom:1px solid #f1f5f9; font-family:'Cairo',sans-serif;
+}
+.pos-plumber-option:hover { background:#f0fdf4; }
+.pos-plumber-option-name { font-size:13px; font-weight:700; color:#0f172a; display:block; }
+.pos-plumber-option-meta { font-size:11px; color:#64748b; margin-top:2px; display:block; }
+.pos-plumber-empty { padding:14px; text-align:center; color:#94a3b8; font-size:12px; }
 </style>
 
 <div class="pos-banner">
@@ -100,24 +125,63 @@
         <div class="pos-banner-lbl">نقاط السلة</div>
     </div>
     <div class="pos-banner-stat">
-        <div class="pos-banner-val">{{ $plumbers->count() }}</div>
-        <div class="pos-banner-lbl">سباك</div>
+        <div class="pos-banner-val">{{ number_format($this->plumbersCount) }}</div>
+        <div class="pos-banner-lbl">سباك بالنظام</div>
     </div>
 </div>
 
 <div class="pos-layout">
     <div>
         <div class="pos-toolbar">
-            <div class="pos-select-wrap">
-                <select wire:model.live="plumberId" class="pos-select">
-                    <option value="">اختر السباك</option>
-                    @foreach($plumbers as $p)
-                        <option value="{{ $p->id }}">{{ $p->name }}</option>
-                    @endforeach
-                </select>
+            <div class="pos-plumber-box" x-data="{ open: false }" @click.outside="open = false">
+                @if($this->selectedPlumber)
+                    <div class="pos-plumber-selected">
+                        <div class="pos-plumber-selected-main">
+                            <div class="pos-plumber-selected-name">🔧 {{ $this->selectedPlumber->name }}</div>
+                            <div class="pos-plumber-selected-meta">
+                                @if($this->selectedPlumber->phone)📞 {{ $this->selectedPlumber->phone }}@endif
+                                @if($this->selectedPlumber->network_code)
+                                    · {{ $this->selectedPlumber->network_code }}
+                                @endif
+                            </div>
+                        </div>
+                        <button type="button" class="pos-plumber-clear" wire:click="clearPlumber" title="تغيير السباك">✕</button>
+                    </div>
+                @else
+                    <input
+                        type="text"
+                        class="pos-input"
+                        style="width:100%"
+                        wire:model.live.debounce.200ms="plumberSearch"
+                        @focus="open = true"
+                        @input="open = true"
+                        placeholder="🔍 ابحث عن سباك بالاسم أو الهاتف أو الرقم الموحّد..."
+                    >
+                    <div class="pos-plumber-dropdown" x-show="open" x-cloak>
+                        @forelse($plumbers as $p)
+                            <button type="button" class="pos-plumber-option"
+                                wire:click="selectPlumber({{ $p->id }})"
+                                @click="open = false">
+                                <span class="pos-plumber-option-name">{{ $p->name }}</span>
+                                <span class="pos-plumber-option-meta">
+                                    @if($p->phone)📞 {{ $p->phone }}@endif
+                                    @if($p->network_code) · {{ $p->network_code }}@endif
+                                </span>
+                            </button>
+                        @empty
+                            <div class="pos-plumber-empty">
+                                @if(filled($plumberSearch))
+                                    لا نتائج لـ «{{ $plumberSearch }}»
+                                @else
+                                    لا يوجد سباكون نشطون في النظام
+                                @endif
+                            </div>
+                        @endforelse
+                    </div>
+                @endif
             </div>
             <input type="text" wire:model.live.debounce.250ms="search"
-                   class="pos-input" placeholder="🔍 ابحث بالاسم...">
+                   class="pos-input" placeholder="🔍 ابحث عن منتج...">
         </div>
 
         @if($cats->isNotEmpty())
@@ -210,7 +274,7 @@
                 </div>
                 <div class="pos-total-row" style="font-size:11px;color:#94a3b8;">
                     <span>السباك:</span>
-                    <span>{{ $plumbers->firstWhere('id', $plumberId)?->name ?? '—' }}</span>
+                    <span>{{ $this->selectedPlumber?->name ?? '—' }}</span>
                 </div>
 
                 <button type="button" class="pos-btn-checkout"

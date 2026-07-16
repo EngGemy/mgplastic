@@ -13,8 +13,6 @@ class ViewTraderInvoice extends ViewInvoice
     protected function getHeaderActions(): array
     {
         return [
-            $this->invoiceReturnAction(),
-
             Actions\Action::make('print_invoice')
                 ->label('طباعة الفاتورة')
                 ->icon('heroicon-o-printer')

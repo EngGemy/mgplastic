@@ -4,6 +4,8 @@ namespace App\Filament\Trader\Resources;
 
 use App\Filament\Concerns\ScopesByNetworkRole;
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\InvoiceResource\RelationManagers\ItemsRelationManager;
+use App\Filament\Resources\InvoiceResource\RelationManagers\ReturnsRelationManager;
 use App\Filament\Trader\Resources\TraderInvoiceResource\Pages;
 use App\Models\Invoice;
 use Filament\Infolists\Infolist;
@@ -71,6 +73,14 @@ class TraderInvoiceResource extends Resource
         return [
             'index' => Pages\ListTraderInvoices::route('/'),
             'view' => Pages\ViewTraderInvoice::route('/{record}'),
+        ];
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            ItemsRelationManager::class,
+            ReturnsRelationManager::class,
         ];
     }
 }

@@ -5,9 +5,8 @@
                 <h1 class="mg-crm-welcome-title">{{ $welcomeTitle }}</h1>
                 <p class="mg-crm-welcome-sub">{{ $welcomeSubtitle }}</p>
                 @if(!empty($networkCode))
-                    <div style="margin-top:10px;display:inline-flex;align-items:center;gap:8px;background:rgba(26,86,219,.1);border:1px solid rgba(26,86,219,.25);border-radius:10px;padding:6px 12px">
-                        <span style="font-size:11px;font-weight:700;color:#64748b">الرقم الموحّد</span>
-                        <span style="font-size:1.05rem;font-weight:900;color:#1a56db;letter-spacing:.04em;font-family:ui-monospace,monospace">{{ $networkCode }}</span>
+                    <div style="margin-top:10px">
+                        <x-copyable-network-code :code="$networkCode" variant="light" />
                     </div>
                 @endif
             </div>

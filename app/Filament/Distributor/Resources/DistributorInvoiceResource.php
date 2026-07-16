@@ -4,6 +4,8 @@ namespace App\Filament\Distributor\Resources;
 
 use App\Filament\Distributor\Resources\DistributorInvoiceResource\Pages;
 use App\Filament\Resources\InvoiceResource;
+use App\Filament\Resources\InvoiceResource\RelationManagers\ItemsRelationManager;
+use App\Filament\Resources\InvoiceResource\RelationManagers\ReturnsRelationManager;
 use App\Models\Invoice;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
@@ -70,6 +72,14 @@ class DistributorInvoiceResource extends Resource
         return [
             'index' => Pages\ListDistributorInvoices::route('/'),
             'view' => Pages\ViewDistributorInvoice::route('/{record}'),
+        ];
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            ItemsRelationManager::class,
+            ReturnsRelationManager::class,
         ];
     }
 }

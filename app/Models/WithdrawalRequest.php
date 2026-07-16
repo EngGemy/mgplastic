@@ -49,7 +49,9 @@ class WithdrawalRequest extends Model
 
     public function formattedAmount(): string
     {
-        return number_format($this->amount_cents / 100, 2).' '.$this->currencyLabel();
+        $cents = (int) ($this->getAttribute('amount_cents') ?? 0);
+
+        return number_format($cents / 100, 2).' '.$this->currencyLabel();
     }
 
     public function currencyLabel(): string

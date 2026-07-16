@@ -15,13 +15,23 @@ class PlumberController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $plumbers = User::query()
+        $query = User::query()
             ->where('role', 'plumber')
-            ->where('parent_distributor_id', $request->user()->id)
             ->where('is_active', true)
             ->with(['country', 'city'])
-            ->orderBy('name')
-            ->paginate($request->integer('per_page', 50));
+            ->orderBy('name');
+
+        $term = trim((string) $request->query('search', $request->query('q', '')));
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('name', 'like', $like)
+                    ->orWhere('phone', 'like', $like)
+                    ->orWhere('network_code', 'like', $like);
+            });
+        }
+
+        $plumbers = $query->paginate($request->integer('per_page', 50));
 
         return $this->success([
             'items' => UserProfileResource::collection($plumbers->items()),
@@ -36,8 +46,7 @@ class PlumberController extends Controller
 
     public function show(Request $request, User $plumber): JsonResponse
     {
-        if ($plumber->role !== 'plumber'
-            || (int) $plumber->parent_distributor_id !== (int) $request->user()->id) {
+        if ($plumber->role !== 'plumber' || ! $plumber->is_active) {
             return $this->error('غير مصرح', 403);
         }
 

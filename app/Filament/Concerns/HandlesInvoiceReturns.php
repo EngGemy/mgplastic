@@ -8,9 +8,26 @@ use App\Services\InvoiceReturnService;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
+use Filament\Tables;
 
 trait HandlesInvoiceReturns
 {
+    protected function resolveReturnInvoice(): Invoice
+    {
+        if (isset($this->record) && $this->record instanceof Invoice) {
+            return $this->record;
+        }
+
+        if (method_exists($this, 'getOwnerRecord')) {
+            $owner = $this->getOwnerRecord();
+            if ($owner instanceof Invoice) {
+                return $owner;
+            }
+        }
+
+        throw new \RuntimeException('لا يمكن تحديد الفاتورة للمرتجع');
+    }
+
     protected function invoiceReturnAction(): Actions\Action
     {
         return Actions\Action::make('return_invoice')
@@ -23,48 +40,71 @@ trait HandlesInvoiceReturns
             ->modalSubmitActionLabel('تأكيد المرتجع')
             ->modalWidth('2xl')
             ->form(fn () => $this->returnFormSchema())
-            ->action(function (array $data) {
-                try {
-                    $lines = collect($data['items'] ?? [])
-                        ->filter(fn ($row) => (int) ($row['quantity'] ?? 0) > 0)
-                        ->map(fn ($row) => [
-                            'invoice_item_id' => (int) $row['invoice_item_id'],
-                            'quantity' => (int) $row['quantity'],
-                        ])
-                        ->values()
-                        ->all();
+            ->action(fn (array $data) => $this->executeInvoiceReturn($data));
+    }
 
-                    if ($lines === []) {
-                        Notification::make()->warning()->title('لم تُحدَّد أي كمية للإرجاع')->send();
+    protected function invoiceReturnTableAction(): Tables\Actions\Action
+    {
+        return Tables\Actions\Action::make('return_invoice')
+            ->label('تسجيل مرتجع')
+            ->icon('heroicon-o-arrow-uturn-left')
+            ->color('danger')
+            ->visible(fn () => $this->canReturnThisInvoice())
+            ->modalHeading('مرتجع بضاعة ونقاط')
+            ->modalDescription('حدّد الكميات المراد إرجاعها. تُخصم النقاط من المستلم وتُعاد للمورّد، ويُحدَّث صافي الفاتورة فوراً.')
+            ->modalSubmitActionLabel('تأكيد المرتجع')
+            ->modalWidth('2xl')
+            ->form(fn () => $this->returnFormSchema())
+            ->action(fn (array $data) => $this->executeInvoiceReturn($data));
+    }
 
-                        return;
-                    }
+    protected function executeInvoiceReturn(array $data): void
+    {
+        try {
+            $invoice = $this->resolveReturnInvoice();
 
-                    $ret = app(InvoiceReturnService::class)
-                        ->returnOutgoingInvoice($this->record, $lines, auth()->user(), $data['note'] ?? null);
+            $lines = collect($data['items'] ?? [])
+                ->filter(fn ($row) => (int) ($row['quantity'] ?? 0) > 0)
+                ->map(fn ($row) => [
+                    'invoice_item_id' => (int) $row['invoice_item_id'],
+                    'quantity' => (int) $row['quantity'],
+                ])
+                ->values()
+                ->all();
 
-                    Notification::make()
-                        ->success()
-                        ->title('تم تسجيل المرتجع ✓')
-                        ->body("رقم {$ret->return_number} — أُرجع {$ret->total_quantity} وحدة / {$ret->total_points} نقطة وخُصمت من صافي الفاتورة")
-                        ->persistent()
-                        ->send();
+            if ($lines === []) {
+                Notification::make()->warning()->title('لم تُحدَّد أي كمية للإرجاع')->send();
 
-                    $this->record->refresh()->load([
-                        'returns.items.product.translations',
-                        'sourceDistribution.items.invoiceItem.product.translations',
-                        'items.product.translations',
-                    ]);
-                } catch (\DomainException $e) {
-                    Notification::make()->danger()->title('تعذّر المرتجع')->body($e->getMessage())->send();
-                }
-            });
+                return;
+            }
+
+            $ret = app(InvoiceReturnService::class)
+                ->returnOutgoingInvoice($invoice, $lines, auth()->user(), $data['note'] ?? null);
+
+            Notification::make()
+                ->success()
+                ->title('تم تسجيل المرتجع ✓')
+                ->body("رقم {$ret->return_number} — أُرجع {$ret->total_quantity} وحدة / {$ret->total_points} نقطة وخُصمت من صافي الفاتورة")
+                ->persistent()
+                ->send();
+
+            $invoice->refresh()->load([
+                'returns.items.product.translations',
+                'sourceDistribution.items.invoiceItem.product.translations',
+                'items.product.translations',
+            ]);
+
+            if (property_exists($this, 'record') && $this->record instanceof Invoice) {
+                $this->record = $invoice;
+            }
+        } catch (\DomainException $e) {
+            Notification::make()->danger()->title('تعذّر المرتجع')->body($e->getMessage())->send();
+        }
     }
 
     protected function canReturnThisInvoice(): bool
     {
-        /** @var Invoice $invoice */
-        $invoice = $this->record;
+        $invoice = $this->resolveReturnInvoice();
         $user = auth()->user();
 
         if (! $user || ! $invoice->isWholesalePos() || ! $invoice->isOutgoing()) {
@@ -93,8 +133,7 @@ trait HandlesInvoiceReturns
 
     protected function returnFormSchema(): array
     {
-        /** @var Invoice $invoice */
-        $invoice = $this->record;
+        $invoice = $this->resolveReturnInvoice();
         $distribution = $invoice->sourceDistribution;
         $lines = $distribution
             ? app(InvoiceReturnService::class)->returnableLines($distribution)
@@ -190,6 +229,6 @@ trait HandlesInvoiceReturns
 
     protected function resolveReturnDistribution(): ?InvoiceDistribution
     {
-        return $this->record->sourceDistribution;
+        return $this->resolveReturnInvoice()->sourceDistribution;
     }
 }

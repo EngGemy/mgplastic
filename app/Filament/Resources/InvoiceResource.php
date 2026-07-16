@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\ScopesByNetworkRole;
 use App\Filament\Resources\InvoiceResource\RelationManagers\ItemsRelationManager;
+use App\Filament\Resources\InvoiceResource\RelationManagers\ReturnsRelationManager;
 use App\Filament\Resources\InvoiceResource\Pages;
 use App\Filament\Resources\InvoiceDistributionResource;
 use App\Models\Invoice;
@@ -332,17 +333,6 @@ class InvoiceResource extends Resource
                 ])
                 ->visible(fn ($record) => $record->items->isNotEmpty()),
 
-            Infolists\Components\Section::make('المرتجعات والصافي')
-                ->description('الكميات والنقاط بعد خصم المرتجعات من الفاتورة')
-                ->icon('heroicon-o-arrow-uturn-left')
-                ->schema([
-                    Infolists\Components\ViewEntry::make('returns_panel')
-                        ->view('filament.infolists.invoice-returns-panel')
-                        ->columnSpanFull(),
-                ])
-                ->visible(fn ($record) => $record->isWholesalePos() && $record->isOutgoing())
-                ->collapsible(),
-
             Infolists\Components\Section::make('نظام توزيع النقاط')
                 ->schema([
                     Infolists\Components\ViewEntry::make('distribution_panel')
@@ -420,6 +410,7 @@ class InvoiceResource extends Resource
     {
         return [
             ItemsRelationManager::class,
+            ReturnsRelationManager::class,
         ];
     }
 

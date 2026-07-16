@@ -40,19 +40,7 @@
          alt="MG Plastic">
 
     @if(filled($user->network_code))
-        <div style="
-            background:rgba(255,255,255,0.16);
-            border:1px solid rgba(255,255,255,0.35);
-            border-radius:10px;
-            padding:4px 10px;
-            display:flex;flex-direction:column;align-items:flex-start;gap:1px;
-            min-width:118px;
-        " title="رقمك الموحّد في شبكة MG Plastic — شاركه مع شركائك لإضافتك">
-            <span style="font-size:9px;font-weight:700;opacity:.85;letter-spacing:.04em">الرقم الموحّد</span>
-            <span style="font-size:13px;font-weight:900;color:#fff;letter-spacing:.06em;font-family:ui-monospace,monospace">
-                {{ $user->network_code }}
-            </span>
-        </div>
+        <x-copyable-network-code :code="$user->network_code" variant="dark" />
     @endif
 
     <span style="width:1px;background:rgba(255,255,255,0.3);align-self:stretch;"></span>

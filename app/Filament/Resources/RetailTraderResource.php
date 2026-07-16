@@ -290,6 +290,7 @@ class RetailTraderResource extends Resource
                     ->label('الرقم الموحّد')
                     ->searchable()
                     ->copyable()
+                    ->copyMessage('تم نسخ الرقم الموحّد')
                     ->weight('bold')
                     ->color('primary')
                     ->placeholder('—'),

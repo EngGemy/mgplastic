@@ -32,6 +32,10 @@ return new class extends Migration
         }
 
         Schema::table('withdrawal_requests', function (Blueprint $table) {
+            if (! Schema::hasColumn('withdrawal_requests', 'amount_cents')) {
+                $table->unsignedBigInteger('amount_cents')->default(0)->after('wallet_account_id');
+            }
+
             if (! Schema::hasColumn('withdrawal_requests', 'status')) {
                 $table->enum('status', ['pending', 'approved', 'rejected', 'paid'])->default('pending');
             }

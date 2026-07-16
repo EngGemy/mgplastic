@@ -20,17 +20,29 @@ trait HasNetworkInfolist
             ->icon('heroicon-o-phone')
             ->schema([
                 Infolists\Components\Grid::make(3)->schema([
+                    Infolists\Components\TextEntry::make('network_code')
+                        ->label('الرقم الموحّد')
+                        ->icon('heroicon-o-qr-code')
+                        ->copyable()
+                        ->copyMessage('تم نسخ الرقم الموحّد')
+                        ->copyMessageDuration(1500)
+                        ->weight('bold')
+                        ->color('primary')
+                        ->visible(fn (User $r) => filled($r->network_code)),
+
                     Infolists\Components\TextEntry::make('phone')
                         ->label('الهاتف')
                         ->icon('heroicon-o-phone')
                         ->copyable()
+                        ->copyMessage('تم نسخ رقم الهاتف')
                         ->weight('semibold'),
 
                     Infolists\Components\TextEntry::make('email')
                         ->label('البريد الإلكتروني')
                         ->icon('heroicon-o-envelope')
                         ->default('—')
-                        ->copyable(),
+                        ->copyable()
+                        ->copyMessage('تم نسخ البريد'),
 
                     Infolists\Components\TextEntry::make('city.name_ar')
                         ->label('المدينة')

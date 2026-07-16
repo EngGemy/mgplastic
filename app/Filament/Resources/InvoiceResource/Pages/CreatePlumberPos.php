@@ -30,6 +30,8 @@ class CreatePlumberPos extends Page
 
     public ?int $plumberId = null;
 
+    public string $plumberSearch = '';
+
     public static function canAccess(array $parameters = []): bool
     {
         return auth()->user()?->isRetailTrader() ?? false;
@@ -57,12 +59,58 @@ class CreatePlumberPos extends Page
 
     public function getPlumbersProperty(): Collection
     {
+        $query = User::query()
+            ->where('role', User::ROLE_PLUMBER)
+            ->where('is_active', true)
+            ->orderBy('name');
+
+        $term = trim($this->plumberSearch);
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('name', 'like', $like)
+                    ->orWhere('phone', 'like', $like)
+                    ->orWhere('network_code', 'like', $like);
+            });
+        }
+
+        return $query->get(['id', 'name', 'phone', 'network_code']);
+    }
+
+    public function getSelectedPlumberProperty(): ?User
+    {
+        if (! $this->plumberId) {
+            return null;
+        }
+
         return User::query()
             ->where('role', User::ROLE_PLUMBER)
-            ->where('parent_distributor_id', auth()->id())
+            ->whereKey($this->plumberId)
+            ->first(['id', 'name', 'phone', 'network_code']);
+    }
+
+    public function selectPlumber(int $id): void
+    {
+        $exists = User::query()
+            ->where('role', User::ROLE_PLUMBER)
             ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+            ->whereKey($id)
+            ->exists();
+
+        if (! $exists) {
+            Notification::make()->danger()->title('سباك غير صحيح')->send();
+
+            return;
+        }
+
+        $this->plumberId = $id;
+        $this->plumberSearch = '';
+    }
+
+    public function clearPlumber(): void
+    {
+        $this->plumberId = null;
+        $this->plumberSearch = '';
     }
 
     public function getCategoriesProperty(): Collection

@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
-use App\Filament\Concerns\HandlesInvoiceReturns;
 use App\Filament\Resources\InvoiceDistributionResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Models\InvoiceDistribution;
@@ -15,8 +14,6 @@ use Filament\Resources\Pages\ViewRecord;
 
 class ViewInvoice extends ViewRecord
 {
-    use HandlesInvoiceReturns;
-
     protected static string $resource = InvoiceResource::class;
 
     public function mount(int|string $record): void
@@ -113,8 +110,6 @@ class ViewInvoice extends ViewRecord
                         Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();
                     }
                 }),
-
-            $this->invoiceReturnAction(),
 
             Actions\Action::make('print_invoice')
                 ->label('طباعة الفاتورة')

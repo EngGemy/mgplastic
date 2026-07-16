@@ -36,6 +36,8 @@ class TraderPos extends Page
 
     public string $search = '';
 
+    public string $plumberSearch = '';
+
     /** @var array<string, array<string, mixed>> */
     public array $cart = [];
 
@@ -43,12 +45,66 @@ class TraderPos extends Page
 
     public function getPlumbersProperty(): Collection
     {
+        $query = User::query()
+            ->where('role', 'plumber')
+            ->where('is_active', true)
+            ->orderBy('name');
+
+        $term = trim($this->plumberSearch);
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('name', 'like', $like)
+                    ->orWhere('phone', 'like', $like)
+                    ->orWhere('network_code', 'like', $like);
+            });
+        }
+
+        return $query->get(['id', 'name', 'phone', 'network_code']);
+    }
+
+    public function getPlumbersCountProperty(): int
+    {
         return User::query()
             ->where('role', 'plumber')
-            ->where('parent_distributor_id', auth()->id())
             ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name']);
+            ->count();
+    }
+
+    public function getSelectedPlumberProperty(): ?User
+    {
+        if (! $this->plumberId) {
+            return null;
+        }
+
+        return User::query()
+            ->where('role', 'plumber')
+            ->whereKey($this->plumberId)
+            ->first(['id', 'name', 'phone', 'network_code']);
+    }
+
+    public function selectPlumber(int $id): void
+    {
+        $exists = User::query()
+            ->where('role', 'plumber')
+            ->where('is_active', true)
+            ->whereKey($id)
+            ->exists();
+
+        if (! $exists) {
+            Notification::make()->danger()->title('سباك غير صحيح')->send();
+
+            return;
+        }
+
+        $this->plumberId = $id;
+        $this->plumberSearch = '';
+    }
+
+    public function clearPlumber(): void
+    {
+        $this->plumberId = null;
+        $this->plumberSearch = '';
     }
 
     public function getCategoriesProperty(): Collection
@@ -267,6 +323,7 @@ class TraderPos extends Page
 
             $this->cart = [];
             $this->plumberId = null;
+            $this->plumberSearch = '';
             $this->stockCache = null;
 
         } catch (\DomainException $e) {

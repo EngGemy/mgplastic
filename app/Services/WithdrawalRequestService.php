@@ -113,7 +113,8 @@ class WithdrawalRequestService
             'rejected' => Schema::hasColumn('withdrawal_requests', 'status')
                 ? WithdrawalRequest::query()->where('status', 'rejected')->count()
                 : 0,
-            'total_amount_pending' => Schema::hasColumn('withdrawal_requests', 'status')
+            'total_amount_pending' => Schema::hasColumn('withdrawal_requests', 'amount_cents')
+                && Schema::hasColumn('withdrawal_requests', 'status')
                 ? (int) WithdrawalRequest::query()->pending()->sum('amount_cents')
                 : 0,
         ];

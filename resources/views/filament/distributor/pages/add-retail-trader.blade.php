@@ -67,7 +67,11 @@
                             <div style="font-size:12px;margin-top:4px">📞 {{ $preview['phone'] }}</div>
                         </div>
                         <div style="text-align:left">
-                            <div class="mg-preview-code">{{ $preview['network_code'] }}</div>
+                            @if(!empty($preview['network_code']))
+                                <div style="margin-bottom:6px">
+                                    <x-copyable-network-code :code="$preview['network_code']" variant="chip" />
+                                </div>
+                            @endif
                             @if($preview['already_linked'])
                                 <span class="mg-badge mg-badge-ok">مرتبط بشبكتك</span>
                             @else

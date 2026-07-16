@@ -77,8 +77,6 @@ class ViewDistributorInvoice extends ViewInvoice
                     }
                 }),
 
-            $this->invoiceReturnAction(),
-
             Actions\Action::make('print_invoice')
                 ->label('طباعة الفاتورة')
                 ->icon('heroicon-o-printer')

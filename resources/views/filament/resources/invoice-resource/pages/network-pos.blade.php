@@ -48,12 +48,44 @@
                         @endforeach
                     </select>
                 @else
-                    <select wire:model.live="plumberId" class="pos-select">
-                        <option value="">— اختر سباك —</option>
-                        @foreach($this->plumbers as $p)
-                            <option value="{{ $p->id }}">{{ $p->name }}</option>
-                        @endforeach
-                    </select>
+                    <div x-data="{ open: false }" @click.outside="open = false" style="position:relative">
+                        @if($this->selectedPlumber)
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1.5px solid #059669;border-radius:8px;background:#ecfdf5">
+                                <div style="min-width:0">
+                                    <div style="font-size:13px;font-weight:800;color:#065f46">🔧 {{ $this->selectedPlumber->name }}</div>
+                                    <div style="font-size:11px;color:#047857">
+                                        @if($this->selectedPlumber->phone)📞 {{ $this->selectedPlumber->phone }}@endif
+                                        @if($this->selectedPlumber->network_code) · {{ $this->selectedPlumber->network_code }}@endif
+                                    </div>
+                                </div>
+                                <button type="button" wire:click="clearPlumber"
+                                    style="border:none;background:#fee2e2;color:#b91c1c;width:28px;height:28px;border-radius:7px;cursor:pointer;font-weight:800">✕</button>
+                            </div>
+                        @else
+                            <input type="text" class="pos-input" style="width:100%"
+                                wire:model.live.debounce.200ms="plumberSearch"
+                                @focus="open = true"
+                                @input="open = true"
+                                placeholder="ابحث بالاسم أو الهاتف أو الرقم الموحّد...">
+                            <div x-show="open" x-cloak
+                                style="position:absolute;z-index:40;top:calc(100% + 4px);right:0;left:0;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.12);max-height:280px;overflow:auto">
+                                @forelse($this->plumbers as $p)
+                                    <button type="button" wire:click="selectPlumber({{ $p->id }})" @click="open = false"
+                                        style="width:100%;text-align:right;padding:10px 12px;border:none;background:#fff;cursor:pointer;border-bottom:1px solid #f1f5f9;font-family:inherit">
+                                        <span style="display:block;font-size:13px;font-weight:700">{{ $p->name }}</span>
+                                        <span style="display:block;font-size:11px;color:#64748b;margin-top:2px">
+                                            @if($p->phone)📞 {{ $p->phone }}@endif
+                                            @if($p->network_code) · {{ $p->network_code }}@endif
+                                        </span>
+                                    </button>
+                                @empty
+                                    <div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px">
+                                        {{ filled($plumberSearch ?? '') ? 'لا نتائج' : 'لا يوجد سباكون نشطون' }}
+                                    </div>
+                                @endforelse
+                            </div>
+                        @endif
+                    </div>
                 @endif
             </div>
 
