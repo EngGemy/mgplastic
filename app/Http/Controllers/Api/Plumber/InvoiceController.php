@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Plumber;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Plumber\ReceivedDistributionResource;
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\SystemLabel;
@@ -104,11 +105,12 @@ class InvoiceController extends Controller
             ->whereIn('status', ['confirmed', 'points_awarded'])
             ->with([
                 'invoice:id,number,status,attachment_path,approved_at',
-                'fromUser:id,name',
+                'fromUser:id,name,brand_name,phone,network_code,profile_photo',
                 'items.invoiceItem.product.translations',
             ])
             ->latest()
-            ->paginate(20);
+            ->paginate(20)
+            ->through(fn (InvoiceDistribution $distribution) => (new ReceivedDistributionResource($distribution))->resolve());
 
         return response()->json([
             'status' => 200,
@@ -126,20 +128,30 @@ class InvoiceController extends Controller
 
         $distribution->load([
             'items.invoiceItem.product.translations',
-            'fromUser:id,name',
+            'fromUser:id,name,brand_name,phone,network_code,profile_photo',
             'invoice:id,number,status,attachment_path,approved_at',
         ]);
 
         return response()->json([
             'status' => 200,
             'data' => [
-                'distribution' => $distribution,
+                'distribution' => new ReceivedDistributionResource($distribution),
                 'points_earned' => $distribution->items->sum('points_value'),
                 'status_label' => match ($distribution->status) {
                     'confirmed' => 'مؤكد — جارٍ معالجة النقاط',
                     'points_awarded' => 'تم إضافة النقاط للمحفظة',
                     default => $distribution->status,
                 },
+                'trader_name' => $distribution->fromUser?->brand_name ?: $distribution->fromUser?->name,
+                'trader' => $distribution->fromUser ? [
+                    'id' => $distribution->fromUser->id,
+                    'name' => $distribution->fromUser->name,
+                    'brand_name' => $distribution->fromUser->brand_name,
+                    'display_name' => $distribution->fromUser->brand_name ?: $distribution->fromUser->name,
+                    'phone' => $distribution->fromUser->phone,
+                    'network_code' => $distribution->fromUser->network_code,
+                    'profile_photo_url' => $distribution->fromUser->profile_photo_url,
+                ] : null,
             ],
         ]);
     }
