@@ -19,8 +19,8 @@ class EventController extends Controller
             'event_date'     => 'required|date',
             'event_time'     => 'required|date_format:H:i',
             'address'        => 'required|string|max:255',   // ← added
-            'latitude'       => 'nullable|numeric',
-            'longitude'      => 'nullable|numeric',
+            'latitude'       => 'nullable|numeric|between:-90,90',
+            'longitude'      => 'nullable|numeric|between:-180,180',
             'title_en'       => 'required|string|max:255',
             'description_en' => 'nullable|string',
             'title_ar'       => 'required|string|max:255',
