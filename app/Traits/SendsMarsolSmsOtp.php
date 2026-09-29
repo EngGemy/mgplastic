@@ -234,22 +234,32 @@ trait SendsMarsolSmsOtp
 
     protected function marsolAppName(): string
     {
-        $name = $this->marsolConfigValue('app_name');
+        $candidates = [
+            $this->marsolConfigValue('app_name'),
+            trim((string) config('app.name', '')),
+            'MG Plastic',
+        ];
 
-        if ($name === '' || strtoupper($name) === 'NONE' || strtoupper($name) === 'NULL') {
-            $name = trim((string) config('app.name', 'MG Plastic'));
+        foreach ($candidates as $name) {
+            $name = trim((string) $name);
+            if ($name === '') {
+                continue;
+            }
+
+            $upper = strtoupper($name);
+            if (in_array($upper, ['NONE', 'NULL', 'LARAVEL', 'TRUE', 'FALSE'], true)) {
+                continue;
+            }
+
+            return $name;
         }
 
-        if ($name === '' || strtoupper($name) === 'NONE' || strtoupper($name) === 'NULL') {
-            $name = 'MG Plastic';
-        }
-
-        return $name;
+        return 'MG Plastic';
     }
 
     /**
      * Branded OTP SMS body (Arabic / English).
-     * Marsol's built-in OTP template uses the project name (often "NONE") — we avoid that.
+     * Only used when MARSOL_USE_OTP_API=false (SMS API path).
      */
     protected function marsolOtpMessage(string $otp, int $ttlMinutes = 5, ?string $language = null): string
     {
@@ -264,8 +274,13 @@ trait SendsMarsolSmsOtp
     }
 
     /**
-     * Issue an OTP: branded SMS by default (shows real app name).
-     * Set MARSOL_USE_OTP_API=true to use Marsol's OTP initiate template instead.
+     * Issue an OTP.
+     *
+     * Default: Marsol OTP API (/public/otp/initiate) — required until the Marsol
+     * account is verified for /public/sms/send (otherwise 403 e.account-is-not-verified).
+     *
+     * Set MARSOL_USE_OTP_API=false only after Marsol verifies the account, to use
+     * branded SMS with MARSOL_APP_NAME.
      *
      * @return array{
      *   mode: 'sms'|'otp_api',
@@ -285,8 +300,9 @@ trait SendsMarsolSmsOtp
     ): ?array {
         $expiration = $this->marsolOtpExpiration($expiration);
         $ttlMinutes = max(1, (int) round($expiration / 60));
+        $useOtpApi = (bool) config('services.marsol.use_otp_api', true);
 
-        if (config('services.marsol.use_otp_api')) {
+        if ($useOtpApi) {
             $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
 
             if (! $resp || empty($resp['requestId'])) {
@@ -307,7 +323,22 @@ trait SendsMarsolSmsOtp
         $otp = (string) random_int($min, $max);
 
         if (! $this->sendMarsolSmsOtp($phone, $otp, $ttlMinutes, $language)) {
-            return null;
+            // SMS API often blocked (403 account-is-not-verified) — fall back to OTP API.
+            Log::warning('[Marsol SMS] branded SMS failed — falling back to OTP API');
+
+            $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
+
+            if (! $resp || empty($resp['requestId'])) {
+                return null;
+            }
+
+            return [
+                'mode' => 'otp_api',
+                'otp' => null,
+                'requestId' => $resp['requestId'],
+                'resendToken' => $resp['resendToken'] ?? null,
+                'expiration' => (int) ($resp['expiration'] ?? $expiration),
+            ];
         }
 
         return [
