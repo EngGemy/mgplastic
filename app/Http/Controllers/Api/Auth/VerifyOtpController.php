@@ -29,10 +29,8 @@ class VerifyOtpController extends Controller
 
         $isLibya = $this->isLibyaPhone($user->phone);
 
-        // ============================================================
-        // 🇱🇾 LIBYA → MARSOL VERIFY
-        // ============================================================
-        if ($isLibya && $user->marsol_otp_request_id) {
+        // Marsol OTP API verify (never local SMS codes for Libya / Marsol flow).
+        if ($user->marsol_otp_request_id) {
 
             $resp = $this->verifyMarsolOtp(
                 $user->marsol_otp_request_id,
@@ -46,9 +44,7 @@ class VerifyOtpController extends Controller
 
         } else {
 
-            // ============================================================
-            // 🌍 NON-LIBYA → LOCAL OTP CHECK
-            // ============================================================
+            // Legacy local OTP (only if no Marsol request was started).
             if (!$user->otp_code || !$user->otp_expires_at || now()->gt($user->otp_expires_at)) {
                 return response()->json(['status'=>false,'message'=>'OTP expired. Please resend.'],422);
             }
@@ -116,12 +112,10 @@ class VerifyOtpController extends Controller
             return response()->json(['status'=>false,'message'=>'Please wait before requesting another OTP'],429);
         }
 
-        $isLibya = $this->isLibyaPhone($user->phone);
         $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
 
-        // Prefer Marsol OTP API resend only when that mode is active and tokens exist.
-        if (config('services.marsol.use_otp_api') && $isLibya && $user->marsol_otp_request_id && $user->marsol_otp_resend_token) {
-
+        // Marsol OTP API only (company SMS account is not verified).
+        if ($user->marsol_otp_request_id && $user->marsol_otp_resend_token) {
             $resp = $this->resendMarsolOtp(
                 $user->marsol_otp_request_id,
                 $user->marsol_otp_resend_token,
@@ -129,26 +123,37 @@ class VerifyOtpController extends Controller
             );
 
             if (! $resp || empty($resp['requestId'])) {
-                return response()->json(['status'=>false,'message'=>'Failed to resend OTP'],500);
+                // Token expired — start a fresh OTP initiate.
+                $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', $lang, 'CODE');
+                if (! $issued) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Failed to resend OTP',
+                        'error' => $this->lastMarsolError,
+                    ], 500);
+                }
+                $this->applyMarsolOtpToUser($user, $issued);
+            } else {
+                $exp = max(60, min((int) ($resp['expiration'] ?? 300), 86400));
+                $user->update([
+                    'marsol_otp_request_id' => $resp['requestId'],
+                    'marsol_otp_resend_token' => $resp['resendToken'] ?? $user->marsol_otp_resend_token,
+                    'marsol_otp_expires_at' => now()->addSeconds($exp),
+                    'otp_last_sent_at' => now(),
+                    'otp_attempts' => 0,
+                    'otp_code' => null,
+                    'otp_expires_at' => null,
+                ]);
             }
-
-            $exp = $resp['expiration'] ?? 300;
-            $exp = max(60, min($exp, 86400));
-
-            $user->update([
-                'marsol_otp_request_id'   => $resp['requestId'],
-                'marsol_otp_resend_token' => $resp['resendToken'] ?? $user->marsol_otp_resend_token,
-                'marsol_otp_expires_at'   => now()->addSeconds($exp),
-                'otp_last_sent_at'        => now(),
-                'otp_attempts'            => 0,
-            ]);
-
         } else {
-
             $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', $lang, 'CODE');
 
             if (! $issued) {
-                return response()->json(['status' => false, 'message' => 'Failed to send SMS'], 500);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Failed to send OTP',
+                    'error' => $this->lastMarsolError,
+                ], 500);
             }
 
             $this->applyMarsolOtpToUser($user, $issued);

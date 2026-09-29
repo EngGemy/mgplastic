@@ -42,11 +42,9 @@ return [
         'base_url' => env('MARSOL_BASE_URL', 'https://api.marsol.ly'),
         'token' => env('MARSOL_API_TOKEN'),
         'sender_id' => env('MARSOL_SENDER_ID'),
-        // Shown only for branded SMS (requires verified Marsol account).
         'app_name' => env('MARSOL_APP_NAME', 'MG Plastic'),
-        // KEEP true until Marsol verifies the account for /public/sms/send.
-        // false causes 403 e.account-is-not-verified on this account.
-        'use_otp_api' => filter_var(env('MARSOL_USE_OTP_API', true), FILTER_VALIDATE_BOOLEAN),
+        // Always OTP API (/public/otp/*). SMS API is not available until company is verified.
+        'use_otp_api' => true,
     ],
 
     'ffmpeg' => [

@@ -11,6 +11,12 @@ use RuntimeException;
 
 trait SendsMarsolSmsOtp
 {
+    /** Last Marsol failure detail for API responses (never includes the token). */
+    protected ?string $lastMarsolError = null;
+
+    /** Cached resolved Marsol sender UUID for this request. */
+    protected ?string $marsolSenderIdResolved = null;
+
     /**
      * Normalize a phone for Marsol APIs (digits only, Libya → 2189…).
      *
@@ -119,16 +125,29 @@ trait SendsMarsolSmsOtp
      */
     protected function marsolSenderId(): string
     {
-        static $resolved = null;
+        if (is_string($this->marsolSenderIdResolved) && $this->marsolSenderIdResolved !== '') {
+            return $this->marsolSenderIdResolved;
+        }
 
-        if (is_string($resolved) && $resolved !== '') {
-            return $resolved;
+        $cached = cache()->get('marsol.resolved_sender_id');
+        if (is_string($cached) && $cached !== '') {
+            $this->marsolSenderIdResolved = $cached;
+
+            return $cached;
         }
 
         $configured = $this->marsolConfigValue('sender_id');
         $senders = $this->fetchMarsolSenderIds();
 
         if ($senders === []) {
+            // Last resort: use configured UUID even if we couldn't list senders.
+            if ($configured !== '') {
+                Log::warning('[Marsol SMS] senderIds list empty — using configured MARSOL_SENDER_ID');
+                $this->marsolSenderIdResolved = $configured;
+
+                return $configured;
+            }
+
             throw new RuntimeException(
                 'Marsol has no available senderIds for this token — check the Marsol dashboard / GET /public/senderIds'
             );
@@ -139,9 +158,7 @@ trait SendsMarsolSmsOtp
             foreach ($senders as $sender) {
                 $id = (string) ($sender['id'] ?? '');
                 if ($id === $configured && ($sender['available'] ?? true)) {
-                    $resolved = $id;
-
-                    return $resolved;
+                    return $this->rememberMarsolSenderId($id);
                 }
             }
 
@@ -154,7 +171,7 @@ trait SendsMarsolSmsOtp
             ]);
         }
 
-        // Prefer account default, then any available SMS-capable sender.
+        // Prefer account default, then any available sender.
         $fallback = null;
         foreach ($senders as $sender) {
             if (! ($sender['available'] ?? true)) {
@@ -167,13 +184,12 @@ trait SendsMarsolSmsOtp
             }
 
             if (($sender['isDefault'] ?? false) === true) {
-                $resolved = $id;
                 Log::info('[Marsol SMS] using default senderId', [
                     'senderId' => $id,
                     'name' => $sender['name'] ?? null,
                 ]);
 
-                return $resolved;
+                return $this->rememberMarsolSenderId($id);
             }
 
             $fallback ??= $id;
@@ -183,10 +199,17 @@ trait SendsMarsolSmsOtp
             throw new RuntimeException('Marsol senderIds found but none are available');
         }
 
-        $resolved = $fallback;
-        Log::info('[Marsol SMS] using fallback senderId', ['senderId' => $resolved]);
+        Log::info('[Marsol SMS] using fallback senderId', ['senderId' => $fallback]);
 
-        return $resolved;
+        return $this->rememberMarsolSenderId($fallback);
+    }
+
+    protected function rememberMarsolSenderId(string $id): string
+    {
+        $this->marsolSenderIdResolved = $id;
+        cache()->put('marsol.resolved_sender_id', $id, now()->addHour());
+
+        return $id;
     }
 
     /**
@@ -276,9 +299,8 @@ trait SendsMarsolSmsOtp
     /**
      * Issue an OTP via Marsol OTP API (/public/otp/initiate).
      *
-     * NOTE: /public/sms/send returns 403 e.account-is-not-verified on this account,
-     * so branded SMS is disabled until Marsol verifies the account.
-     * MARSOL_USE_OTP_API=false is ignored while SMS remains blocked.
+     * Always uses OTP API — /public/sms/send is blocked on this account
+     * (403 e.account-is-not-verified). Ignore MARSOL_USE_OTP_API until verified.
      *
      * @return array{
      *   mode: 'sms'|'otp_api',
@@ -296,33 +318,17 @@ trait SendsMarsolSmsOtp
         string $language = 'EN',
         string $operation = 'CODE'
     ): ?array {
+        $this->lastMarsolError = null;
         $expiration = $this->marsolOtpExpiration($expiration);
-        $ttlMinutes = max(1, (int) round($expiration / 60));
-        $wantBrandedSms = ! filter_var(
-            config('services.marsol.use_otp_api', true),
-            FILTER_VALIDATE_BOOLEAN
-        );
-
-        // Branded SMS only when explicitly requested AND account allows /public/sms/send.
-        if ($wantBrandedSms && ! $this->marsolSmsApiBlocked()) {
-            $max = (10 ** $length) - 1;
-            $min = 10 ** ($length - 1);
-            $otp = (string) random_int($min, $max);
-
-            if ($this->sendMarsolSmsOtp($phone, $otp, $ttlMinutes, $language)) {
-                return [
-                    'mode' => 'sms',
-                    'otp' => $otp,
-                    'requestId' => null,
-                    'resendToken' => null,
-                    'expiration' => $expiration,
-                ];
-            }
-
-            Log::warning('[Marsol SMS] branded SMS unavailable — using OTP API instead');
-        }
 
         $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
+
+        // Invalid senderId → resolve again from /public/senderIds and retry once.
+        if ((! $resp || empty($resp['requestId'])) && $this->lastMarsolErrorLooksLikeInvalidSender()) {
+            $this->forgetMarsolSenderIdCache();
+            Log::warning('[Marsol OTP] retrying initiate with refreshed senderId');
+            $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
+        }
 
         if (! $resp || empty($resp['requestId'])) {
             return null;
@@ -335,6 +341,20 @@ trait SendsMarsolSmsOtp
             'resendToken' => $resp['resendToken'] ?? null,
             'expiration' => (int) ($resp['expiration'] ?? $expiration),
         ];
+    }
+
+    protected function lastMarsolErrorLooksLikeInvalidSender(): bool
+    {
+        $err = strtolower((string) $this->lastMarsolError);
+
+        return str_contains($err, 'senderid') || str_contains($err, 'invalid sender');
+    }
+
+    protected function forgetMarsolSenderIdCache(): void
+    {
+        // Reset static cache inside marsolSenderId() via a flag.
+        $this->marsolSenderIdResolved = null;
+        cache()->forget('marsol.resolved_sender_id');
     }
 
     /** Remember that /public/sms/send is forbidden for this Marsol account. */
@@ -397,6 +417,7 @@ trait SendsMarsolSmsOtp
         try {
             $normalized = $this->normalizeMarsolPhone($phone);
         } catch (InvalidArgumentException $e) {
+            $this->lastMarsolError = $e->getMessage();
             Log::error('[Marsol OTP] Invalid phone format', [
                 'phone' => $phone,
                 'error' => $e->getMessage(),
@@ -421,6 +442,8 @@ trait SendsMarsolSmsOtp
             $res = $this->marsolClient()->post('/public/otp/initiate', $payload);
 
             if (! $res->successful()) {
+                $this->lastMarsolError = $res->body();
+
                 $context = [
                     'status' => $res->status(),
                     'body' => $res->body(),
@@ -438,15 +461,33 @@ trait SendsMarsolSmsOtp
             }
 
             $json = $res->json();
+            $requestId = is_array($json)
+                ? ($json['requestId'] ?? $json['request_id'] ?? null)
+                : null;
+
+            if (! $requestId) {
+                $this->lastMarsolError = 'OTP initiate returned no requestId: '.$res->body();
+                Log::error('[Marsol OTP] initiate missing requestId', [
+                    'phone' => $normalized,
+                    'body' => $res->body(),
+                ]);
+
+                return null;
+            }
+
+            if (is_array($json)) {
+                $json['requestId'] = $requestId;
+            }
 
             Log::info('[Marsol OTP] initiate ok', [
                 'phone' => $normalized,
-                'requestId' => $json['requestId'] ?? null,
-                'expiration' => $json['expiration'] ?? $expiration,
+                'requestId' => $requestId,
+                'expiration' => is_array($json) ? ($json['expiration'] ?? $expiration) : $expiration,
             ]);
 
             return is_array($json) ? $json : null;
         } catch (RuntimeException $e) {
+            $this->lastMarsolError = $e->getMessage();
             Log::critical('[Marsol OTP] initiate exception', [
                 'phone' => $normalized,
                 'error' => $e->getMessage(),
@@ -454,6 +495,7 @@ trait SendsMarsolSmsOtp
 
             return null;
         } catch (\Throwable $e) {
+            $this->lastMarsolError = $e->getMessage();
             Log::critical('[Marsol OTP] initiate exception', [
                 'phone' => $normalized,
                 'error' => $e->getMessage(),
@@ -539,77 +581,20 @@ trait SendsMarsolSmsOtp
      * SMS API (non-Libya / local OTP fallback)
      * ============================================================
      */
+    /**
+     * @deprecated Account is not SMS-verified. OTP must use /public/otp/initiate.
+     * Kept so old callers fail safely instead of hitting the blocked SMS API.
+     */
     protected function sendMarsolSmsOtp(string $phone, string $otp, int $ttlMinutes = 5, ?string $language = null): bool
     {
-        try {
-            $normalized = $this->normalizeMarsolPhone($phone);
-        } catch (InvalidArgumentException $e) {
-            Log::error('[Marsol SMS] Failed to normalize phone', [
-                'phone' => $phone,
-                'error' => $e->getMessage(),
-            ]);
+        $this->lastMarsolError = 'SMS API disabled — account not verified. Use Marsol OTP API.';
+        $this->markMarsolSmsApiBlocked();
 
-            return false;
-        }
+        Log::warning('[Marsol SMS] blocked — company account not verified; use OTP API only', [
+            'phone' => $phone,
+            'app' => $this->marsolAppName(),
+        ]);
 
-        $payload = [
-            'phoneNumbers' => [$normalized],
-            'message' => $this->marsolOtpMessage($otp, $ttlMinutes, $language),
-            'senderId' => $this->marsolSenderId(),
-        ];
-
-        try {
-            $res = $this->marsolClient()->post('/public/sms/send', $payload);
-
-            if (! $res->successful()) {
-                $body = $res->body();
-
-                if ($res->status() === 403 && str_contains($body, 'account-is-not-verified')) {
-                    $this->markMarsolSmsApiBlocked();
-                    Log::warning('[Marsol SMS] account not verified for SMS API — will use OTP API', [
-                        'phone' => $normalized,
-                    ]);
-                } else {
-                    Log::error('[Marsol SMS] failed', [
-                        'status' => $res->status(),
-                        'body' => $body,
-                        'phone' => $normalized,
-                        'app' => $this->marsolAppName(),
-                    ]);
-                }
-
-                return false;
-            }
-
-            $json = $res->json();
-            $rejected = is_array($json) ? ($json['rejected'] ?? []) : [];
-
-            if (is_array($rejected) && $rejected !== []) {
-                Log::error('[Marsol SMS] rejected', [
-                    'phone' => $normalized,
-                    'rejected' => $rejected,
-                    'accepted' => $json['accepted'] ?? null,
-                    'requestId' => $json['requestId'] ?? null,
-                ]);
-
-                return false;
-            }
-
-            Log::info('[Marsol SMS] sent', [
-                'phone' => $normalized,
-                'app' => $this->marsolAppName(),
-                'requestId' => is_array($json) ? ($json['requestId'] ?? null) : null,
-                'accepted' => is_array($json) ? ($json['accepted'] ?? null) : null,
-            ]);
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::critical('[Marsol SMS] exception', [
-                'phone' => $normalized,
-                'error' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
+        return false;
     }
 }
