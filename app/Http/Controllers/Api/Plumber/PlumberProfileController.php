@@ -291,7 +291,6 @@ class PlumberProfileController extends Controller
      * POST /api/v1/plumber/social-links
      * Body: { links: [{ platform, url|link|href, sort_order? }, ...] }
      * Also accepts social_links[], url aliases, platform-map, and WhatsApp phone numbers.
-     * Empty urls are ignored (mobile apps often send all platforms).
      */
     public function upsertSocialLinks(Request $request)
     {
@@ -300,48 +299,22 @@ class PlumberProfileController extends Controller
             return response()->json(['status' => false, 'message' => 'Only plumbers can manage social links'], 403);
         }
 
-        $links = SocialLinksPayload::normalize($request);
+        SocialLinksPayload::mergeIntoRequest($request);
 
-        if ($links === []) {
-            return response()->json([
-                'status' => false,
-                'message' => 'أرسل رابطًا واحدًا على الأقل مع platform و url',
-                'errors' => [
-                    'links' => [
-                        'مثال JSON: {"links":[{"platform":"facebook","url":"https://facebook.com/you"},{"platform":"whatsapp","url":"0912345678"}]}',
-                        'أو خريطة: {"facebook":"https://facebook.com/you","whatsapp":"0912345678"}',
-                        'أو رابط واحد: {"platform":"instagram","url":"@plumber"}',
-                    ],
-                ],
-                'received_keys' => SocialLinksPayload::receivedKeys($request),
-                'accepted_platforms' => array_keys(SocialLink::PLATFORMS),
-            ], 422);
-        }
-
-        $platformKeys = implode(',', array_keys(SocialLink::PLATFORMS));
-        $validator = validator(
-            ['links' => $links],
-            [
-                'links' => ['required', 'array', 'min:1'],
-                'links.*.platform' => ['required', 'string', 'in:'.$platformKeys],
-                'links.*.url' => ['required', 'url', 'max:500'],
-                'links.*.sort_order' => ['nullable', 'integer', 'min:0'],
-            ],
-            [
-                'links.*.url.url' => 'صيغة الرابط غير صحيحة.',
-            ]
-        );
-
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'message' => $validator->errors()->first(),
-                'errors' => $validator->errors(),
-            ], 422);
-        }
+        $data = $request->validate([
+            'links' => ['required', 'array', 'min:1'],
+            'links.*.platform' => ['required', 'string', 'in:'.implode(',', array_keys(SocialLink::PLATFORMS))],
+            'links.*.url' => ['required', 'url', 'max:500'],
+            'links.*.sort_order' => ['nullable', 'integer', 'min:0'],
+        ], [
+            'links.required' => 'أرسل رابطًا واحدًا على الأقل مع platform و url.',
+            'links.min' => 'أرسل رابطًا واحدًا على الأقل مع platform و url.',
+            'links.*.url.required' => 'حقل الرابط (url) مطلوب لكل منصة.',
+            'links.*.url.url' => 'صيغة الرابط غير صحيحة.',
+        ]);
 
         $saved = [];
-        foreach ($links as $row) {
+        foreach ($data['links'] as $row) {
             $link = $user->socialLinks()->updateOrCreate(
                 ['platform' => $row['platform']],
                 [
@@ -361,7 +334,6 @@ class PlumberProfileController extends Controller
 
     /**
      * DELETE /api/v1/plumber/social-links/{linkId}
-     * linkId can be numeric id OR platform name (facebook, instagram, ...)
      */
     public function deleteSocialLink($linkId)
     {
@@ -370,22 +342,7 @@ class PlumberProfileController extends Controller
             return response()->json(['status' => false, 'message' => 'Only plumbers can manage social links'], 403);
         }
 
-        $query = $user->socialLinks();
-        $key = is_string($linkId) ? trim($linkId) : $linkId;
-
-        if (is_numeric($key)) {
-            $deleted = $query->whereKey((int) $key)->delete();
-        } else {
-            $platform = strtolower($key);
-            if (! array_key_exists($platform, SocialLink::PLATFORMS)) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'منصة غير معروفة',
-                    'accepted_platforms' => array_keys(SocialLink::PLATFORMS),
-                ], 422);
-            }
-            $deleted = $query->where('platform', $platform)->delete();
-        }
+        $deleted = $user->socialLinks()->whereKey($linkId)->delete();
 
         if (! $deleted) {
             return response()->json(['status' => false, 'message' => 'الرابط غير موجود'], 404);

@@ -87,10 +87,27 @@ class OrderController extends Controller
             return $this->error('يمكن لصاحب الطلب فقط تأكيد الاستلام', 403);
         }
 
-        return $this->transition(
-            fn () => $this->orders->deliver($order, $request->user()),
-            'تم تأكيد الاستلام وإضافة النقاط لمحفظتك',
-        );
+        try {
+            $order = $this->orders->deliver($order, $request->user());
+
+            return $this->success(
+                new OrderApiResource($this->loadedOrder($order)),
+                'تم تأكيد الاستلام وإضافة النقاط لمحفظتك',
+            );
+        } catch (\DomainException $e) {
+            $errors = null;
+
+            try {
+                $stock = $this->orders->stockAvailability($order->fresh(['items', 'supplier']));
+                if ($stock !== []) {
+                    $errors = ['stock' => $stock];
+                }
+            } catch (\Throwable) {
+                // keep message-only response
+            }
+
+            return $this->error($e->getMessage(), 422, $errors);
+        }
     }
 
     public function cancel(Request $request, Order $order): JsonResponse

@@ -86,17 +86,23 @@ class NetworkInventoryService
             ->where('to_user_id', $retailTrader->id)
             ->where('tier', 2)
             ->whereIn('status', ['confirmed', 'points_awarded'])
-            ->with(['invoice.items.product.translations', 'invoice.items.product.category'])
+            ->with([
+                'items.invoiceItem.product.translations',
+                'items.invoiceItem.product.category',
+            ])
             ->orderBy('confirmed_at')
+            ->orderBy('id')
             ->get();
 
         foreach ($tier2Distributions as $distribution) {
-            if (! $distribution->invoice) {
-                continue;
-            }
+            foreach ($distribution->items as $distItem) {
+                $item = $distItem->invoiceItem;
 
-            foreach ($distribution->invoice->items as $item) {
-                $this->appendStockSlot($byProduct, $item, $distribution->id, 3);
+                if (! $item) {
+                    continue;
+                }
+
+                $this->appendStockSlot($byProduct, $item, (int) $distribution->id, 3);
             }
         }
 

@@ -95,6 +95,13 @@ class OrderService
     {
         $this->assertStatus($order, [OrderStatus::CONFIRMED, OrderStatus::PLACED], 'لا يمكن شحن هذا الطلب في حالته الحالية');
 
+        $order->loadMissing(['items', 'supplier', 'requester']);
+
+        // Plumber receive will deduct network stock — block ship if trader cannot fulfill.
+        if ($order->isPlumberChannel()) {
+            $this->assertPlumberOrderFullyStocked($order);
+        }
+
         $order->update([
             'status' => OrderStatus::SHIPPING,
             'shipped_at' => now(),
@@ -479,11 +486,9 @@ class OrderService
             throw new \DomainException('تعذّر تحديد أطراف طلب السباك');
         }
 
-        $stock = $this->inventory->stockForRetailTrader($retailTrader);
+        $this->assertPlumberOrderFullyStocked($order);
 
-        if ($stock->isEmpty()) {
-            throw new \DomainException('مخزون التاجر القطاعي فارغ حالياً — تعذّر تسليم الطلب');
-        }
+        $stock = $this->inventory->stockForRetailTrader($retailTrader);
 
         $requested = [];
         foreach ($lines as $line) {
@@ -514,6 +519,48 @@ class OrderService
             'invoice_id' => null,
             'reference' => ['distribution_ids' => $distributionIds],
         ];
+    }
+
+    /**
+     * Ensure the retail trader has enough network stock for every plumber-order line.
+     *
+     * @throws \DomainException
+     */
+    protected function assertPlumberOrderFullyStocked(Order $order): void
+    {
+        $order->loadMissing(['items', 'supplier']);
+
+        if (! $order->isPlumberChannel() || ! $order->supplier) {
+            return;
+        }
+
+        if ($order->items->isEmpty()) {
+            throw new \DomainException('الطلب بلا أصناف');
+        }
+
+        $stock = $this->inventory->stockForRetailTrader($order->supplier);
+
+        if ($stock->isEmpty()) {
+            throw new \DomainException(
+                'مخزون التاجر القطاعي فارغ حالياً — يجب توريد بضاعة من موزّع الجملة أولاً (POS أو استلام طلب جملة) قبل شحن/تسليم طلب السباك'
+            );
+        }
+
+        $availability = $this->stockAvailability($order);
+        $shortages = collect($availability)->filter(fn (array $row) => ! $row['is_available'])->values();
+
+        if ($shortages->isEmpty()) {
+            return;
+        }
+
+        $list = $shortages->map(function (array $row) {
+            return "«{$row['name']}»: مطلوب {$row['requested_qty']} — متوفر {$row['available_qty']}";
+        })->implode(' | ');
+
+        throw new \DomainException(
+            "مخزون التاجر القطاعي غير كافٍ لتسليم الطلب: {$list}. "
+            .'عدّل الكميات من لوحة التاجر أو طبّق المتوفر ثم نفّذ كفاتورة.'
+        );
     }
 
     /**

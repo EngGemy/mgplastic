@@ -44,25 +44,8 @@ class RetailTraderNetworkService
 
     public function inventoryUnits(User $retailTrader): int
     {
-        $tier2Distributions = InvoiceDistribution::query()
-            ->where('to_user_id', $retailTrader->id)
-            ->where('tier', 2)
-            ->whereIn('status', ['confirmed', 'points_awarded'])
-            ->with(['invoice.items'])
-            ->get();
-
-        $units = 0;
-
-        foreach ($tier2Distributions as $distribution) {
-            if (! $distribution->invoice) {
-                continue;
-            }
-
-            foreach ($distribution->invoice->items as $item) {
-                $units += $item->availableQuantityForTier(3, $distribution->id);
-            }
-        }
-
-        return $units;
+        return (int) app(NetworkInventoryService::class)
+            ->stockForRetailTrader($retailTrader)
+            ->sum('available_qty');
     }
 }
