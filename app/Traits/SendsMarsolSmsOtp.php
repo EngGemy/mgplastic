@@ -86,7 +86,7 @@ trait SendsMarsolSmsOtp
      */
     protected function marsolClient(): PendingRequest
     {
-        $token = trim((string) config('services.marsol.token'));
+        $token = $this->marsolConfigValue('token');
 
         if ($token === '') {
             throw new RuntimeException('Marsol credentials missing — set MARSOL_API_TOKEN then run php artisan config:cache');
@@ -99,6 +99,14 @@ trait SendsMarsolSmsOtp
                 'Content-Type' => 'application/json',
             ])
             ->timeout(15);
+    }
+
+    /** Strip whitespace / wrapping quotes that often sneak into .env values. */
+    protected function marsolConfigValue(string $key): string
+    {
+        $value = trim((string) config('services.marsol.'.$key));
+
+        return trim($value, " \t\n\r\0\x0B\"'");
     }
 
     /**
@@ -116,7 +124,7 @@ trait SendsMarsolSmsOtp
             return $resolved;
         }
 
-        $configured = trim((string) config('services.marsol.sender_id'));
+        $configured = $this->marsolConfigValue('sender_id');
         $senders = $this->fetchMarsolSenderIds();
 
         if ($senders === []) {
@@ -263,12 +271,18 @@ trait SendsMarsolSmsOtp
             $res = $this->marsolClient()->post('/public/otp/initiate', $payload);
 
             if (! $res->successful()) {
-                Log::error('[Marsol OTP] initiate failed', [
+                $context = [
                     'status' => $res->status(),
                     'body' => $res->body(),
                     'phone' => $normalized,
                     'senderId' => $payload['senderId'] ?? null,
-                ]);
+                ];
+
+                if ($res->status() === 401) {
+                    $context['hint'] = 'Check MARSOL_API_TOKEN is active (x-auth-token) then php artisan config:cache';
+                }
+
+                Log::error('[Marsol OTP] initiate failed', $context);
 
                 return null;
             }

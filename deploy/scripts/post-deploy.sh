@@ -39,12 +39,17 @@ php artisan config:cache
 php artisan route:cache 2>/dev/null || echo "==> route:cache skipped (closure routes)"
 php artisan view:cache
 
-echo "==> Linking public storage"
-# Prefer artisan; fall back to manual symlink for split public_html layout
-php artisan storage:link || true
+echo "==> Linking public storage → ${PUBLIC_PATH}/storage"
+# Split cPanel layout: app has no public/ (assets live in public_html).
+# Do NOT run `php artisan storage:link` — public_path() points at a missing dir.
+mkdir -p "${APP_PATH}/storage/app/public"
 PUBLIC_STORAGE="${PUBLIC_PATH}/storage"
-rm -rf "$PUBLIC_STORAGE"
+if [ -L "$PUBLIC_STORAGE" ] || [ -e "$PUBLIC_STORAGE" ]; then
+  rm -rf "$PUBLIC_STORAGE"
+fi
 ln -sfn "${APP_PATH}/storage/app/public" "$PUBLIC_STORAGE"
+ls -la "$PUBLIC_STORAGE" >/dev/null
+echo "==> Storage link OK: ${PUBLIC_STORAGE} -> ${APP_PATH}/storage/app/public"
 
 if php artisan list 2>/dev/null | grep -q 'queue:restart'; then
   php artisan queue:restart 2>/dev/null || true
