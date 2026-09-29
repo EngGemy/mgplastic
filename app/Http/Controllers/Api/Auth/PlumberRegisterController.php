@@ -89,6 +89,8 @@ class PlumberRegisterController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'User created, but OTP sending failed.',
+                'error' => $this->lastMarsolError,
+                'hint' => 'Set MARSOL_USE_OTP_API=true, fix MARSOL_SENDER_ID via GET /public/senderIds, then php artisan config:cache',
             ], 500);
         }
 
@@ -97,14 +99,15 @@ class PlumberRegisterController extends Controller
         return response()->json([
             'status' => true,
             'message' => ucfirst($request->role).' registered. OTP sent.',
+            'requires_otp' => true,
             'data' => [
                 'user' => $user->fresh(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']),
-
+                'requires_otp' => true,
                 'location' => [
                     'country' => $user->country ? ['id' => $user->country->id, 'name' => $user->country->{$nameCol}] : null,
-                    'city'    => $user->city ? ['id' => $user->city->id, 'name' => $user->city->{$nameCol}] : null,
+                    'city' => $user->city ? ['id' => $user->city->id, 'name' => $user->city->{$nameCol}] : null,
                 ],
-            ]
+            ],
         ], 201);
     }
 }
