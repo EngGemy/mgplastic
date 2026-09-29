@@ -274,13 +274,11 @@ trait SendsMarsolSmsOtp
     }
 
     /**
-     * Issue an OTP.
+     * Issue an OTP via Marsol OTP API (/public/otp/initiate).
      *
-     * Default: Marsol OTP API (/public/otp/initiate) — required until the Marsol
-     * account is verified for /public/sms/send (otherwise 403 e.account-is-not-verified).
-     *
-     * Set MARSOL_USE_OTP_API=false only after Marsol verifies the account, to use
-     * branded SMS with MARSOL_APP_NAME.
+     * NOTE: /public/sms/send returns 403 e.account-is-not-verified on this account,
+     * so branded SMS is disabled until Marsol verifies the account.
+     * MARSOL_USE_OTP_API=false is ignored while SMS remains blocked.
      *
      * @return array{
      *   mode: 'sms'|'otp_api',
@@ -300,54 +298,54 @@ trait SendsMarsolSmsOtp
     ): ?array {
         $expiration = $this->marsolOtpExpiration($expiration);
         $ttlMinutes = max(1, (int) round($expiration / 60));
-        $useOtpApi = (bool) config('services.marsol.use_otp_api', true);
+        $wantBrandedSms = ! filter_var(
+            config('services.marsol.use_otp_api', true),
+            FILTER_VALIDATE_BOOLEAN
+        );
 
-        if ($useOtpApi) {
-            $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
+        // Branded SMS only when explicitly requested AND account allows /public/sms/send.
+        if ($wantBrandedSms && ! $this->marsolSmsApiBlocked()) {
+            $max = (10 ** $length) - 1;
+            $min = 10 ** ($length - 1);
+            $otp = (string) random_int($min, $max);
 
-            if (! $resp || empty($resp['requestId'])) {
-                return null;
+            if ($this->sendMarsolSmsOtp($phone, $otp, $ttlMinutes, $language)) {
+                return [
+                    'mode' => 'sms',
+                    'otp' => $otp,
+                    'requestId' => null,
+                    'resendToken' => null,
+                    'expiration' => $expiration,
+                ];
             }
 
-            return [
-                'mode' => 'otp_api',
-                'otp' => null,
-                'requestId' => $resp['requestId'],
-                'resendToken' => $resp['resendToken'] ?? null,
-                'expiration' => (int) ($resp['expiration'] ?? $expiration),
-            ];
+            Log::warning('[Marsol SMS] branded SMS unavailable — using OTP API instead');
         }
 
-        $max = (10 ** $length) - 1;
-        $min = 10 ** ($length - 1);
-        $otp = (string) random_int($min, $max);
+        $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
 
-        if (! $this->sendMarsolSmsOtp($phone, $otp, $ttlMinutes, $language)) {
-            // SMS API often blocked (403 account-is-not-verified) — fall back to OTP API.
-            Log::warning('[Marsol SMS] branded SMS failed — falling back to OTP API');
-
-            $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
-
-            if (! $resp || empty($resp['requestId'])) {
-                return null;
-            }
-
-            return [
-                'mode' => 'otp_api',
-                'otp' => null,
-                'requestId' => $resp['requestId'],
-                'resendToken' => $resp['resendToken'] ?? null,
-                'expiration' => (int) ($resp['expiration'] ?? $expiration),
-            ];
+        if (! $resp || empty($resp['requestId'])) {
+            return null;
         }
 
         return [
-            'mode' => 'sms',
-            'otp' => $otp,
-            'requestId' => null,
-            'resendToken' => null,
-            'expiration' => $expiration,
+            'mode' => 'otp_api',
+            'otp' => null,
+            'requestId' => $resp['requestId'],
+            'resendToken' => $resp['resendToken'] ?? null,
+            'expiration' => (int) ($resp['expiration'] ?? $expiration),
         ];
+    }
+
+    /** Remember that /public/sms/send is forbidden for this Marsol account. */
+    protected function marsolSmsApiBlocked(): bool
+    {
+        return (bool) cache()->get('marsol.sms_api_blocked', false);
+    }
+
+    protected function markMarsolSmsApiBlocked(): void
+    {
+        cache()->put('marsol.sms_api_blocked', true, now()->addDay());
     }
 
     /**
@@ -564,12 +562,21 @@ trait SendsMarsolSmsOtp
             $res = $this->marsolClient()->post('/public/sms/send', $payload);
 
             if (! $res->successful()) {
-                Log::error('[Marsol SMS] failed', [
-                    'status' => $res->status(),
-                    'body' => $res->body(),
-                    'phone' => $normalized,
-                    'app' => $this->marsolAppName(),
-                ]);
+                $body = $res->body();
+
+                if ($res->status() === 403 && str_contains($body, 'account-is-not-verified')) {
+                    $this->markMarsolSmsApiBlocked();
+                    Log::warning('[Marsol SMS] account not verified for SMS API — will use OTP API', [
+                        'phone' => $normalized,
+                    ]);
+                } else {
+                    Log::error('[Marsol SMS] failed', [
+                        'status' => $res->status(),
+                        'body' => $body,
+                        'phone' => $normalized,
+                        'app' => $this->marsolAppName(),
+                    ]);
+                }
 
                 return false;
             }

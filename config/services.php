@@ -42,11 +42,10 @@ return [
         'base_url' => env('MARSOL_BASE_URL', 'https://api.marsol.ly'),
         'token' => env('MARSOL_API_TOKEN'),
         'sender_id' => env('MARSOL_SENDER_ID'),
-        // Shown only when using branded /public/sms/send (MARSOL_USE_OTP_API=false).
-        // Marsol OTP API template uses the project name from the Marsol dashboard.
+        // Shown only for branded SMS (requires verified Marsol account).
         'app_name' => env('MARSOL_APP_NAME', 'MG Plastic'),
-        // true (default): /public/otp/initiate — works even when SMS API is locked.
-        // false: branded /public/sms/send — requires a verified Marsol account.
+        // KEEP true until Marsol verifies the account for /public/sms/send.
+        // false causes 403 e.account-is-not-verified on this account.
         'use_otp_api' => filter_var(env('MARSOL_USE_OTP_API', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
