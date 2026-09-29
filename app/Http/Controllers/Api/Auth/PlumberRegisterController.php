@@ -59,30 +59,23 @@ class PlumberRegisterController extends Controller
             ? $request->file('profile_photo')->store('profile_photos', 'public')
             : null;
 
-        $phone   = $request->phone;
-        $isLibya = $this->isLibyaPhone($phone);
-
-        // OTP for non-Libya
-        $localOtp = $isLibya ? null : random_int(100000, 999999);
+        $phone = $request->phone;
+        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
 
         // Create user
-        $user = DB::transaction(function () use ($request, $imagePath, $localOtp, $isLibya) {
+        $user = DB::transaction(function () use ($request, $imagePath) {
             return User::create([
-                'name'             => $request->name,
-                'phone'            => $request->phone,
-                'country_id'       => $request->country_id,
-                'city_id'          => $request->city_id,
-                'password'         => Hash::make($request->password),
-                'role'             => $request->role,
-                'profile_photo'    => $imagePath,
-
-                // OTP LOCAL (non-Libya)
-                'otp_code'         => $isLibya ? null : $localOtp,
-                'otp_expires_at'   => $isLibya ? null : now()->addMinutes(5),
-
-                // Approval defaults
-                'is_approved'      => true,
-                'is_active'        => true,
+                'name' => $request->name,
+                'phone' => $request->phone,
+                'country_id' => $request->country_id,
+                'city_id' => $request->city_id,
+                'password' => Hash::make($request->password),
+                'role' => $request->role,
+                'profile_photo' => $imagePath,
+                'otp_code' => null,
+                'otp_expires_at' => null,
+                'is_approved' => true,
+                'is_active' => true,
             ]);
         });
 
@@ -90,58 +83,23 @@ class PlumberRegisterController extends Controller
         $user->load(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']);
         $nameCol = app()->getLocale() === 'ar' ? 'name_ar' : 'name_en';
 
-        // ================================
-        // 🇱🇾 LIBYA → SEND MARSOL OTP
-        // ================================
-        if ($isLibya) {
-            $otpResp = $this->initiateMarsolOtp(
-                $phone,
-                6,
-                300,
-                'WEB',
-                app()->getLocale() === 'ar' ? 'AR' : 'EN',
-                'CODE'
-            );
+        $issued = $this->issueMarsolPhoneOtp($phone, 6, 300, 'WEB', $lang, 'CODE');
 
-            if (! $otpResp || empty($otpResp['requestId'])) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'User created, but OTP sending failed.',
-                ], 500);
-            }
-
-            // Fix expiration
-            $exp = $otpResp['expiration'] ?? 300;
-            $exp = max(60, min($exp, 86400)); // 1 minute → 24 hours
-
-            $user->update([
-                'marsol_otp_request_id'   => $otpResp['requestId'],
-                'marsol_otp_resend_token' => $otpResp['resendToken'] ?? null,
-                'marsol_otp_expires_at'   => now()->addSeconds($exp),
-                'otp_last_sent_at'        => now(),
-            ]);
+        if (! $issued) {
+            return response()->json([
+                'status' => false,
+                'message' => 'User created, but OTP sending failed.',
+            ], 500);
         }
 
-        // ================================
-        // 🌍 NON-LIBYA → SEND VIA SMS
-        // ================================
-        else {
-            $smsSent = $this->sendMarsolSmsOtp($phone, $localOtp, 5);
-            if (! $smsSent) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'User created, but OTP SMS failed.',
-                ], 500);
-            }
-
-            $user->update(['otp_last_sent_at' => now()]);
-        }
+        $this->applyMarsolOtpToUser($user, $issued);
 
         return response()->json([
-            'status'  => true,
-            'message' => ucfirst($request->role) . ' registered. OTP sent.',
-            'data'    => [
-                'user' => $user,
+            'status' => true,
+            'message' => ucfirst($request->role).' registered. OTP sent.',
+            'data' => [
+                'user' => $user->fresh(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']),
+
                 'location' => [
                     'country' => $user->country ? ['id' => $user->country->id, 'name' => $user->country->{$nameCol}] : null,
                     'city'    => $user->city ? ['id' => $user->city->id, 'name' => $user->city->{$nameCol}] : null,

@@ -39,9 +39,14 @@ return [
     ],
 
     'marsol' => [
-        'base_url'  => env('MARSOL_BASE_URL', 'https://api.marsol.ly'),
-        'token'     => env('MARSOL_API_TOKEN'),
+        'base_url' => env('MARSOL_BASE_URL', 'https://api.marsol.ly'),
+        'token' => env('MARSOL_API_TOKEN'),
         'sender_id' => env('MARSOL_SENDER_ID'),
+        // Shown in OTP SMS body ("رمز التأكيد الخاص بك لـ …")
+        'app_name' => env('MARSOL_APP_NAME', env('APP_NAME', 'MG Plastic')),
+        // true = Marsol OTP API template (project name in dashboard).
+        // false = branded SMS via /public/sms/send + local otp_code (recommended).
+        'use_otp_api' => (bool) env('MARSOL_USE_OTP_API', false),
     ],
 
     'ffmpeg' => [

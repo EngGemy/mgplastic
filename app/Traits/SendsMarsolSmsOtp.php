@@ -2,6 +2,7 @@
 
 namespace App\Traits;
 
+use App\Models\User;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -226,10 +227,130 @@ trait SendsMarsolSmsOtp
             return $expiration;
         }
 
-        // Nearest allowed value
         usort($allowed, fn (int $a, int $b) => abs($a - $expiration) <=> abs($b - $expiration));
 
         return $allowed[0];
+    }
+
+    protected function marsolAppName(): string
+    {
+        $name = $this->marsolConfigValue('app_name');
+
+        if ($name === '' || strtoupper($name) === 'NONE' || strtoupper($name) === 'NULL') {
+            $name = trim((string) config('app.name', 'MG Plastic'));
+        }
+
+        if ($name === '' || strtoupper($name) === 'NONE' || strtoupper($name) === 'NULL') {
+            $name = 'MG Plastic';
+        }
+
+        return $name;
+    }
+
+    /**
+     * Branded OTP SMS body (Arabic / English).
+     * Marsol's built-in OTP template uses the project name (often "NONE") — we avoid that.
+     */
+    protected function marsolOtpMessage(string $otp, int $ttlMinutes = 5, ?string $language = null): string
+    {
+        $app = $this->marsolAppName();
+        $lang = strtoupper($language ?: (app()->getLocale() === 'ar' ? 'AR' : 'EN'));
+
+        if ($lang === 'AR') {
+            return "رمز التأكيد الخاص بك لـ {$app}\nCode:{$otp}\nصالح لمدة {$ttlMinutes} دقائق\nلا تشاركه مع أي أحد";
+        }
+
+        return "Your confirmation code for {$app}\nCode:{$otp}\nValid for {$ttlMinutes} minutes\nDo not share it with anyone";
+    }
+
+    /**
+     * Issue an OTP: branded SMS by default (shows real app name).
+     * Set MARSOL_USE_OTP_API=true to use Marsol's OTP initiate template instead.
+     *
+     * @return array{
+     *   mode: 'sms'|'otp_api',
+     *   otp:?string,
+     *   requestId:?string,
+     *   resendToken:?string,
+     *   expiration:int
+     * }|null
+     */
+    protected function issueMarsolPhoneOtp(
+        string $phone,
+        int $length = 6,
+        int $expiration = 300,
+        string $clientOs = 'WEB',
+        string $language = 'EN',
+        string $operation = 'CODE'
+    ): ?array {
+        $expiration = $this->marsolOtpExpiration($expiration);
+        $ttlMinutes = max(1, (int) round($expiration / 60));
+
+        if (config('services.marsol.use_otp_api')) {
+            $resp = $this->initiateMarsolOtp($phone, $length, $expiration, $clientOs, $language, $operation);
+
+            if (! $resp || empty($resp['requestId'])) {
+                return null;
+            }
+
+            return [
+                'mode' => 'otp_api',
+                'otp' => null,
+                'requestId' => $resp['requestId'],
+                'resendToken' => $resp['resendToken'] ?? null,
+                'expiration' => (int) ($resp['expiration'] ?? $expiration),
+            ];
+        }
+
+        $max = (10 ** $length) - 1;
+        $min = 10 ** ($length - 1);
+        $otp = (string) random_int($min, $max);
+
+        if (! $this->sendMarsolSmsOtp($phone, $otp, $ttlMinutes, $language)) {
+            return null;
+        }
+
+        return [
+            'mode' => 'sms',
+            'otp' => $otp,
+            'requestId' => null,
+            'resendToken' => null,
+            'expiration' => $expiration,
+        ];
+    }
+
+    /**
+     * Persist an issueMarsolPhoneOtp() result onto the user row.
+     *
+     * @param  array{mode:string,otp:?string,requestId:?string,resendToken:?string,expiration:int}  $issued
+     */
+    protected function applyMarsolOtpToUser(User $user, array $issued): void
+    {
+        $exp = max(60, min((int) $issued['expiration'], 86400));
+
+        if (($issued['mode'] ?? '') === 'otp_api') {
+            $user->update([
+                'marsol_otp_request_id' => $issued['requestId'],
+                'marsol_otp_resend_token' => $issued['resendToken'] ?? null,
+                'marsol_otp_expires_at' => now()->addSeconds($exp),
+                'otp_code' => null,
+                'otp_expires_at' => null,
+                'otp_last_sent_at' => now(),
+                'otp_attempts' => 0,
+            ]);
+
+            return;
+        }
+
+        $user->update([
+            'otp_code' => $issued['otp'],
+            'otp_expires_at' => now()->addSeconds($exp),
+            'otp_last_sent_at' => now(),
+            'otp_attempts' => 0,
+            'marsol_otp_request_id' => null,
+            'marsol_otp_resend_token' => null,
+            'marsol_otp_expires_at' => null,
+        ]);
     }
 
     /* ============================================================
@@ -389,7 +510,7 @@ trait SendsMarsolSmsOtp
      * SMS API (non-Libya / local OTP fallback)
      * ============================================================
      */
-    protected function sendMarsolSmsOtp(string $phone, string $otp, int $ttlMinutes = 5): bool
+    protected function sendMarsolSmsOtp(string $phone, string $otp, int $ttlMinutes = 5, ?string $language = null): bool
     {
         try {
             $normalized = $this->normalizeMarsolPhone($phone);
@@ -404,7 +525,7 @@ trait SendsMarsolSmsOtp
 
         $payload = [
             'phoneNumbers' => [$normalized],
-            'message' => "Your verification code is {$otp}. It expires in {$ttlMinutes} minutes.",
+            'message' => $this->marsolOtpMessage($otp, $ttlMinutes, $language),
             'senderId' => $this->marsolSenderId(),
         ];
 
@@ -416,6 +537,7 @@ trait SendsMarsolSmsOtp
                     'status' => $res->status(),
                     'body' => $res->body(),
                     'phone' => $normalized,
+                    'app' => $this->marsolAppName(),
                 ]);
 
                 return false;
@@ -437,6 +559,7 @@ trait SendsMarsolSmsOtp
 
             Log::info('[Marsol SMS] sent', [
                 'phone' => $normalized,
+                'app' => $this->marsolAppName(),
                 'requestId' => is_array($json) ? ($json['requestId'] ?? null) : null,
                 'accepted' => is_array($json) ? ($json['accepted'] ?? null) : null,
             ]);

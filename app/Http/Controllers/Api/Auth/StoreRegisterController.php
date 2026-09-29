@@ -71,10 +71,9 @@ class StoreRegisterController extends Controller
         ]);
 
         $phone = $data['phone'];
-        $isLibya = $this->isLibyaPhone($phone);
-        $localOtp = $isLibya ? null : random_int(100000, 999999);
+        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
 
-        $user = DB::transaction(function () use ($request, $data, $localOtp, $isLibya, $role) {
+        $user = DB::transaction(function () use ($request, $data, $role) {
             $user = new User();
             $user->fill([
                 'name'              => $data['name'],
@@ -99,8 +98,8 @@ class StoreRegisterController extends Controller
                 // Retail may register alone; wholesalers link later (many-to-many).
                 'is_independent'    => $role === 'retail_trader',
                 'parent_distributor_id' => null,
-                'otp_code'          => $localOtp,
-                'otp_expires_at'    => $isLibya ? null : now()->addMinutes(5),
+                'otp_code'          => null,
+                'otp_expires_at'    => null,
             ]);
 
             if ($request->hasFile('profile_photo')) {
@@ -123,25 +122,9 @@ class StoreRegisterController extends Controller
             return $user;
         });
 
-        if ($isLibya) {
-            $otpResp = $this->initiateMarsolOtp(
-                $phone, 6, 300, 'WEB',
-                app()->getLocale() === 'ar' ? 'AR' : 'EN',
-                'CODE'
-            );
-
-            if ($otpResp && ! empty($otpResp['requestId'])) {
-                $exp = max(60, min($otpResp['expiration'] ?? 300, 86400));
-                $user->update([
-                    'marsol_otp_request_id'   => $otpResp['requestId'],
-                    'marsol_otp_resend_token' => $otpResp['resendToken'] ?? null,
-                    'marsol_otp_expires_at'   => now()->addSeconds($exp),
-                    'otp_last_sent_at'        => now(),
-                ]);
-            }
-        } else {
-            $this->sendMarsolSmsOtp($phone, (string) $localOtp, 5);
-            $user->update(['otp_last_sent_at' => now()]);
+        $issued = $this->issueMarsolPhoneOtp($phone, 6, 300, 'WEB', $lang, 'CODE');
+        if ($issued) {
+            $this->applyMarsolOtpToUser($user, $issued);
         }
 
         $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);

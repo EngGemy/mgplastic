@@ -33,61 +33,14 @@ class PasswordResetByPhoneController extends Controller
             return response()->json(['status'=>false,'message'=>'Please wait before requesting another OTP'], 429);
         }
 
-        $isLibya = $this->isLibyaPhone($user->phone);
+        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
+        $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', $lang, 'CODE');
 
-        // =====================================================
-        // 🇱🇾 LIBYA → SEND OTP THROUGH MARSOL
-        // =====================================================
-        if ($isLibya) {
-
-            $otpResp = $this->initiateMarsolOtp(
-                $user->phone,
-                6,
-                300,
-                'WEB',
-                app()->getLocale() === 'ar' ? 'AR' : 'EN',
-                'CODE'
-            );
-
-            if (! $otpResp || empty($otpResp['requestId'])) {
-                return response()->json(['status'=>false,'message'=>'Failed to send OTP'],500);
-            }
-
-            // fix expiry
-            $exp = $otpResp['expiration'] ?? 300;
-            $exp = max(60, min($exp, 86400)); // 1m → 24h
-
-            $user->update([
-                'marsol_otp_request_id'   => $otpResp['requestId'],
-                'marsol_otp_resend_token' => $otpResp['resendToken'] ?? null,
-                'marsol_otp_expires_at'   => now()->addSeconds($exp),
-                'otp_code'                => null,
-                'otp_last_sent_at'        => now(),
-                'otp_attempts'            => 0,
-            ]);
-
+        if (! $issued) {
+            return response()->json(['status' => false, 'message' => 'Failed to send OTP'], 500);
         }
-        // =====================================================
-        // 🌍 NON-LIBYA → LOCAL OTP
-        // =====================================================
-        else {
 
-            $otp = random_int(100000,999999);
-
-            $user->update([
-                'otp_code'         => $otp,
-                'otp_expires_at'   => now()->addMinutes(5),
-                'otp_last_sent_at' => now(),
-                'otp_attempts'     => 0,
-            ]);
-
-            // send SMS
-            $sent = $this->sendMarsolSmsOtp($user->phone, $otp, 5);
-
-            if (! $sent) {
-                return response()->json(['status'=>false,'message'=>'Failed to send OTP SMS'],500);
-            }
-        }
+        $this->applyMarsolOtpToUser($user, $issued);
 
         return response()->json([
             'status' => true,

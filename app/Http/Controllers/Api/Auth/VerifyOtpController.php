@@ -117,11 +117,10 @@ class VerifyOtpController extends Controller
         }
 
         $isLibya = $this->isLibyaPhone($user->phone);
+        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
 
-        // ============================================================
-        // 🇱🇾 LIBYA → MARSOL RESEND
-        // ============================================================
-        if ($isLibya && $user->marsol_otp_request_id && $user->marsol_otp_resend_token) {
+        // Prefer Marsol OTP API resend only when that mode is active and tokens exist.
+        if (config('services.marsol.use_otp_api') && $isLibya && $user->marsol_otp_request_id && $user->marsol_otp_resend_token) {
 
             $resp = $this->resendMarsolOtp(
                 $user->marsol_otp_request_id,
@@ -146,23 +145,13 @@ class VerifyOtpController extends Controller
 
         } else {
 
-            // ============================================================
-            // 🌍 NON-LIBYA → LOCAL OTP
-            // ============================================================
-            $otp = random_int(100000,999999);
+            $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', $lang, 'CODE');
 
-            $user->update([
-                'otp_code'         => $otp,
-                'otp_expires_at'   => now()->addMinutes(5),
-                'otp_last_sent_at' => now(),
-                'otp_attempts'     => 0,
-            ]);
-
-            $sent = $this->sendMarsolSmsOtp($user->phone,$otp,5);
-
-            if (! $sent) {
-                return response()->json(['status'=>false,'message'=>'Failed to send SMS'],500);
+            if (! $issued) {
+                return response()->json(['status' => false, 'message' => 'Failed to send SMS'], 500);
             }
+
+            $this->applyMarsolOtpToUser($user, $issued);
         }
 
         return response()->json([
