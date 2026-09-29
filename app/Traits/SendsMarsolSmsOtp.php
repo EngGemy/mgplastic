@@ -82,28 +82,131 @@ trait SendsMarsolSmsOtp
     /**
      * Shared Marsol HTTP client.
      *
-     * @throws RuntimeException when credentials are missing
+     * @throws RuntimeException when the API token is missing
      */
     protected function marsolClient(): PendingRequest
     {
         $token = trim((string) config('services.marsol.token'));
-        $senderId = trim((string) config('services.marsol.sender_id'));
 
-        if ($token === '' || $senderId === '') {
-            throw new RuntimeException('Marsol credentials missing — run php artisan config:cache');
+        if ($token === '') {
+            throw new RuntimeException('Marsol credentials missing — set MARSOL_API_TOKEN then run php artisan config:cache');
         }
 
         return Http::baseUrl(rtrim((string) config('services.marsol.base_url', 'https://api.marsol.ly'), '/'))
             ->withHeaders([
                 'x-auth-token' => $token,
                 'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
             ])
             ->timeout(15);
     }
 
+    /**
+     * Resolve a valid Sender ID UUID from config or Marsol GET /public/senderIds.
+     *
+     * @see https://docs.marsol.ly/senderids
+     *
+     * @throws RuntimeException
+     */
     protected function marsolSenderId(): string
     {
-        return trim((string) config('services.marsol.sender_id'));
+        static $resolved = null;
+
+        if (is_string($resolved) && $resolved !== '') {
+            return $resolved;
+        }
+
+        $configured = trim((string) config('services.marsol.sender_id'));
+        $senders = $this->fetchMarsolSenderIds();
+
+        if ($senders === []) {
+            throw new RuntimeException(
+                'Marsol has no available senderIds for this token — check the Marsol dashboard / GET /public/senderIds'
+            );
+        }
+
+        // Prefer configured UUID when it exists and is available.
+        if ($configured !== '') {
+            foreach ($senders as $sender) {
+                $id = (string) ($sender['id'] ?? '');
+                if ($id === $configured && ($sender['available'] ?? true)) {
+                    $resolved = $id;
+
+                    return $resolved;
+                }
+            }
+
+            Log::warning('[Marsol SMS] configured MARSOL_SENDER_ID is invalid for this account — falling back to default', [
+                'configured' => $configured,
+                'available_ids' => array_values(array_filter(array_map(
+                    fn ($s) => $s['id'] ?? null,
+                    $senders
+                ))),
+            ]);
+        }
+
+        // Prefer account default, then any available SMS-capable sender.
+        $fallback = null;
+        foreach ($senders as $sender) {
+            if (! ($sender['available'] ?? true)) {
+                continue;
+            }
+
+            $id = (string) ($sender['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+
+            if (($sender['isDefault'] ?? false) === true) {
+                $resolved = $id;
+                Log::info('[Marsol SMS] using default senderId', [
+                    'senderId' => $id,
+                    'name' => $sender['name'] ?? null,
+                ]);
+
+                return $resolved;
+            }
+
+            $fallback ??= $id;
+        }
+
+        if ($fallback === null) {
+            throw new RuntimeException('Marsol senderIds found but none are available');
+        }
+
+        $resolved = $fallback;
+        Log::info('[Marsol SMS] using fallback senderId', ['senderId' => $resolved]);
+
+        return $resolved;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function fetchMarsolSenderIds(): array
+    {
+        try {
+            $res = $this->marsolClient()->get('/public/senderIds');
+
+            if (! $res->successful()) {
+                Log::error('[Marsol SMS] senderIds list failed', [
+                    'status' => $res->status(),
+                    'body' => $res->body(),
+                ]);
+
+                return [];
+            }
+
+            $json = $res->json();
+
+            return is_array($json) ? array_values($json) : [];
+        } catch (\Throwable $e) {
+            Log::error('[Marsol SMS] senderIds list exception', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
     }
 
     /** Snap expiration to one of Marsol's allowed values: 120, 300, 600. */
@@ -164,6 +267,7 @@ trait SendsMarsolSmsOtp
                     'status' => $res->status(),
                     'body' => $res->body(),
                     'phone' => $normalized,
+                    'senderId' => $payload['senderId'] ?? null,
                 ]);
 
                 return null;
