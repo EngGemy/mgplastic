@@ -22,8 +22,8 @@ class UserResource extends JsonResource
             'country' => new CountryResource($this->whenLoaded('country')),  // Include country resource if loaded
             'city' => new CityResource($this->whenLoaded('city')),  // Include city resource if loaded
             'profile_photo' => $this->profile_photo,
-            'short_description' => $this->short_description,
-            'long_description' => $this->long_description,
+            'short_description' => api_plain_text($this->short_description),
+            'long_description' => api_plain_text($this->long_description),
         ];
     }
 }

@@ -25,7 +25,7 @@ class WalletTransactionResource extends JsonResource
                 ? '+'.number_format($delta).' نقطة'
                 : ($delta < 0 ? number_format($delta).' نقطة' : '0 نقطة'),
             'is_credit' => $delta > 0,
-            'description' => $this->description,
+            'description' => api_plain_text($this->description),
             'reason' => $reason,
             'reason_label' => $this->reasonLabel($reason),
             'meta' => $this->meta,

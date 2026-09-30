@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Plumber;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Plumber\PlumberShowResource;
 use App\Models\PlumberWorkPhoto;
 use App\Models\SocialLink;
 use App\Services\VideoThumbnailService;
@@ -255,12 +256,12 @@ class PlumberProfileController extends Controller
 
         $user->save();
 
-        $fresh = $user->fresh()->load('socialLinks');
+        $fresh = $user->fresh()->load(['socialLinks', 'city', 'country', 'workPhotos']);
 
         return response()->json([
             'status'  => true,
             'message' => 'Profile updated successfully',
-            'data'    => $fresh,
+            'data'    => new PlumberShowResource($fresh),
             'location' => [
                 'latitude'  => $fresh->latitude,
                 'longitude' => $fresh->longitude,

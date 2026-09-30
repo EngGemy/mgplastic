@@ -40,7 +40,7 @@ class TermsResource extends JsonResource
         return [
             'accepted_language' => $lang,
             'title'             => $title,
-            'content'           => $content,
+            'content'           => api_plain_text($content),
             'updated_at'        => optional($this->updated_at)->toISOString(),
         ];
     }

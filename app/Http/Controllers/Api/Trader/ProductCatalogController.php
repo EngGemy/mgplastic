@@ -61,7 +61,7 @@ class ProductCatalogController extends Controller
             return [
                 'id' => (int) $product->id,
                 'name' => localized_name($product, 'name', 'منتج #'.$product->id),
-                'description' => localized_name($product, 'description', ''),
+                'description' => api_plain_string(localized_name($product, 'description', '')),
                 'image' => $image,
                 'image_url' => $product->display_image_url
                     ?? ($image ? asset('storage/'.ltrim($image, '/')) : null),

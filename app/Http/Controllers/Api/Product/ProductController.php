@@ -284,8 +284,8 @@ class ProductController extends Controller
             'id'                  => (int) $product->id,
             'accepted_language'   => $locale,
             'name'                => (string) ($t->name ?? ''),
-            'description'         => (string) ($t->description ?? ''),
-            'usage'               => (string) ($t->usage ?? ''),
+            'description'         => api_plain_string($t->description ?? ''),
+            'usage'               => api_plain_string($t->usage ?? ''),
             'product_category_id' => $product->product_category_id,
             'category_name'       => (string) (optional($product->category->translate($locale) ?: $product->category->translate('en'))->name ?? ''),
             'product_standard_id' => $product->product_standard_id,
@@ -551,8 +551,8 @@ class ProductController extends Controller
                 'id'                  => (int) $product->id,
                 'accepted_language'   => $locale,
                 'name'                => (string) ($t->name ?? ''),
-                'description'         => (string) ($t->description ?? ''),
-                'usage'               => (string) ($t->usage ?? ''),
+                'description'         => api_plain_string($t->description ?? ''),
+                'usage'               => api_plain_string($t->usage ?? ''),
                 'product_category_id' => $product->product_category_id,
                 'category_name'       => (string) (optional($product->category->translate($locale) ?: $product->category->translate('en'))->name ?? ''),
                 'product_standard_id' => $product->product_standard_id,
@@ -634,13 +634,6 @@ class ProductController extends Controller
             $html    = preg_replace('/\s+/', ' ', $html);
             $html    = preg_replace('/\s*(<\/?(?:p|li|h2|h3|h4|h5|h6|br)\b[^>]*>)+\s*/i', '$1', $html);
             return trim($html);
-        };
-
-        $toText = function (?string $html): ?string {
-            if (!$html) return null;
-            $txt = strip_tags($html);
-            $txt = html_entity_decode($txt, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-            return \Illuminate\Support\Str::of($txt)->squish()->toString();
         };
 
         // --- Build specs titles ---
@@ -817,15 +810,12 @@ class ProductController extends Controller
             })->values()
             : collect();
 
-        // --- HTML/Naked text for description & usage ---
+        // --- Plain text + cleaned HTML for description & usage ---
         $descRaw   = (string) ($t->description ?? '');
         $usageRaw  = (string) ($t->usage ?? '');
 
         $descHtml  = $cleanHtml($descRaw);
         $usageHtml = $cleanHtml($usageRaw);
-
-        $descText  = $toText($descHtml);
-        $usageText = $toText($usageHtml);
 
         // --- Build response payload ---
         $data = [
@@ -836,8 +826,8 @@ class ProductController extends Controller
                 'name'                => (string) ($t->name ?? ''),
 
                 // نص صِرف (للموبايل الافتراضي)
-                'description'         => $descText,
-                'usage'               => $usageText,
+                'description'         => api_plain_string($descRaw),
+                'usage'               => api_plain_string($usageRaw),
 
                 // HTML نظيف (لو هتعمل رندر Rich Text)
                 'description_html'    => $descHtml,

@@ -35,7 +35,7 @@ class ProductCategoryResource extends JsonResource
             'slug'              => $this->slug ?? null,
             'accepted_language' => $lang,
             'name'              => $name,
-            'description'       => $desc,
+            'description'       => api_plain_text($desc),
 
         //    'image'             => $this->image,
             'image'         => $this->image ? Storage::disk('public')->url($this->image) : null,

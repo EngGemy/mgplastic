@@ -46,7 +46,7 @@ class EventResource extends JsonResource
         return [
             'id'                => $this->id,
             'title'             => $title,
-            'description'       => $desc,
+            'description'       => api_plain_text($desc),
 
             'image'             => $this->image,
             'image_url'         => $this->image ? Storage::disk('public')->url($this->image) : null,

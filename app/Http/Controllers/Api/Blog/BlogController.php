@@ -37,7 +37,11 @@ class BlogController extends Controller
             'status'      => $status
         ]);
 
-        return response()->json(['status' => true, 'message' => 'Blog created', 'data' => $blog]);
+        return response()->json([
+            'status' => true,
+            'message' => 'Blog created',
+            'data' => $this->blogPayload($blog->load(['category', 'author'])),
+        ]);
     }
 
     // Approve blog (Admin only)
@@ -57,14 +61,22 @@ class BlogController extends Controller
     public function index()
     {
         $blogs = Blog::with(['category', 'author'])->where('status', 'approved')->latest()->get();
-        return response()->json(['status' => true, 'data' => $blogs]);
+
+        return response()->json([
+            'status' => true,
+            'data' => $blogs->map(fn (Blog $blog) => $this->blogPayload($blog))->values(),
+        ]);
     }
 
     // Show single blog
     public function show($id)
     {
         $blog = Blog::with(['category', 'author', 'comments.user'])->where('status', 'approved')->findOrFail($id);
-        return response()->json(['status' => true, 'data' => $blog]);
+
+        return response()->json([
+            'status' => true,
+            'data' => $this->blogPayload($blog),
+        ]);
     }
 
     // Like or Unlike blog
@@ -95,5 +107,16 @@ class BlogController extends Controller
         ]);
 
         return response()->json(['status' => true, 'message' => 'Comment added', 'data' => $comment]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function blogPayload(Blog $blog): array
+    {
+        $payload = $blog->toArray();
+        $payload['description'] = api_plain_text($blog->description);
+
+        return $payload;
     }
 }

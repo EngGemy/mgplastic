@@ -44,7 +44,7 @@ class PrivacyResource extends JsonResource
 
             // localized fields
             'title'      => $title,
-            'content'    => $content,
+            'content'    => api_plain_text($content),
 
             // useful metadata
             'updated_at' => optional($this->updated_at)->toISOString(),

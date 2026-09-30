@@ -83,7 +83,7 @@ class StoreMedia extends Model
             'type' => $this->media_type,
             'name' => $this->title,
             'title' => $this->title,
-            'description' => $this->description,
+            'description' => api_plain_text($this->description),
             'url' => $this->url,
             'image_url' => $this->url,
             'thumbnail' => $this->thumbnail_url,

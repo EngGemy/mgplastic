@@ -29,7 +29,7 @@ class PlumberStoreResource extends JsonResource
         return [
             'id'             => $this->id,
             'name'           => $name,
-            'description'    => $description,
+            'description'    => api_plain_text($description),
             'address'        => $this->address,
             'phone'          => $this->phone,
             'image'          => $this->image,
@@ -101,7 +101,7 @@ class PlumberStoreResource extends JsonResource
                     'name'               => $u->name,
                     'phone'              => $u->phone,
                     'image_url'          => $u->profile_photo_url ?? null, // common Jetstream accessor
-                    'description'        => $u->description ?? $u->bio ?? null, // optional field
+                    'description'        => api_plain_text($u->description ?? $u->bio ?? $u->short_description ?? null),
                 ])
             ),
         ];
