@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 
 class EnsureAdminPanelAccess
@@ -12,7 +13,10 @@ class EnsureAdminPanelAccess
         $user = $request->user();
 
         if (! $user) {
-            abort(403);
+            $login = Filament::getLoginUrl()
+                ?? url('/'.trim((string) config('portal.admin_path', 'admin'), '/').'/login');
+
+            return redirect()->guest($login);
         }
 
         if ($user->role === 'wholesale_distributor') {

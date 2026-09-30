@@ -9,13 +9,15 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Concerns\HasStoreProfile;
 use App\Models\Concerns\HasWallet;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 
 
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
     use HasApiTokens, HasFactory, HasStoreProfile, Notifiable, HasWallet;
     public const ROLE_PLUMBER = 'plumber';
@@ -286,6 +288,16 @@ class User extends Authenticatable
     public function isAdminUser(): bool
     {
         return in_array($this->role, ['super_admin', 'admin'], true);
+    }
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return match ($panel->getId()) {
+            'admin' => $this->isAdminUser(),
+            'distributor' => $this->isWholesaleDistributor(),
+            'trader' => $this->isRetailTrader(),
+            default => false,
+        };
     }
 
     public function canAdminPermission(string $permission): bool
