@@ -286,11 +286,11 @@ trait SendsMarsolSmsOtp
      */
     protected function marsolOtpMessage(string $otp, int $ttlMinutes = 5, ?string $language = null): string
     {
-        $app = $this->marsolAppName();
+        $app = "تطبيق MG";
         $lang = strtoupper($language ?: (app()->getLocale() === 'ar' ? 'AR' : 'EN'));
 
         if ($lang === 'AR') {
-            return "رمز التأكيد الخاص بك لـ {$app}\nCode:{$otp}\nصالح لمدة {$ttlMinutes} دقائق\nلا تشاركه مع أي أحد";
+            return "رمز التأكيد الخاص بك  لـ {$app}\nCode:{$otp}\nصالح لمدة {$ttlMinutes} دقائق\nلا تشاركه مع أي أحد";
         }
 
         return "Your confirmation code for {$app}\nCode:{$otp}\nValid for {$ttlMinutes} minutes\nDo not share it with anyone";
