@@ -32,7 +32,20 @@ class AppServiceProvider extends ServiceProvider
 
         LanguageSwitch::configureUsing(function (LanguageSwitch $switch) {
             $switch
-                ->locales(['ar','en','fr']); // also accepts a closure
+                ->locales(['ar', 'en', 'fr'])
+                ->displayLocale('ar')
+                ->userPreferredLocale('ar');
+        });
+
+        // Filament sidebar follows locale direction (ar = RTL / right side).
+        \Filament\Facades\Filament::serving(function () {
+            $preferred = session('locale')
+                ?? request()->cookie('filament_language_switch_locale');
+
+            if (! is_string($preferred) || ! in_array($preferred, ['ar', 'en', 'fr'], true)) {
+                app()->setLocale('ar');
+                session(['locale' => 'ar']);
+            }
         });
         Schema::defaultStringLength(191);
 
