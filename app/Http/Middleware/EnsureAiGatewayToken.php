@@ -27,7 +27,10 @@ class EnsureAiGatewayToken
             return response()->json([
                 'ok' => false,
                 'error' => 'Unauthorized',
-            ], 401);
+                'hint' => 'Send Authorization: Bearer <AI_GATEWAY_TOKEN>',
+            ], 401)->withHeaders([
+                'WWW-Authenticate' => 'Bearer realm="mg-plastic-mcp"',
+            ]);
         }
 
         return $next($request);

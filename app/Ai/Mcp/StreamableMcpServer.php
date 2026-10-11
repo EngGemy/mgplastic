@@ -56,7 +56,10 @@ class StreamableMcpServer
             ], 405));
         }
 
-        $payload = $request->json()->all();
+        $payload = json_decode($request->getContent() ?: '', true);
+        if (! is_array($payload) || $payload === []) {
+            $payload = $request->json()->all();
+        }
         if ($payload === []) {
             $payload = $request->all();
         }
