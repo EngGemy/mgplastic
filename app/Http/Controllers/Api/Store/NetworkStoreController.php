@@ -110,31 +110,19 @@ class NetworkStoreController extends Controller
      * GET /api/v1/network-stores
      * GET /api/v1/vendors  (alias)
      *
-     * Public directory of approved + active network vendors (wholesale + retail).
-     * Query: role, city_id, country_id, q/search, per_page, page
+     * Public directory for plumbers: approved + active retail traders only.
+     * Plumbers order from retail traders — wholesale distributors are never listed here.
+     * Query: city_id, country_id, q/search, per_page, page
      */
     public function publicIndex(Request $request): JsonResponse
     {
         $perPage = max(1, min((int) $request->input('per_page', 15), 50));
 
         $query = User::query()
-            ->whereIn('role', ['wholesale_distributor', 'retail_trader'])
+            ->where('role', 'retail_trader')
             ->where('is_approved', true)
             ->where('is_active', true)
             ->with(['city', 'country', 'storeMedia', 'socialLinks']);
-
-        $role = strtolower(trim((string) $request->input('role', '')));
-        if ($role !== '') {
-            $role = match ($role) {
-                'wholesale', 'distributor', 'wholesale_distributor' => 'wholesale_distributor',
-                'retail', 'trader', 'retail_trader', 'sectoral' => 'retail_trader',
-                default => $role,
-            };
-
-            if (in_array($role, ['wholesale_distributor', 'retail_trader'], true)) {
-                $query->where('role', $role);
-            }
-        }
 
         if ($request->filled('city_id')) {
             $query->where('city_id', (int) $request->input('city_id'));
@@ -160,7 +148,7 @@ class NetworkStoreController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'قائمة المتاجر',
+            'message' => 'قائمة متاجر القطاعي',
             'data' => NetworkStoreResource::collection($stores->items()),
             'meta' => [
                 'current_page' => $stores->currentPage(),
@@ -203,10 +191,8 @@ class NetworkStoreController extends Controller
             return null;
         }
 
-        $query = User::query()->where(function ($q) {
-            $q->where('role', 'wholesale_distributor')
-                ->orWhere('role', 'retail_trader');
-        });
+        // Public vendor/store detail for plumbers: retail traders only.
+        $query = User::query()->where('role', 'retail_trader');
 
         if (ctype_digit($key)) {
             return (clone $query)->whereKey((int) $key)->first();

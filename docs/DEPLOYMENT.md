@@ -172,7 +172,22 @@ Limitations: you must run `composer install` and `npm run build` manually on fir
 
 ---
 
-## 8. Troubleshooting
+## 8. Admin AI Gateway (optional)
+
+After deploy, set on the server `.env`:
+
+```env
+AI_GATEWAY_TOKEN=long-random-secret
+AI_TOOLS_ALLOW_WRITE=false
+AI_GATEWAY_RATE_LIMIT=60
+```
+
+Then migrate (`ai_tool_calls` table) and wire ChatGPT using `docs/ai/openapi-admin-ai.yaml` + `docs/ai/custom-gpt-instructions.md`.  
+Details: [docs/ai/README.md](ai/README.md).
+
+---
+
+## 9. Troubleshooting
 
 | Issue | Fix |
 |-------|-----|

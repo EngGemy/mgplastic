@@ -1,0 +1,104 @@
+openapi: 3.1.0
+info:
+  title: MG Plastic Admin AI Gateway
+  version: 1.0.0
+  description: |
+    Tools for ChatGPT Custom GPT Actions. Authenticate with Bearer AI_GATEWAY_TOKEN.
+servers:
+  - url: https://mg-plastic.com/api/v1/ai
+    description: Production
+  - url: http://localhost/api/v1/ai
+    description: Local
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Gateway health
+      responses:
+        "200":
+          description: OK
+  /tools:
+    get:
+      operationId: listTools
+      summary: List available tools
+      responses:
+        "200":
+          description: Tool definitions
+  /call:
+    post:
+      operationId: callTool
+      summary: Call any tool by name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tool]
+              properties:
+                tool:
+                  type: string
+                  description: Tool name, e.g. dashboard_summary
+                arguments:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Tool result
+        "400":
+          description: Tool error
+  /tools/{tool}:
+    post:
+      operationId: callNamedTool
+      summary: Call a tool by path name (arguments as JSON body)
+      parameters:
+        - name: tool
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Tool result
+  /mcp:
+    post:
+      operationId: mcpJsonRpc
+      summary: MCP-compatible JSON-RPC (tools/list, tools/call)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jsonrpc:
+                  type: string
+                  example: "2.0"
+                id:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                method:
+                  type: string
+                  example: tools/list
+                params:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: JSON-RPC result
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token

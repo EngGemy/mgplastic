@@ -343,3 +343,6 @@ Route::middleware(['auth:sanctum'])->prefix('admin/ios')->group(function () {
 
 // ── Mobile API v1 (organized for iOS/Android) ─────────────────
 require __DIR__.'/api/mobile.php';
+
+// ── Admin AI Gateway (ChatGPT Actions + MCP HTTP) ─────────────
+require __DIR__.'/api/ai.php';

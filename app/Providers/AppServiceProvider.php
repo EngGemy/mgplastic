@@ -2,9 +2,13 @@
 
 namespace App\Providers;
 
+use App\Ai\AdminToolRegistry;
 use App\Models\InvoiceDistribution;
 use App\Policies\InvoiceDistributionPolicy;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use BezhanSalleh\FilamentLanguageSwitch\LanguageSwitch;
@@ -17,6 +21,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         require_once app_path('Helpers/ApiTextHelper.php');
+        $this->app->singleton(AdminToolRegistry::class);
     }
 
     /**
@@ -48,6 +53,12 @@ class AppServiceProvider extends ServiceProvider
             }
         });
         Schema::defaultStringLength(191);
+
+        RateLimiter::for('ai-gateway', function (Request $request) {
+            $perMinute = max(1, (int) config('ai.rate_limit_per_minute', 60));
+
+            return Limit::perMinute($perMinute)->by($request->ip() ?: 'ai-gateway');
+        });
 
         \App\Models\Product::observe(\App\Observers\ProductObserver::class);
         \App\Models\User::observe(\App\Observers\UserObserver::class);

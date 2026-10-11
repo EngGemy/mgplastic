@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToGroup('api', \App\Http\Middleware\ResolveLocale::class);
         $middleware->alias([
             'role.api' => \App\Http\Middleware\EnsureApiRole::class,
+            'ai.gateway' => \App\Http\Middleware\EnsureAiGatewayToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
