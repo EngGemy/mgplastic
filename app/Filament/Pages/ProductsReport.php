@@ -71,7 +71,7 @@ class ProductsReport extends Page implements HasTable
                 Tables\Columns\TextColumn::make('name')
                     ->label('المنتج')
                     ->state(fn (Product $p) => localized_name($p, 'name', "منتج #{$p->id}"))
-                    ->searchable(query: fn (Builder $q, string $s) => $q->search($s))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->search($search))
                     ->wrap()
                     ->weight('bold')
                     ->limit(45),

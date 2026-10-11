@@ -102,13 +102,12 @@ class ProductResource extends Resource
                         return $parentName ? "{$parentName} ← {$childName}" : $childName;
                     })
                     ->wrap()
-                    ->searchable(query: fn (Builder $q, string $s) => $q->search($s)),
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->search($search)),
 
                 Tables\Columns\TextColumn::make('classification')
                     ->label('التصنيف')
                     ->badge()
                     ->color('gray')
-                    ->searchable()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('points_per_unit')

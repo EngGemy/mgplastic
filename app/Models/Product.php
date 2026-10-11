@@ -130,6 +130,8 @@ class Product extends Model
                     ->orWhere('description', 'like', $like)
                     ->orWhere('usage', 'like', $like);
             })
+                ->orWhereHas('category.translations', fn (Builder $t) => $t->where('name', 'like', $like))
+                ->orWhereHas('category.parent.translations', fn (Builder $t) => $t->where('name', 'like', $like))
                 ->orWhere('classification', 'like', $like)
                 ->orWhere('notes', 'like', $like)
                 ->orWhere('id', is_numeric($term) ? (int) $term : 0);
