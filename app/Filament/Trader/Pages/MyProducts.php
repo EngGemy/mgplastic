@@ -3,6 +3,7 @@
 namespace App\Filament\Trader\Pages;
 
 use App\Filament\Concerns\ManagesMyStoreProducts;
+use App\Support\StorePermissions;
 use Filament\Pages\Page;
 
 class MyProducts extends Page
@@ -30,6 +31,8 @@ class MyProducts extends Page
     {
         $user = auth()->user();
 
-        return $user && $user->isRetailTrader();
+        return $user
+            && $user->isRetailTrader()
+            && $user->canStorePermission(StorePermissions::CATALOG_MANAGE);
     }
 }

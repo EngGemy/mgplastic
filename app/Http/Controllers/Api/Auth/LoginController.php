@@ -17,11 +17,27 @@ class LoginController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'phone'    => ['required','string'],
-            'password' => ['required','string'],
+            'login' => ['nullable', 'string'],
+            'phone' => ['nullable', 'string'],
+            'email' => ['nullable', 'string'],
+            'password' => ['required', 'string'],
         ]);
 
-        $user = User::where('phone', $request->phone)->first();
+        $identifier = (string) (
+            $request->input('login')
+            ?? $request->input('phone')
+            ?? $request->input('email')
+            ?? ''
+        );
+
+        if (trim($identifier) === '') {
+            return response()->json([
+                'status' => false,
+                'message' => 'login, phone, or email is required',
+            ], 422);
+        }
+
+        $user = User::findByLoginIdentifier($identifier);
 
         if (! $user || ! Hash::check($request->password, (string) $user->password)) {
             return response()->json([

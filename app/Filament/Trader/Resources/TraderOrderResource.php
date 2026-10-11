@@ -5,6 +5,7 @@ namespace App\Filament\Trader\Resources;
 use App\Filament\Resources\OrderResource;
 use App\Filament\Trader\Resources\TraderOrderResource\Pages;
 use App\Models\Order;
+use App\Support\StorePermissions;
 use Filament\Forms\Form;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
@@ -61,9 +62,25 @@ class TraderOrderResource extends Resource
         return 'success';
     }
 
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+
+        return $user
+            && $user->isRetailTrader()
+            && (
+                $user->canStorePermission(StorePermissions::ORDERS_MANAGE)
+                || $user->canStorePermission(StorePermissions::ORDERS_PLACE)
+            );
+    }
+
     public static function canCreate(): bool
     {
-        return true;
+        $user = auth()->user();
+
+        return $user
+            && $user->isRetailTrader()
+            && $user->canStorePermission(StorePermissions::ORDERS_PLACE);
     }
 
     public static function form(Form $form): Form

@@ -9,6 +9,7 @@ use App\Models\ProductCategory;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\RetailDistributionPosService;
+use App\Support\StorePermissions;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Collection;
@@ -29,6 +30,15 @@ class DistributorPos extends Page
     protected static ?int $navigationSort = 5;
 
     protected static string $view = 'filament.distributor.pages.distributor-pos';
+
+    public static function canAccess(): bool
+    {
+        $user = auth()->user();
+
+        return $user
+            && $user->isWholesaleDistributor()
+            && $user->canStorePermission(StorePermissions::POS_SELL);
+    }
 
     public ?int $retailTraderId = null;
 

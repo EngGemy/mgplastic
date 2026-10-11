@@ -5,6 +5,7 @@ namespace App\Filament\Distributor\Resources;
 use App\Filament\Distributor\Resources\DistributorOrderResource\Pages;
 use App\Filament\Resources\OrderResource;
 use App\Models\Order;
+use App\Support\StorePermissions;
 use Filament\Forms\Form;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
@@ -58,9 +59,25 @@ class DistributorOrderResource extends Resource
             ->with(['requester:id,name,brand_name,role', 'supplier:id,name,brand_name,role']);
     }
 
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+
+        return $user
+            && $user->isWholesaleDistributor()
+            && (
+                $user->canStorePermission(StorePermissions::ORDERS_MANAGE)
+                || $user->canStorePermission(StorePermissions::ORDERS_PLACE)
+            );
+    }
+
     public static function canCreate(): bool
     {
-        return true;
+        $user = auth()->user();
+
+        return $user
+            && $user->isWholesaleDistributor()
+            && $user->canStorePermission(StorePermissions::ORDERS_PLACE);
     }
 
     public static function form(Form $form): Form

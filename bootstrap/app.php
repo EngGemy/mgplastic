@@ -11,6 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api/',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function () {
+            require __DIR__.'/../routes/mcp.php';
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prependToGroup('api', \App\Http\Middleware\ResolveLocale::class);

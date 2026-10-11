@@ -39,12 +39,16 @@ class TraderMyStoreResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return true;
+        $user = auth()->user();
+
+        return $user
+            && $user->isRetailTrader()
+            && $user->canStorePermission(\App\Support\StorePermissions::STORE_PROFILE);
     }
 
     public static function canView(?Model $record): bool
     {
-        return (int) $record?->getKey() === (int) auth()->id();
+        return static::canViewAny() && (int) $record?->getKey() === (int) auth()->id();
     }
 
     public static function canEdit(?Model $record): bool

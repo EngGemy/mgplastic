@@ -53,7 +53,9 @@ class MyStoreResource extends Resource
     {
         $user ??= auth()->user();
 
-        return $user && ($user->isWholesaleDistributor() || $user->isRetailTrader());
+        return $user
+            && ($user->isWholesaleDistributor() || $user->isRetailTrader())
+            && $user->canStorePermission(\App\Support\StorePermissions::STORE_PROFILE);
     }
 
     public static function canViewAny(): bool

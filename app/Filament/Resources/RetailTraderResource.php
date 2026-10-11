@@ -131,6 +131,7 @@ class RetailTraderResource extends Resource
                                     ->dehydrated(fn ($state) => filled($state))
                                     ->minLength(6),
                                 ...self::storeStatusFields(),
+                                ...self::storePanelPermissionFields(),
                             ]),
                     ])
                     ->columnSpanFull()

@@ -39,7 +39,11 @@ class TraderDistributionResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return true;
+        $user = auth()->user();
+
+        return $user
+            && $user->isRetailTrader()
+            && $user->canStorePermission(\App\Support\StorePermissions::INVOICES_VIEW);
     }
 
     public static function canCreate(): bool

@@ -24,10 +24,10 @@ class TraderPanelProvider extends PanelProvider
         return $panel
             ->id('trader')
             ->path('trader')
-            ->brandName('MG Plastic')
-            ->brandLogo(asset('images/logo-light.png'))
-            ->brandLogoHeight('4rem')
-            ->login()
+            ->brandName(fn () => auth()->user()?->brand_name ?: auth()->user()?->name ?: 'MG Plastic')
+            ->brandLogo(fn () => auth()->user()?->storeBrandImageUrl() ?: asset('images/logo-light.png'))
+            ->brandLogoHeight('3.5rem')
+            ->login(\App\Filament\Auth\Login::class)
             ->colors([
                 'primary' => Color::hex('#059669'),
                 'success' => Color::hex('#059669'),

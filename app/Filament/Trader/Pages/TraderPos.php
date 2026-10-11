@@ -10,6 +10,7 @@ use App\Models\ProductCategory;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\PlumberDistributionPosService;
+use App\Support\StorePermissions;
 use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -31,6 +32,15 @@ class TraderPos extends Page
     protected static ?int $navigationSort = 5;
 
     protected static string $view = 'filament.trader.pages.trader-pos';
+
+    public static function canAccess(): bool
+    {
+        $user = auth()->user();
+
+        return $user
+            && $user->isRetailTrader()
+            && $user->canStorePermission(StorePermissions::POS_SELL);
+    }
 
     public ?int $plumberId = null;
 

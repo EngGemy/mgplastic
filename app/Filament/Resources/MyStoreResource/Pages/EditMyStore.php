@@ -40,4 +40,14 @@ class EditMyStore extends EditRecord
     {
         return 'تم حفظ بيانات متجرك';
     }
+
+    /** Keep brand_logo in sync when the store uploads profile_photo as its logo. */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        if (filled($data['profile_photo'] ?? null) && blank($this->record->brand_logo)) {
+            $data['brand_logo'] = $data['profile_photo'];
+        }
+
+        return $data;
+    }
 }

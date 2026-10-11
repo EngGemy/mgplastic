@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Concerns\HasStoreProfile;
 use App\Models\Concerns\HasWallet;
+use App\Support\StorePermissions;
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Models\Contracts\HasAvatar;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -17,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, HasAvatar
 {
     use HasApiTokens, HasFactory, HasStoreProfile, Notifiable, HasWallet;
     public const ROLE_PLUMBER = 'plumber';
@@ -147,11 +149,70 @@ class User extends Authenticatable implements FilamentUser
         if (! $this->profile_photo) {
             return null;
         }
-        // Will produce: https://your-app.com/storage/profile_photos/filename.jpg
+
         return Storage::disk('public')->url($this->profile_photo);
     }
 
+    /** Relative storage path for the store / brand image shown in panels. */
+    public function storeBrandImagePath(): ?string
+    {
+        return filled($this->brand_logo)
+            ? $this->brand_logo
+            : (filled($this->profile_photo) ? $this->profile_photo : null);
+    }
 
+    public function storeBrandImageUrl(): ?string
+    {
+        $path = $this->storeBrandImagePath();
+
+        return $path ? Storage::disk('public')->url($path) : null;
+    }
+
+    public function getFilamentAvatarUrl(): ?string
+    {
+        return $this->storeBrandImageUrl();
+    }
+
+    /**
+     * Resolve a user for login by email, phone, numeric id, or network_code.
+     */
+    public static function findByLoginIdentifier(string $identifier): ?self
+    {
+        $identifier = trim($identifier);
+
+        if ($identifier === '') {
+            return null;
+        }
+
+        if (ctype_digit($identifier)) {
+            $byId = static::query()->whereKey((int) $identifier)->first();
+            if ($byId) {
+                return $byId;
+            }
+        }
+
+        $byCode = static::query()
+            ->whereNotNull('network_code')
+            ->where('network_code', $identifier)
+            ->first();
+        if ($byCode) {
+            return $byCode;
+        }
+
+        if (str_contains($identifier, '@')) {
+            return static::query()->where('email', $identifier)->first();
+        }
+
+        $digits = preg_replace('/\D+/', '', $identifier) ?: $identifier;
+
+        return static::query()
+            ->where(function ($q) use ($identifier, $digits) {
+                $q->where('phone', $identifier)
+                    ->orWhere('phone', $digits)
+                    ->orWhere('phone', ltrim($identifier, '+'));
+            })
+            ->first();
+    }
 
     public function parentDistributor(): BelongsTo
     {
@@ -294,8 +355,10 @@ class User extends Authenticatable implements FilamentUser
     {
         return match ($panel->getId()) {
             'admin' => $this->isAdminUser(),
-            'distributor' => $this->isWholesaleDistributor(),
-            'trader' => $this->isRetailTrader(),
+            'distributor' => $this->isWholesaleDistributor()
+                && $this->canStorePermission(StorePermissions::PANEL_ACCESS),
+            'trader' => $this->isRetailTrader()
+                && $this->canStorePermission(StorePermissions::PANEL_ACCESS),
             default => false,
         };
     }
@@ -307,6 +370,21 @@ class User extends Authenticatable implements FilamentUser
         }
 
         if ($this->role !== 'admin') {
+            return false;
+        }
+
+        $permissions = $this->permissions;
+
+        if ($permissions === null || $permissions === []) {
+            return true;
+        }
+
+        return in_array($permission, $permissions, true);
+    }
+
+    public function canStorePermission(string $permission): bool
+    {
+        if (! $this->isNetworkStore()) {
             return false;
         }
 

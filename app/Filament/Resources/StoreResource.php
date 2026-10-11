@@ -99,6 +99,8 @@ class StoreResource extends Resource
             Forms\Components\Section::make('⚙️ الحالة')
                 ->schema(self::storeStatusFields())
                 ->columns(3),
+
+            ...self::storePanelPermissionFields(),
         ]);
     }
 

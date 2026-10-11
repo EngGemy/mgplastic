@@ -12,6 +12,6 @@ Route::middleware(['ai.gateway', 'throttle:ai-gateway'])
         Route::post('call', [AiGatewayController::class, 'call']);
         Route::post('tools/{tool}', [AiGatewayController::class, 'callNamed']);
 
-        // MCP JSON-RPC adapter
-        Route::post('mcp', [AiMcpController::class, 'handle']);
+        // Legacy MCP path (prefer https://your-domain/mcp)
+        Route::match(['get', 'post', 'options'], 'mcp', [AiMcpController::class, 'handle']);
     });

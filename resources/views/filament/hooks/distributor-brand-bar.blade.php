@@ -9,7 +9,7 @@
         } catch (\Throwable) {}
     }
 
-    $hasLogo = filled($user->brand_logo);
+    $storeImageUrl = $user->storeBrandImageUrl();
     $initials = collect(explode(' ', $user->brand_name ?? $user->name))
         ->take(2)->map(fn($w) => mb_substr($w, 0, 1))->implode('');
     $roleLabel = match ($user->role) {
@@ -46,13 +46,13 @@
     <span style="width:1px;background:rgba(255,255,255,0.3);align-self:stretch;"></span>
 
     <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-        @if($hasLogo)
-            <img src="{{ \Storage::disk('public')->url($user->brand_logo) }}"
-                 style="width:28px;height:28px;border-radius:6px;object-fit:cover;border:1.5px solid rgba(255,255,255,0.4);"
-                 alt="{{ $user->brand_name }}">
+        @if($storeImageUrl)
+            <img src="{{ $storeImageUrl }}"
+                 style="width:32px;height:32px;border-radius:8px;object-fit:cover;border:1.5px solid rgba(255,255,255,0.4);"
+                 alt="{{ $user->brand_name ?? $user->name }}">
         @else
             <div style="
-                width:28px;height:28px;border-radius:6px;
+                width:32px;height:32px;border-radius:8px;
                 background:rgba(255,255,255,0.2);
                 border:1.5px solid rgba(255,255,255,0.4);
                 display:flex;align-items:center;justify-content:center;

@@ -1,8 +1,20 @@
 # MG Admin AI Gateway
 
-Laravel-hosted tools for ChatGPT Custom GPT Actions and MCP HTTP clients.
+Laravel-hosted tools for **remote MCP** (recommended) and ChatGPT Custom GPT Actions.
 
-## Endpoints
+## أقوى طريقة: Remote MCP (لينك واحد)
+
+بعد الرفع حط بس:
+
+```
+https://mg-plastic.com/mcp
+```
+
+مع `Authorization: Bearer <AI_GATEWAY_TOKEN>`
+
+تفاصيل كاملة: [mcp-setup.md](mcp-setup.md)
+
+## REST / Actions (اختياري)
 Base: `/api/v1/ai`
 
 | Method | Path | Purpose |
@@ -11,7 +23,7 @@ Base: `/api/v1/ai`
 | GET | `/tools` | List tools |
 | POST | `/call` | `{ "tool": "...", "arguments": {} }` |
 | POST | `/tools/{tool}` | Call tool; body = arguments |
-| POST | `/mcp` | JSON-RPC MCP (`tools/list`, `tools/call`) |
+| GET/POST | `/mcp` | Legacy MCP path (same server as `/mcp`) |
 
 Auth header: `Authorization: Bearer <AI_GATEWAY_TOKEN>`
 
@@ -23,11 +35,11 @@ AI_GATEWAY_RATE_LIMIT=60
 ```
 
 ## Deploy checklist
-1. Deploy code (GitHub Actions).
+1. Deploy code.
 2. `php artisan migrate` (creates `ai_tool_calls`).
 3. Set `AI_GATEWAY_TOKEN` on the server.
-4. Import `docs/ai/openapi-admin-ai.yaml` into a Custom GPT.
-5. Paste instructions from `docs/ai/custom-gpt-instructions.md`.
+4. **MCP:** paste `https://mg-plastic.com/mcp` + Bearer token (see [mcp-setup.md](mcp-setup.md)).
+5. **Optional Actions:** import `openapi-admin-ai.yaml` + instructions from `custom-gpt-instructions.md`.
 6. Enable writes only when ready: `AI_TOOLS_ALLOW_WRITE=true`.
 
 ## Knowledge

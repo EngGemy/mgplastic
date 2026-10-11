@@ -5,6 +5,7 @@ namespace App\Filament\Concerns;
 use App\Models\City;
 use App\Models\Country;
 use App\Models\User;
+use App\Support\StorePermissions;
 use Filament\Forms;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Get;
@@ -327,6 +328,26 @@ trait HasStoreLocationForm
                         ->imageResizeTargetWidth('400')
                         ->imageResizeTargetHeight('400')
                         ->helperText('مربع 400×400 — PNG مفضل'),
+                ]),
+        ];
+    }
+
+    /** Admin-only: toggle what a network store can do in its control panel. */
+    protected static function storePanelPermissionFields(): array
+    {
+        return [
+            Forms\Components\Section::make('صلاحيات لوحة التحكم')
+                ->description('اتركها فارغة = صلاحيات كاملة (بيع + طلبيات + متجر). ألغِ تحديد أي صلاحية لمنعها.')
+                ->icon('heroicon-o-key')
+                ->collapsed()
+                ->schema([
+                    Forms\Components\CheckboxList::make('permissions')
+                        ->label('')
+                        ->options(StorePermissions::labels())
+                        ->columns(2)
+                        ->bulkToggleable()
+                        ->gridDirection('row')
+                        ->columnSpanFull(),
                 ]),
         ];
     }

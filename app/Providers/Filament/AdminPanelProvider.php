@@ -31,7 +31,7 @@ class AdminPanelProvider extends PanelProvider
             ->brandName('MG Plastic')
             ->brandLogo(asset('images/logo-light.png'))
             ->brandLogoHeight('4.5rem')
-            ->login()
+            ->login(\App\Filament\Auth\Login::class)
             ->colors([
                 'primary' => Color::hex('#1a56db'),
                 'success' => Color::hex('#059669'),
