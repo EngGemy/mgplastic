@@ -13,7 +13,7 @@
             $parent = $cat->parent
                 ? (localized_name($cat->parent, 'name').' ← ')
                 : '';
-            $categoryLabel = $parent.localized_name($cat, 'name');
+            $categoryLabel = '#'.$cat->id.' '.$parent.localized_name($cat, 'name');
         }
     }
 
@@ -38,7 +38,7 @@
         @endif
         <div class="prod-create-summary-info">
             <p><span>الاسم:</span> <strong>{{ $name }}</strong></p>
-            <p><span>الفئة:</span> {{ $categoryLabel }}</p>
+            <p><span>التصنيف:</span> {{ $categoryLabel }}</p>
             <p><span>النقاط/وحدة:</span> <strong class="text-amber-600">{{ number_format($points, 2) }}</strong> نقطة</p>
             <p class="prod-create-summary-hint">اضغط «حفظ المنتج» لإضافته إلى النظام والتقرير.</p>
             @php

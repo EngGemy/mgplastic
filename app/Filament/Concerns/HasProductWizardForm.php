@@ -8,6 +8,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\Rule;
 
 trait HasProductWizardForm
@@ -37,27 +38,19 @@ trait HasProductWizardForm
 
     protected static function parentCategoryOptions(): array
     {
-        $locale = app()->getLocale();
-
         return ProductCategory::query()
             ->whereNull('parent_id')
             ->with('translations')
             ->get()
-            ->mapWithKeys(function ($c) use ($locale) {
-                $name = $c->translateOrDefault($locale)?->name
-                    ?? $c->translate('en')?->name
-                    ?? "فئة #{$c->id}";
-
-                return [$c->id => $name];
-            })
-            ->sortBy(fn ($name) => mb_strtolower($name))
+            ->mapWithKeys(fn (ProductCategory $category) => [
+                $category->id => static::categoryOptionHtml($category),
+            ])
+            ->sortBy(fn ($name) => mb_strtolower(trim(strip_tags($name))))
             ->toArray();
     }
 
     protected static function childCategoryOptions(?int $parentId): array
     {
-        $locale = app()->getLocale();
-
         $query = ProductCategory::query()->with('translations');
 
         if ($parentId) {
@@ -67,15 +60,24 @@ trait HasProductWizardForm
         }
 
         return $query->get()
-            ->mapWithKeys(function ($c) use ($locale) {
-                $name = $c->translateOrDefault($locale)?->name
-                    ?? $c->translate('en')?->name
-                    ?? "فئة #{$c->id}";
-
-                return [$c->id => $name];
-            })
-            ->sortBy(fn ($name) => mb_strtolower($name))
+            ->mapWithKeys(fn (ProductCategory $category) => [
+                $category->id => static::categoryOptionHtml($category),
+            ])
+            ->sortBy(fn ($name) => mb_strtolower(trim(strip_tags($name))))
             ->toArray();
+    }
+
+    protected static function categoryOptionHtml(ProductCategory $category): string
+    {
+        $name = localized_name($category, 'name', "تصنيف #{$category->id}");
+        $thumb = '<span class="prod-cat-option-badge">#'.e((string) $category->id).'</span>';
+        $image = $category->image;
+
+        if (is_string($image) && $image !== '' && Storage::disk('public')->exists($image)) {
+            $thumb = '<img src="'.e(Storage::disk('public')->url($image)).'" alt="" class="prod-cat-option-img">';
+        }
+
+        return '<span class="prod-cat-option">'.$thumb.'<span><b>#'.$category->id.'</b> '.e($name).'</span></span>';
     }
 
     protected static function productCategoryFields(): array
@@ -85,6 +87,7 @@ trait HasProductWizardForm
                 Forms\Components\Select::make('parent_category_id')
                     ->label('الفئة الرئيسية')
                     ->helperText('اختر القسم العام أولاً')
+                    ->allowHtml()
                     ->native(false)
                     ->searchable()
                     ->preload()
@@ -98,8 +101,9 @@ trait HasProductWizardForm
                     ->afterStateUpdated(fn ($state, callable $set) => $set('product_category_id', null)),
 
                 Forms\Components\Select::make('product_category_id')
-                    ->label('الفئة الفرعية')
-                    ->helperText('التصنيف الدقيق للمنتج')
+                    ->label('التصنيف')
+                    ->helperText('يظهر رقم التصنيف وصورته. استخدم نفس الرقم في شيت المنتجات.')
+                    ->allowHtml()
                     ->native(false)
                     ->searchable()
                     ->preload()
@@ -129,6 +133,14 @@ trait HasProductWizardForm
                     ->openable()
                     ->downloadable(),
             ]),
+
+            Forms\Components\Placeholder::make('selected_category_card')
+                ->hiddenLabel()
+                ->content(fn (Get $get) => new HtmlString(
+                    view('filament.forms.product-category-card', [
+                        'categoryId' => $get('product_category_id'),
+                    ])->render()
+                )),
         ];
     }
 
@@ -206,7 +218,7 @@ trait HasProductWizardForm
 
             Forms\Components\Grid::make(2)->schema([
                 Forms\Components\TextInput::make('classification')
-                    ->label('التصنيف')
+                    ->label('الدرجة')
                     ->maxLength(50)
                     ->datalist(['standard', 'premium', 'economy'])
                     ->placeholder('standard / premium / economy')
@@ -313,7 +325,7 @@ trait HasProductWizardForm
 
                             $parent = $cat->parent ? localized_name($cat->parent, 'name').' ← ' : '';
 
-                            return $parent.localized_name($cat, 'name');
+                            return '#'.$cat->id.' '.$parent.localized_name($cat, 'name');
                         }),
 
                     Forms\Components\Placeholder::make('preview_points')
@@ -363,11 +375,11 @@ trait HasProductWizardForm
         return $form->schema([
             Forms\Components\Wizard::make([
                 Forms\Components\Wizard\Step::make('التصنيف')
-                    ->description('الفئة والصورة الرئيسية')
+                    ->description('رقم التصنيف وصورته')
                     ->icon('heroicon-o-tag')
                     ->schema([
                         Forms\Components\Placeholder::make('step1_help')
-                            ->content('① اختر الفئة الرئيسية ثم الفرعية — ② ارفع صورة واضحة للمنتج.')
+                            ->content('① اختر الفئة ثم التصنيف — يظهر رقمه وصورته. ② ارفع صورة المنتج. نفس رقم التصنيف يُستخدم في شيت المنتجات.')
                             ->columnSpanFull(),
                         ...static::productCategoryFields(),
                     ]),
@@ -378,7 +390,7 @@ trait HasProductWizardForm
                     ->schema(static::productBilingualContentFields()),
 
                 Forms\Components\Wizard\Step::make('المواصفات')
-                    ->description('الأبعاد والتصنيف (للمواسير والأنابيب)')
+                    ->description('الأبعاد والدرجة')
                     ->icon('heroicon-o-cube')
                     ->schema(static::productSpecsFields()),
 

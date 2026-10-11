@@ -928,6 +928,87 @@
     font-weight: 600;
 }
 
+.prod-cat-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.prod-cat-option-img {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex: none;
+}
+.prod-cat-option-badge,
+.prod-cat-card-fallback {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: #1a56db;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+}
+.prod-cat-card {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-top: 0.85rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid #dbeafe;
+    border-radius: 14px;
+    background: #f8fafc;
+    font-family: 'Cairo', sans-serif;
+}
+.prod-cat-card--empty {
+    color: #6b7280;
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+.prod-cat-card img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+}
+.prod-cat-card-fallback {
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    font-size: 1.1rem;
+}
+.prod-cat-card-num {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #1a56db;
+    line-height: 1;
+}
+.prod-cat-card-name {
+    font-weight: 700;
+    margin-top: 0.25rem;
+}
+.prod-cat-card-hint {
+    font-size: 0.78rem;
+    color: #6b7280;
+    margin-top: 0.2rem;
+}
+.dark .prod-cat-card {
+    background: rgb(39 39 42);
+    border-color: rgb(63 63 70);
+    color: #f4f4f5;
+}
+.dark .prod-cat-card-hint,
+.dark .prod-cat-card--empty {
+    color: #a1a1aa;
+}
+
 /* ── تقرير المنتجات والنقاط ── */
 .prod-report-wrap { font-family: 'Cairo', sans-serif; margin-bottom: 1.25rem; }
 .prod-report-stats {

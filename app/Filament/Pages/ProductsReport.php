@@ -8,8 +8,8 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use Filament\Pages\Page;
 use Filament\Tables;
-use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -158,7 +158,7 @@ class ProductsReport extends Page implements HasTable
                     }),
 
                 Tables\Columns\TextColumn::make('classification')
-                    ->label('التصنيف')
+                    ->label('الدرجة')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('updated_at')

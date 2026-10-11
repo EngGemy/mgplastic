@@ -9,15 +9,15 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\SystemLabel;
 use Filament\Forms\Form;
+use Filament\Infolists\Components as Info;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Filament\Infolists\Infolist;
-use Filament\Infolists\Components as Info;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class ProductResource extends Resource
 {
@@ -25,13 +25,27 @@ class ProductResource extends Resource
     use HasProductWizardForm;
 
     protected static ?string $model = Product::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-cube';
+
     protected static ?string $navigationGroup = 'المنتجات';
+
     protected static ?int $navigationSort = 10;
 
-    public static function getNavigationLabel(): string { return SystemLabel::get('products', 'المنتجات'); }
-    public static function getPluralModelLabel(): string { return SystemLabel::get('products', 'المنتجات'); }
-    public static function getModelLabel(): string { return SystemLabel::get('products', 'منتج'); }
+    public static function getNavigationLabel(): string
+    {
+        return SystemLabel::get('products', 'المنتجات');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return SystemLabel::get('products', 'المنتجات');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return SystemLabel::get('products', 'منتج');
+    }
 
     public static function getNavigationGroup(): ?string
     {
@@ -67,7 +81,7 @@ class ProductResource extends Resource
             ->filtersFormColumns(4)
             ->searchPlaceholder('ابحث بالاسم / الوصف / التصنيف / رقم المنتج…')
             ->emptyStateHeading('لا توجد منتجات')
-            ->emptyStateDescription('الكتالوج فاضي حالياً — اضغط «إضافة منتج» لبدء الإضافة.')
+            ->emptyStateDescription('الكتالوج فاضي حالياً — أضف منتجاً أو ارفع شيت المنتجات دفعة واحدة.')
             ->emptyStateIcon('heroicon-o-cube')
             ->emptyStateActions([
                 Tables\Actions\CreateAction::make()
@@ -77,6 +91,7 @@ class ProductResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('main_image')
                     ->label('الصورة')
+                    ->getStateUsing(fn (Product $record) => $record->main_image ?: $record->catalog_image_path)
                     ->disk('public')
                     ->square()
                     ->size(52),
@@ -99,13 +114,13 @@ class ProductResource extends Resource
                         $childName = $cat->translateOrDefault($locale)?->name
                             ?? $cat->translate('en')?->name;
 
-                        return $parentName ? "{$parentName} ← {$childName}" : $childName;
+                        return $parentName ? "#{$cat->id} · {$parentName} ← {$childName}" : "#{$cat->id} · {$childName}";
                     })
                     ->wrap()
                     ->searchable(query: fn (Builder $query, string $search): Builder => $query->search($search)),
 
                 Tables\Columns\TextColumn::make('classification')
-                    ->label('التصنيف')
+                    ->label('الدرجة')
                     ->badge()
                     ->color('gray')
                     ->toggleable(),
@@ -211,7 +226,7 @@ class ProductResource extends Resource
                     ->preload(),
 
                 Tables\Filters\SelectFilter::make('classification')
-                    ->label('التصنيف')
+                    ->label('الدرجة')
                     ->options(function () {
                         try {
                             return Product::query()
@@ -358,7 +373,7 @@ class ProductResource extends Resource
                     Info\Grid::make(3)->schema([
                         Info\TextEntry::make('category_path')
                             ->label('الفئة')
-                            ->state(function (Product $record) use ($locale) {
+                            ->state(function (Product $record) {
                                 $cat = $record->category?->loadMissing('parent', 'translations', 'parent.translations');
                                 if (! $cat) {
                                     return '—';
@@ -366,13 +381,13 @@ class ProductResource extends Resource
                                 $parentName = $cat->parent ? localized_name($cat->parent, 'name') : null;
                                 $childName = localized_name($cat, 'name');
 
-                                return $parentName ? "{$parentName} ← {$childName}" : $childName;
+                                return $parentName ? "#{$cat->id} · {$parentName} ← {$childName}" : "#{$cat->id} · {$childName}";
                             })
                             ->badge()
                             ->color('info'),
 
                         Info\TextEntry::make('classification')
-                            ->label('التصنيف')
+                            ->label('الدرجة')
                             ->badge()
                             ->color('gray')
                             ->default('—'),
@@ -482,14 +497,13 @@ class ProductResource extends Resource
         return $name ?: "Product #{$record->getKey()}";
     }
 
-
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListProducts::route('/'),
+            'index' => Pages\ListProducts::route('/'),
             'create' => Pages\CreateProduct::route('/create'),
-            'view'   => Pages\ViewProduct::route('/{record}'),
-            'edit'   => Pages\EditProduct::route('/{record}/edit'),
+            'view' => Pages\ViewProduct::route('/{record}'),
+            'edit' => Pages\EditProduct::route('/{record}/edit'),
         ];
     }
 }
