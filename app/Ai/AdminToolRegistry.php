@@ -10,8 +10,18 @@ use App\Ai\Tools\FaqSearchTool;
 use App\Ai\Tools\GetAdminPermissionsTool;
 use App\Ai\Tools\GetDistributionTool;
 use App\Ai\Tools\GetInvoiceTool;
+use App\Ai\Tools\GetProductTool;
+use App\Ai\Tools\GetStoreTool;
 use App\Ai\Tools\GetUserTool;
+use App\Ai\Tools\ListOrdersTool;
 use App\Ai\Tools\ListPendingApprovalsTool;
+use App\Ai\Tools\ListPlumbersTool;
+use App\Ai\Tools\ListPointBalancesTool;
+use App\Ai\Tools\ListProductsTool;
+use App\Ai\Tools\ListRecentActivityTool;
+use App\Ai\Tools\ListRecentDistributionsTool;
+use App\Ai\Tools\ListStoresTool;
+use App\Ai\Tools\ListWalletTransactionsTool;
 use App\Ai\Tools\ListWithdrawalRequestsTool;
 use App\Ai\Tools\ProductCatalogSummaryTool;
 use App\Ai\Tools\ReportInvoicesTool;
@@ -53,6 +63,16 @@ class AdminToolRegistry
                 new ListPendingApprovalsTool,
                 new ListWithdrawalRequestsTool,
                 new ProductCatalogSummaryTool,
+                new ListProductsTool,
+                new GetProductTool,
+                new ListStoresTool,
+                new GetStoreTool,
+                new ListPlumbersTool,
+                new ListPointBalancesTool,
+                new ListWalletTransactionsTool,
+                new ListRecentDistributionsTool,
+                new ListOrdersTool,
+                new ListRecentActivityTool,
                 new ReportUsersTool,
                 new ReportPointsTool,
                 new ReportInvoicesTool,

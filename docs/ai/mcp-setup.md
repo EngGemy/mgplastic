@@ -84,7 +84,21 @@ curl -s -X POST https://mg-plastic.com/mcp \
 }
 ```
 
-## الأدوات
+## الأدوات (أهمها)
 
-كل أدوات الأدمن من `AdminToolRegistry` (مستخدمين، فواتير، توزيع، موافقات، تقارير…).  
+| أداة | تستخدمها لـ |
+|------|-------------|
+| `list_products` / `get_product` | آخر منتج / أسماء المنتجات |
+| `list_stores` / `get_store` | متاجر جملة/قطاعي + مخزون |
+| `list_plumbers` | السباكين + نقاطهم |
+| `list_point_balances` | أعلى أرصدة نقاط |
+| `list_wallet_transactions` | آخر حركة نقاط |
+| `list_recent_distributions` | آخر توزيعات + أسماء المنتجات الموزعة |
+| `list_orders` | آخر الطلبيات |
+| `list_recent_activity` | فيد موحّد لآخر التحديثات |
+| `dashboard_summary` / `report_*` | ملخصات وتقارير |
+| `search_users` / `get_user` / `list_pending_approvals` | مستخدمين وموافقات |
+| `search_invoices` / `get_invoice` | فواتير |
+| `list_withdrawal_requests` | طلبات السحب |
+
 الكتابة (`approve_user_or_store` …) تشتغل فقط إذا `AI_TOOLS_ALLOW_WRITE=true`.
