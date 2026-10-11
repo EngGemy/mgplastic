@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Astrotomic\Translatable\Translatable;
@@ -105,6 +106,34 @@ class Product extends Model
     public function sizesEu(): BelongsToMany
     {
         return $this->sizes()->whereHas('system', fn ($q) => $q->where('code', 'eu'));
+    }
+
+    // --- Scopes ---
+
+    /**
+     * Safe product search across translations + real columns.
+     * Avoids Filament/API errors from querying a non-existent products.name column.
+     */
+    public function scopeSearch(Builder $query, ?string $term): Builder
+    {
+        $term = trim((string) $term);
+
+        if ($term === '') {
+            return $query;
+        }
+
+        $like = '%'.$term.'%';
+
+        return $query->where(function (Builder $q) use ($like, $term) {
+            $q->whereHas('translations', function (Builder $t) use ($like) {
+                $t->where('name', 'like', $like)
+                    ->orWhere('description', 'like', $like)
+                    ->orWhere('usage', 'like', $like);
+            })
+                ->orWhere('classification', 'like', $like)
+                ->orWhere('notes', 'like', $like)
+                ->orWhere('id', is_numeric($term) ? (int) $term : 0);
+        });
     }
 
     // --- Accessors & Helpers ---

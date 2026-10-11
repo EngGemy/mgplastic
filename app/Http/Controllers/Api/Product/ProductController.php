@@ -149,11 +149,8 @@ class ProductController extends Controller
         if ($request->filled('color_id')) {
             $query->where('product_color_id', (int) $request->query('color_id'));
         }
-        if ($request->filled('search')) {
-            $search = trim((string) $request->query('search'));
-            if ($search !== '') {
-                $query->whereTranslationLike('name', '%'.$search.'%');
-            }
+        if ($request->filled('search') || $request->filled('q')) {
+            $query->search((string) ($request->query('search') ?? $request->query('q')));
         }
 
         $perPage = (int) $request->query('per_page', 0);

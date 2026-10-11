@@ -31,10 +31,7 @@ class ProductCatalogController extends Controller
         }
 
         if ($request->filled('q') || $request->filled('search')) {
-            $term = trim((string) ($request->query('q') ?? $request->query('search')));
-            if ($term !== '') {
-                $query->whereTranslationLike('name', '%'.$term.'%');
-            }
+            $query->search((string) ($request->query('q') ?? $request->query('search')));
         }
 
         // Optional: ?has_points=1|0 — default returns ALL MG products (with or without points)

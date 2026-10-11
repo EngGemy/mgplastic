@@ -11,6 +11,7 @@ use App\Models\SystemLabel;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Infolists\Infolist;
@@ -58,65 +59,61 @@ class ProductResource extends Resource
         $locale = app()->getLocale();
 
         return $table
+            ->striped()
+            ->paginated([12, 24, 48, 100])
+            ->defaultPaginationPageOption(24)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->deferFilters()
+            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            ->filtersFormColumns(4)
+            ->searchPlaceholder('ابحث بالاسم / الوصف / التصنيف / رقم المنتج…')
+            ->emptyStateHeading('لا توجد منتجات')
+            ->emptyStateDescription('جرّب تغيير كلمة البحث أو مسح الفلاتر، أو أضف منتجاً جديداً.')
             ->columns([
-                Tables\Columns\ImageColumn::make('main_image')->label(__('Image'))->disk('public')->circular()->size(56),
+                Tables\Columns\ImageColumn::make('main_image')
+                    ->label('الصورة')
+                    ->disk('public')
+                    ->square()
+                    ->size(52)
+                    ->defaultImageUrl(asset('images/logo-light.png')),
 
-                Tables\Columns\TextColumn::make('name')
-                    ->label(__('Name'))
-                    ->state(fn (Product $record) => optional($record->translate($locale) ?: $record->translate('en'))?->name)
-                    ->wrap()
-                    ->limit(50)
-                    ->searchable(query: fn (Builder $q, string $s) => $q->whereTranslationLike('name', "%{$s}%")),
-
-                Tables\Columns\TextColumn::make('category_path')
-                    ->label(__('Category'))
-                    ->state(function (Product $record) use ($locale) {
-                        $cat = $record->category?->loadMissing('parent','translations','parent.translations');
-                        if (!$cat) return '—';
-                        $parentName = $cat->parent?->translateOrDefault($locale)?->name ?? $cat->parent?->translate('en')?->name;
-                        $childName  = $cat->translateOrDefault($locale)?->name ?? $cat->translate('en')?->name;
-                        return $parentName ? "{$parentName} → {$childName}" : $childName;
-                    })
-                    ->badge()
-                    ->color('info'),
-
-                // Catalog presence badges
-                Tables\Columns\IconColumn::make('has_catalog_image')
-                    ->label(__('Cat. Image'))
-                    ->boolean()
-                    ->trueIcon('heroicon-o-photo')
-                    ->falseIcon('heroicon-o-x-circle')
-                    ->toggleable(),
-
-                Tables\Columns\IconColumn::make('has_catalog_pdf')
-                    ->label(__('Cat. PDF'))
-                    ->boolean()
-                    ->trueIcon('heroicon-o-document-text')
-                    ->falseIcon('heroicon-o-x-circle')
-                    ->toggleable(),
-
-                // Quick link to open PDF if exists
-                Tables\Columns\TextColumn::make('catalog_pdf_url')
-                    ->label(__('Open PDF'))
-                    ->formatStateUsing(fn ($state) => $state ? __('View') : '—')
-                    ->url(fn (Product $record) => $record->catalog_pdf_url ?: null, true)
-                    ->openUrlInNewTab()
-                    ->badge()
-                    ->color('gray')
-                    ->toggleable(),
-
-                Tables\Columns\TextColumn::make('classification')->label(__('Class'))->badge()->toggleable(),
-                Tables\Columns\TextColumn::make('length_m')->label(__('L (m)'))->numeric()->sortable(),
-                Tables\Columns\TextColumn::make('thickness_mm')->label(__('T (mm)'))->numeric()->sortable(),
-                Tables\Columns\TextColumn::make('volume_ml')->label(__('V (ml)'))->numeric()->sortable(),
-                Tables\Columns\TextColumn::make('images_count')->counts('images')->label(__('Photos'))->badge()->color('warning')->sortable(),
-
-                Tables\Columns\TextColumn::make('points_per_unit')
-                    ->label('النقاط/وحدة')
-                    ->badge()
-                    ->color('success')
+                Tables\Columns\TextColumn::make('id')
+                    ->label('#')
                     ->sortable()
                     ->toggleable(),
+
+                Tables\Columns\TextColumn::make('name')
+                    ->label('المنتج')
+                    ->state(fn (Product $record) => optional($record->translate($locale) ?: $record->translate('en') ?: $record->translate('ar'))?->name ?: 'منتج #'.$record->id)
+                    ->description(function (Product $record) use ($locale) {
+                        $cat = $record->category;
+                        if (! $cat) {
+                            return null;
+                        }
+                        $parentName = $cat->parent?->translateOrDefault($locale)?->name
+                            ?? $cat->parent?->translate('en')?->name;
+                        $childName = $cat->translateOrDefault($locale)?->name
+                            ?? $cat->translate('en')?->name;
+
+                        return $parentName ? "{$parentName} ← {$childName}" : $childName;
+                    })
+                    ->wrap()
+                    ->searchable(query: fn (Builder $q, string $s) => $q->search($s)),
+
+                Tables\Columns\TextColumn::make('classification')
+                    ->label('التصنيف')
+                    ->badge()
+                    ->color('gray')
+                    ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('points_per_unit')
+                    ->label('النقاط')
+                    ->badge()
+                    ->color(fn ($state) => ((float) $state) > 0 ? 'success' : 'gray')
+                    ->sortable()
+                    ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('point_conversion')
                     ->label('تحويل النقاط')
@@ -125,76 +122,226 @@ class ProductResource extends Resource
                     ->color('warning')
                     ->toggleable(),
 
+                Tables\Columns\IconColumn::make('catalog_image_path')
+                    ->label('دليل صورة')
+                    ->boolean()
+                    ->getStateUsing(fn (Product $p) => filled($p->catalog_image_path))
+                    ->trueIcon('heroicon-o-photo')
+                    ->falseIcon('heroicon-o-minus-circle')
+                    ->alignCenter()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('catalog_pdf_url')
+                    ->label('PDF')
+                    ->formatStateUsing(fn ($state) => $state ? 'فتح' : '—')
+                    ->url(fn (Product $record) => $record->catalog_pdf_url ?: null, true)
+                    ->openUrlInNewTab()
+                    ->badge()
+                    ->color(fn (Product $record) => $record->catalog_pdf_url ? 'info' : 'gray')
+                    ->alignCenter()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('images_count')
+                    ->counts('images')
+                    ->label('صور')
+                    ->badge()
+                    ->color('warning')
+                    ->sortable()
+                    ->alignCenter()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('length_m')
+                    ->label('طول (م)')
+                    ->numeric(decimalPlaces: 2)
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('thickness_mm')
+                    ->label('سُمك (مم)')
+                    ->numeric(decimalPlaces: 2)
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('volume_ml')
+                    ->label('حجم (مل)')
+                    ->numeric()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('unit_point_value')
-                    ->label('قيمة الوحدة (د.ل)')
+                    ->label('قيمة الوحدة')
                     ->state(fn (Product $p) => number_format($p->pointMonetaryValuePerUnit(), 2).' د.ل')
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('updated_at')->label(__('Updated'))->since()->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('updated_at')
+                    ->label('آخر تحديث')
+                    ->since()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('parent_category')
-                    ->label(__('Parent'))
-                    ->options(function () use ($locale) {
-                        return ProductCategory::query()
-                            ->whereNull('parent_id')
-                            ->with('translations')
-                            ->get()
-                            ->mapWithKeys(function ($c) use ($locale) {
-                                $name = $c->translateOrDefault($locale)?->name
-                                    ?? $c->translate('en')?->name
-                                    ?? "Category #{$c->id}";
-                                return [$c->id => $name];
-                            })
-                            ->sortBy(fn ($name) => mb_strtolower($name))
-                            ->toArray();
-                    })
+                    ->label('الفئة الرئيسية')
+                    ->options(fn () => static::categoryOptions($locale, parentsOnly: true))
+                    ->searchable()
+                    ->preload()
                     ->indicateUsing(function ($state) use ($locale) {
-                        if (empty($state)) return [];
-                        $ids = is_array($state) ? $state : [$state];
-                        $labels = ProductCategory::query()
-                            ->whereIn('id', $ids)
-                            ->with('translations')
-                            ->get()
-                            ->map(function (ProductCategory $c) use ($locale) {
-                                return $c->translateOrDefault($locale)?->name
-                                    ?? $c->translate('en')?->name
-                                    ?? "Category #{$c->id}";
-                            })
-                            ->implode(', ');
-                        return [__('Parent') => $labels];
+                        if (blank($state)) {
+                            return [];
+                        }
+                        $name = ProductCategory::query()->with('translations')->find($state);
+
+                        return ['الفئة الرئيسية' => $name?->translateOrDefault($locale)?->name ?? "#{$state}"];
                     })
-                    ->query(function (Builder $q, $state) {
-                        if (empty($state)) return;
-                        $ids = is_array($state) ? $state : [$state];
-                        $q->whereIn('product_category_id', function ($sub) use ($ids) {
-                            $sub->from('product_categories')
-                                ->select('id')
-                                ->whereIn('parent_id', $ids);
+                    ->query(function (Builder $q, array $data) {
+                        $id = $data['value'] ?? null;
+                        if (blank($id)) {
+                            return;
+                        }
+                        $q->where(function (Builder $inner) use ($id) {
+                            $inner->where('product_category_id', $id)
+                                ->orWhereIn('product_category_id', function ($sub) use ($id) {
+                                    $sub->from('product_categories')
+                                        ->select('id')
+                                        ->where('parent_id', $id);
+                                });
                         });
                     }),
 
                 Tables\Filters\SelectFilter::make('product_category_id')
-                    ->label(__('Child'))
-                    ->options(function () use ($locale) {
-                        return ProductCategory::with('translations')->get()
-                            ->mapWithKeys(function ($c) use ($locale) {
-                                $name = $c->translateOrDefault($locale)?->name ?? $c->translate('en')?->name ?? "Category #{$c->id}";
-                                return [$c->id => $name];
-                            })
-                            ->sortBy(fn ($name) => mb_strtolower($name))
-                            ->toArray();
+                    ->label('الفئة الفرعية')
+                    ->options(fn () => static::categoryOptions($locale, parentsOnly: false, childrenOnly: true))
+                    ->searchable()
+                    ->preload(),
+
+                Tables\Filters\SelectFilter::make('classification')
+                    ->label('التصنيف')
+                    ->options(fn () => Product::query()
+                        ->whereNotNull('classification')
+                        ->where('classification', '!=', '')
+                        ->distinct()
+                        ->orderBy('classification')
+                        ->pluck('classification', 'classification')
+                        ->all())
+                    ->searchable(),
+
+                Tables\Filters\TernaryFilter::make('has_points')
+                    ->label('عليه نقاط')
+                    ->placeholder('الكل')
+                    ->trueLabel('نعم')
+                    ->falseLabel('لا')
+                    ->queries(
+                        true: fn (Builder $q) => $q->where('points_per_unit', '>', 0),
+                        false: fn (Builder $q) => $q->where(function (Builder $inner) {
+                            $inner->whereNull('points_per_unit')->orWhere('points_per_unit', '<=', 0);
+                        }),
+                    ),
+
+                Tables\Filters\TernaryFilter::make('has_catalog_pdf')
+                    ->label('يوجد PDF')
+                    ->placeholder('الكل')
+                    ->trueLabel('نعم')
+                    ->falseLabel('لا')
+                    ->queries(
+                        true: fn (Builder $q) => $q->whereNotNull('catalog_pdf_path')->where('catalog_pdf_path', '!=', ''),
+                        false: fn (Builder $q) => $q->where(function (Builder $inner) {
+                            $inner->whereNull('catalog_pdf_path')->orWhere('catalog_pdf_path', '');
+                        }),
+                    ),
+
+                Tables\Filters\TernaryFilter::make('has_catalog_image')
+                    ->label('يوجد صورة دليل')
+                    ->placeholder('الكل')
+                    ->trueLabel('نعم')
+                    ->falseLabel('لا')
+                    ->queries(
+                        true: fn (Builder $q) => $q->whereNotNull('catalog_image_path')->where('catalog_image_path', '!=', ''),
+                        false: fn (Builder $q) => $q->where(function (Builder $inner) {
+                            $inner->whereNull('catalog_image_path')->orWhere('catalog_image_path', '');
+                        }),
+                    ),
+
+                Tables\Filters\TernaryFilter::make('has_gallery')
+                    ->label('معرض صور')
+                    ->placeholder('الكل')
+                    ->trueLabel('نعم')
+                    ->falseLabel('لا')
+                    ->queries(
+                        true: fn (Builder $q) => $q->has('images'),
+                        false: fn (Builder $q) => $q->doesntHave('images'),
+                    ),
+
+                Tables\Filters\Filter::make('points_range')
+                    ->label('نطاق النقاط')
+                    ->form([
+                        \Filament\Forms\Components\TextInput::make('min')->label('من')->numeric(),
+                        \Filament\Forms\Components\TextInput::make('max')->label('إلى')->numeric(),
+                    ])
+                    ->columns(2)
+                    ->query(function (Builder $q, array $data) {
+                        if (filled($data['min'] ?? null)) {
+                            $q->where('points_per_unit', '>=', (float) $data['min']);
+                        }
+                        if (filled($data['max'] ?? null)) {
+                            $q->where('points_per_unit', '<=', (float) $data['max']);
+                        }
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $bits = [];
+                        if (filled($data['min'] ?? null)) {
+                            $bits[] = 'من '.$data['min'];
+                        }
+                        if (filled($data['max'] ?? null)) {
+                            $bits[] = 'إلى '.$data['max'];
+                        }
+
+                        return $bits === [] ? [] : ['نطاق النقاط' => implode(' ', $bits)];
                     }),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()->label('عرض'),
-                Tables\Actions\EditAction::make()->slideOver()->modalWidth('7xl'),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('تعديل'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
-            ->headerActions([
-                Tables\Actions\CreateAction::make()->label(__('Add Product'))->slideOver()->modalWidth('7xl'),
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()->label('حذف المحدد'),
+                ]),
             ])
             ->defaultSort('id', 'desc');
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
+    protected static function categoryOptions(string $locale, bool $parentsOnly = false, bool $childrenOnly = false): array
+    {
+        $query = ProductCategory::query()->with('translations');
+
+        if ($parentsOnly) {
+            $query->whereNull('parent_id');
+        } elseif ($childrenOnly) {
+            $query->whereNotNull('parent_id')->with('parent.translations');
+        }
+
+        return $query->get()
+            ->mapWithKeys(function (ProductCategory $c) use ($locale, $childrenOnly) {
+                $name = $c->translateOrDefault($locale)?->name
+                    ?? $c->translate('en')?->name
+                    ?? "Category #{$c->id}";
+
+                if ($childrenOnly && $c->parent) {
+                    $parent = $c->parent->translateOrDefault($locale)?->name
+                        ?? $c->parent->translate('en')?->name;
+                    if ($parent) {
+                        $name = "{$parent} ← {$name}";
+                    }
+                }
+
+                return [$c->id => $name];
+            })
+            ->sortBy(fn ($name) => mb_strtolower($name))
+            ->all();
     }
 
     public static function infolist(Infolist $infolist): Infolist
