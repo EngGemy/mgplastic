@@ -54,7 +54,7 @@ class ManageWebsiteSettings extends Page implements HasForms
         // simple() repeater expects a flat list of strings — not nested objects
         $data['about_paragraphs'] = WebsiteSetting::normalizeParagraphs($data['about_paragraphs'] ?? []);
 
-        foreach (['site_logo', 'about_image', 'catalog_pdf'] as $upload) {
+        foreach (['about_image', 'catalog_pdf'] as $upload) {
             if (! empty($data[$upload]) && is_string($data[$upload])) {
                 $data[$upload] = [$data[$upload]];
             }
@@ -73,15 +73,6 @@ class ManageWebsiteSettings extends Page implements HasForms
                             ->schema([
                                 Forms\Components\TextInput::make('site_name')->label('اسم الموقع')->required(),
                                 Forms\Components\TextInput::make('site_domain')->label('النطاق')->required(),
-                                Forms\Components\FileUpload::make('site_logo')
-                                    ->label('شعار الموقع')
-                                    ->helperText('نفس شعار لوحة التحكم الافتراضي (logo-light). ارفع صورة لاستبداله.')
-                                    ->disk('public')
-                                    ->directory('website')
-                                    ->image()
-                                    ->imageEditor()
-                                    ->maxSize(2048)
-                                    ->columnSpanFull(),
                                 Forms\Components\TextInput::make('seo_title')->label('عنوان SEO')->columnSpanFull(),
                                 Forms\Components\Textarea::make('seo_description')->label('وصف SEO')->rows(3)->columnSpanFull(),
                                 Forms\Components\Textarea::make('footer_tagline')->label('وصف الفوتر')->rows(2)->columnSpanFull(),
@@ -150,7 +141,7 @@ class ManageWebsiteSettings extends Page implements HasForms
 
         $data['about_paragraphs'] = WebsiteSetting::normalizeParagraphs($data['about_paragraphs'] ?? []);
 
-        foreach (['site_logo', 'about_image', 'catalog_pdf'] as $upload) {
+        foreach (['about_image', 'catalog_pdf'] as $upload) {
             $data[$upload] = WebsiteSetting::normalizeUploadPath($data[$upload] ?? null);
         }
 

@@ -10,7 +10,7 @@ class WebsiteSetting extends Model
     public const DEFAULT_LOGO = 'images/logo-light.png';
 
     protected $fillable = [
-        'site_name', 'site_domain', 'site_logo', 'seo_title', 'seo_description',
+        'site_name', 'site_domain', 'seo_title', 'seo_description',
         'about_eyebrow', 'about_title', 'about_subtitle', 'about_paragraphs',
         'about_image', 'about_badge_year', 'about_badge_text', 'about_values',
         'contact_phone', 'contact_whatsapp', 'contact_email',
@@ -87,13 +87,9 @@ class WebsiteSetting extends Model
         ];
     }
 
-    /** Absolute URL for site logo (uploaded) or the same panel brand logo. */
+    /** Same logo as the main Filament admin panel (`brandLogo`). */
     public function getSiteLogoUrlAttribute(): string
     {
-        if ($this->site_logo) {
-            return Storage::disk('public')->url($this->site_logo);
-        }
-
         return asset(self::DEFAULT_LOGO);
     }
 

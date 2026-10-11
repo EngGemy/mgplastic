@@ -1,5 +1,6 @@
 @php
-    $logoUrl = $settings->site_logo_url ?? asset(\App\Models\WebsiteSetting::DEFAULT_LOGO);
+    // Same asset used by Filament AdminPanelProvider ->brandLogo(...)
+    $logoUrl = asset(\App\Models\WebsiteSetting::DEFAULT_LOGO);
     $alt = $settings->site_name ?? 'MG Plastic';
     $size = $size ?? 40;
 @endphp
