@@ -33,7 +33,7 @@
                 @if($settings->about_subtitle)
                     <div class="sec-en" style="margin-bottom:20px">{{ $settings->about_subtitle }}</div>
                 @endif
-                @foreach($settings->about_paragraphs ?? [] as $paragraph)
+                @foreach(\App\Models\WebsiteSetting::normalizeParagraphs($settings->about_paragraphs ?? []) as $paragraph)
                     <p class="about-p">{{ $paragraph }}</p>
                 @endforeach
                 @if(!empty($settings->about_values))

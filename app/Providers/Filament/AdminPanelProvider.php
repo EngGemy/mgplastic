@@ -29,7 +29,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path(AdminPanelPath::segment())
             ->brandName('MG Plastic')
-            ->brandLogo(asset('images/logo-light.png'))
+            ->brandLogo(fn () => \App\Models\WebsiteSetting::instance()->site_logo_url)
             ->brandLogoHeight('4.5rem')
             ->login()
             ->colors([

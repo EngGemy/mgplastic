@@ -5,7 +5,7 @@
 @section('content')
     <nav id="nav" style="position:relative">
         <a class="nav-logo" href="{{ route('landing') }}">
-            <div class="logo-box">MG</div>
+            @include('website.partials.logo-mark', ['size' => 40])
             <div>
                 <div style="font-weight:800;color:var(--ink);font-size:14px;line-height:1.2">{{ $settings->site_name }}</div>
                 <div class="fm" style="font-size:9px;color:var(--hint)">{{ $settings->site_domain }}</div>

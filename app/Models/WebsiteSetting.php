@@ -7,8 +7,10 @@ use Illuminate\Support\Facades\Storage;
 
 class WebsiteSetting extends Model
 {
+    public const DEFAULT_LOGO = 'images/logo-light.png';
+
     protected $fillable = [
-        'site_name', 'site_domain', 'seo_title', 'seo_description',
+        'site_name', 'site_domain', 'site_logo', 'seo_title', 'seo_description',
         'about_eyebrow', 'about_title', 'about_subtitle', 'about_paragraphs',
         'about_image', 'about_badge_year', 'about_badge_text', 'about_values',
         'contact_phone', 'contact_whatsapp', 'contact_email',
@@ -85,6 +87,16 @@ class WebsiteSetting extends Model
         ];
     }
 
+    /** Absolute URL for site logo (uploaded) or the same panel brand logo. */
+    public function getSiteLogoUrlAttribute(): string
+    {
+        if ($this->site_logo) {
+            return Storage::disk('public')->url($this->site_logo);
+        }
+
+        return asset(self::DEFAULT_LOGO);
+    }
+
     public function getAboutImageUrlAttribute(): ?string
     {
         return $this->about_image ? Storage::disk('public')->url($this->about_image) : null;
@@ -93,5 +105,46 @@ class WebsiteSetting extends Model
     public function getCatalogPdfUrlAttribute(): ?string
     {
         return $this->catalog_pdf ? Storage::disk('public')->url($this->catalog_pdf) : null;
+    }
+
+    /**
+     * Flatten nested repeater / JSON shapes into plain paragraph strings.
+     *
+     * @param  mixed  $paragraphs
+     * @return list<string>
+     */
+    public static function normalizeParagraphs(mixed $paragraphs): array
+    {
+        return collect(is_array($paragraphs) ? $paragraphs : [])
+            ->map(function ($item) {
+                $depth = 0;
+                while (is_array($item) && $depth < 5) {
+                    $item = $item['paragraph'] ?? reset($item);
+                    $depth++;
+                }
+
+                if (! is_scalar($item) || $item === null) {
+                    return '';
+                }
+
+                return trim((string) $item);
+            })
+            ->filter(fn (string $text) => $text !== '')
+            ->values()
+            ->all();
+    }
+
+    /** Normalize Filament FileUpload state (array|string|null) to a stored path. */
+    public static function normalizeUploadPath(mixed $value): ?string
+    {
+        if (is_array($value)) {
+            $value = collect($value)->filter()->first();
+        }
+
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return $value;
     }
 }

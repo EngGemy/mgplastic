@@ -16,7 +16,9 @@ class ManageWebsiteSettings extends Page implements HasForms
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-globe-alt';
+
     protected static ?int $navigationSort = 40;
+
     protected static string $view = 'filament.pages.manage-website-settings';
 
     public ?array $data = [];
@@ -46,11 +48,17 @@ class ManageWebsiteSettings extends Page implements HasForms
 
     public function mount(): void
     {
-        $data = WebsiteSetting::instance()->toArray();
-        $data['about_paragraphs'] = collect($data['about_paragraphs'] ?? [])
-            ->map(fn ($paragraph) => ['paragraph' => $paragraph])
-            ->values()
-            ->all();
+        $settings = WebsiteSetting::instance();
+        $data = $settings->toArray();
+
+        // simple() repeater expects a flat list of strings — not nested objects
+        $data['about_paragraphs'] = WebsiteSetting::normalizeParagraphs($data['about_paragraphs'] ?? []);
+
+        foreach (['site_logo', 'about_image', 'catalog_pdf'] as $upload) {
+            if (! empty($data[$upload]) && is_string($data[$upload])) {
+                $data[$upload] = [$data[$upload]];
+            }
+        }
 
         $this->form->fill($data);
     }
@@ -65,6 +73,15 @@ class ManageWebsiteSettings extends Page implements HasForms
                             ->schema([
                                 Forms\Components\TextInput::make('site_name')->label('اسم الموقع')->required(),
                                 Forms\Components\TextInput::make('site_domain')->label('النطاق')->required(),
+                                Forms\Components\FileUpload::make('site_logo')
+                                    ->label('شعار الموقع')
+                                    ->helperText('نفس شعار لوحة التحكم الافتراضي (logo-light). ارفع صورة لاستبداله.')
+                                    ->disk('public')
+                                    ->directory('website')
+                                    ->image()
+                                    ->imageEditor()
+                                    ->maxSize(2048)
+                                    ->columnSpanFull(),
                                 Forms\Components\TextInput::make('seo_title')->label('عنوان SEO')->columnSpanFull(),
                                 Forms\Components\Textarea::make('seo_description')->label('وصف SEO')->rows(3)->columnSpanFull(),
                                 Forms\Components\Textarea::make('footer_tagline')->label('وصف الفوتر')->rows(2)->columnSpanFull(),
@@ -76,9 +93,12 @@ class ManageWebsiteSettings extends Page implements HasForms
                                 Forms\Components\TextInput::make('about_eyebrow')->label('العنوان الفرعي'),
                                 Forms\Components\TextInput::make('about_title')->label('العنوان الرئيسي'),
                                 Forms\Components\TextInput::make('about_subtitle')->label('سطر تقني'),
-                                Forms\Components\Repeater::make('about_paragraphs')->label('الفقرات')->simple(
-                                    Forms\Components\Textarea::make('paragraph')->label('فقرة')->rows(3)
-                                )->columnSpanFull(),
+                                Forms\Components\Repeater::make('about_paragraphs')
+                                    ->label('الفقرات')
+                                    ->simple(
+                                        Forms\Components\Textarea::make('paragraph')->label('فقرة')->rows(3)->required()
+                                    )
+                                    ->columnSpanFull(),
                                 Forms\Components\FileUpload::make('about_image')->label('صورة القسم')->disk('public')->directory('website')->image(),
                                 Forms\Components\TextInput::make('about_badge_year')->label('سنة التأسيس'),
                                 Forms\Components\TextInput::make('about_badge_text')->label('نص الشارة'),
@@ -128,12 +148,10 @@ class ManageWebsiteSettings extends Page implements HasForms
         $data = $this->form->getState();
         $settings = WebsiteSetting::instance();
 
-        if (isset($data['about_paragraphs']) && is_array($data['about_paragraphs'])) {
-            $data['about_paragraphs'] = collect($data['about_paragraphs'])
-                ->map(fn ($item) => is_array($item) ? ($item['paragraph'] ?? '') : $item)
-                ->filter()
-                ->values()
-                ->all();
+        $data['about_paragraphs'] = WebsiteSetting::normalizeParagraphs($data['about_paragraphs'] ?? []);
+
+        foreach (['site_logo', 'about_image', 'catalog_pdf'] as $upload) {
+            $data[$upload] = WebsiteSetting::normalizeUploadPath($data[$upload] ?? null);
         }
 
         $settings->update($data);

@@ -17,7 +17,7 @@
     <div class="footer-grid">
         <div>
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-                <div class="logo-box">MG</div>
+                @include('website.partials.logo-mark', ['size' => 40])
                 <div>
                     <div style="font-weight:800;color:#fff;font-size:15px">{{ $settings->site_name }}</div>
                     <div class="fm" style="font-size:10px;color:rgba(255,255,255,.3)">{{ $settings->site_domain }}</div>
