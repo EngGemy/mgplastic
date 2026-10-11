@@ -62,21 +62,24 @@ class ProductResource extends Resource
             ->striped()
             ->paginated([12, 24, 48, 100])
             ->defaultPaginationPageOption(24)
-            ->persistSearchInSession()
-            ->persistFiltersInSession()
             ->deferFilters()
             ->filtersLayout(FiltersLayout::AboveContentCollapsible)
             ->filtersFormColumns(4)
             ->searchPlaceholder('ابحث بالاسم / الوصف / التصنيف / رقم المنتج…')
             ->emptyStateHeading('لا توجد منتجات')
-            ->emptyStateDescription('جرّب تغيير كلمة البحث أو مسح الفلاتر، أو أضف منتجاً جديداً.')
+            ->emptyStateDescription('الكتالوج فاضي حالياً — اضغط «إضافة منتج» لبدء الإضافة.')
+            ->emptyStateIcon('heroicon-o-cube')
+            ->emptyStateActions([
+                Tables\Actions\CreateAction::make()
+                    ->label('إضافة منتج')
+                    ->url(fn () => static::getUrl('create')),
+            ])
             ->columns([
                 Tables\Columns\ImageColumn::make('main_image')
                     ->label('الصورة')
                     ->disk('public')
                     ->square()
-                    ->size(52)
-                    ->defaultImageUrl(asset('images/logo-light.png')),
+                    ->size(52),
 
                 Tables\Columns\TextColumn::make('id')
                     ->label('#')
@@ -185,20 +188,14 @@ class ProductResource extends Resource
                     ->options(fn () => static::categoryOptions($locale, parentsOnly: true))
                     ->searchable()
                     ->preload()
-                    ->indicateUsing(function ($state) use ($locale) {
-                        if (blank($state)) {
-                            return [];
-                        }
-                        $name = ProductCategory::query()->with('translations')->find($state);
-
-                        return ['الفئة الرئيسية' => $name?->translateOrDefault($locale)?->name ?? "#{$state}"];
-                    })
-                    ->query(function (Builder $q, array $data) {
+                    ->query(function (Builder $query, array $data): Builder {
                         $id = $data['value'] ?? null;
+
                         if (blank($id)) {
-                            return;
+                            return $query;
                         }
-                        $q->where(function (Builder $inner) use ($id) {
+
+                        return $query->where(function (Builder $inner) use ($id) {
                             $inner->where('product_category_id', $id)
                                 ->orWhereIn('product_category_id', function ($sub) use ($id) {
                                     $sub->from('product_categories')
@@ -216,13 +213,19 @@ class ProductResource extends Resource
 
                 Tables\Filters\SelectFilter::make('classification')
                     ->label('التصنيف')
-                    ->options(fn () => Product::query()
-                        ->whereNotNull('classification')
-                        ->where('classification', '!=', '')
-                        ->distinct()
-                        ->orderBy('classification')
-                        ->pluck('classification', 'classification')
-                        ->all())
+                    ->options(function () {
+                        try {
+                            return Product::query()
+                                ->whereNotNull('classification')
+                                ->where('classification', '!=', '')
+                                ->distinct()
+                                ->orderBy('classification')
+                                ->pluck('classification', 'classification')
+                                ->all();
+                        } catch (\Throwable) {
+                            return [];
+                        }
+                    })
                     ->searchable(),
 
                 Tables\Filters\TernaryFilter::make('has_points')
@@ -278,13 +281,10 @@ class ProductResource extends Resource
                         \Filament\Forms\Components\TextInput::make('max')->label('إلى')->numeric(),
                     ])
                     ->columns(2)
-                    ->query(function (Builder $q, array $data) {
-                        if (filled($data['min'] ?? null)) {
-                            $q->where('points_per_unit', '>=', (float) $data['min']);
-                        }
-                        if (filled($data['max'] ?? null)) {
-                            $q->where('points_per_unit', '<=', (float) $data['max']);
-                        }
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(filled($data['min'] ?? null), fn (Builder $q) => $q->where('points_per_unit', '>=', (float) $data['min']))
+                            ->when(filled($data['max'] ?? null), fn (Builder $q) => $q->where('points_per_unit', '<=', (float) $data['max']));
                     })
                     ->indicateUsing(function (array $data): array {
                         $bits = [];
@@ -295,7 +295,7 @@ class ProductResource extends Resource
                             $bits[] = 'إلى '.$data['max'];
                         }
 
-                        return $bits === [] ? [] : ['نطاق النقاط' => implode(' ', $bits)];
+                        return $bits === [] ? [] : ['نطاق النقاط: '.implode(' ', $bits)];
                     }),
             ])
             ->actions([

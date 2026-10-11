@@ -1,86 +1,69 @@
 -- =============================================================================
 -- MG Plastic — Wipe ALL products + network inventory (phpMyAdmin)
 -- =============================================================================
--- What this clears:
---   • Products (+ translations / images / variants / sizes via CASCADE or explicit)
---   • Network stock at wholesalers & retail traders (derived from invoices/distributions)
---   • Invoice items, distributions, returns
---   • Orders & order items that reference products
---   • store_media.product_id links (media rows kept, product link nulled)
+-- Run the WHOLE script in one go (SQL tab). Do not run single TRUNCATE lines.
 --
--- What this KEEPS:
---   • Users / stores / roles / network links
---   • Product categories / colors / standards / sizes catalog (size_systems, sizes)
---   • Website settings, blogs, events, etc.
---   • Wallet balances & wallet_transactions (OPTIONAL reset at bottom — commented)
+-- Why not TRUNCATE alone?
+--   invoice_returns is referenced by invoice_return_items → TRUNCATE fails with FK error.
+--   This script uses DELETE + FOREIGN_KEY_CHECKS=0 (phpMyAdmin-safe).
 --
--- BEFORE RUN:
---   1) Full DB backup / export
---   2) Put the site in maintenance if possible
---   3) Run in phpMyAdmin → SQL tab as ONE batch
+-- CLEARS: products, invoice/distribution/return chain, orders, store_media.product_id
+-- KEEPS:  users, stores, categories, wallets (optional wallet wipe at bottom)
 -- =============================================================================
-
-START TRANSACTION;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ---------------------------------------------------------------------------
--- 1) Returns (depend on distributions / invoice_items / products)
--- ---------------------------------------------------------------------------
-TRUNCATE TABLE `invoice_return_items`;
-TRUNCATE TABLE `invoice_returns`;
+-- 1) Returns
+DELETE FROM `invoice_return_items`;
+DELETE FROM `invoice_returns`;
 
--- ---------------------------------------------------------------------------
--- 2) Distributions = stock movement between factory → wholesale → retail → plumber
--- ---------------------------------------------------------------------------
-TRUNCATE TABLE `invoice_distribution_items`;
-TRUNCATE TABLE `invoice_distributions`;
+-- 2) Distributions (network stock trail)
+DELETE FROM `invoice_distribution_items`;
+DELETE FROM `invoice_distributions`;
 
--- ---------------------------------------------------------------------------
--- 3) Orders (plumber ↔ retail / retail ↔ wholesale) that reference products
--- ---------------------------------------------------------------------------
-TRUNCATE TABLE `order_items`;
-TRUNCATE TABLE `orders`;
+-- 3) Orders
+DELETE FROM `order_items`;
+DELETE FROM `orders`;
 
--- ---------------------------------------------------------------------------
--- 4) Invoice lines then invoices (source of wholesaler inventory)
--- ---------------------------------------------------------------------------
-TRUNCATE TABLE `invoice_items`;
-TRUNCATE TABLE `invoices`;
+-- 4) Invoices
+DELETE FROM `invoice_items`;
+DELETE FROM `invoices`;
 
--- ---------------------------------------------------------------------------
--- 5) Detach store media from products (keep media files/rows)
--- ---------------------------------------------------------------------------
+-- 5) Detach media from products
 UPDATE `store_media` SET `product_id` = NULL WHERE `product_id` IS NOT NULL;
 
--- ---------------------------------------------------------------------------
--- 6) Product child tables then products
---     (CASCADE usually handles children; we truncate explicitly for a clean wipe)
--- ---------------------------------------------------------------------------
-TRUNCATE TABLE `product_sizes`;
-TRUNCATE TABLE `product_variants`;
-TRUNCATE TABLE `product_images`;
-TRUNCATE TABLE `product_translations`;
-TRUNCATE TABLE `products`;
+-- 6) Products
+DELETE FROM `product_sizes`;
+DELETE FROM `product_variants`;
+DELETE FROM `product_images`;
+DELETE FROM `product_translations`;
+DELETE FROM `products`;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
-COMMIT;
+-- Reset AUTO_INCREMENT (optional, nice for a clean catalog restart)
+ALTER TABLE `invoice_return_items` AUTO_INCREMENT = 1;
+ALTER TABLE `invoice_returns` AUTO_INCREMENT = 1;
+ALTER TABLE `invoice_distribution_items` AUTO_INCREMENT = 1;
+ALTER TABLE `invoice_distributions` AUTO_INCREMENT = 1;
+ALTER TABLE `order_items` AUTO_INCREMENT = 1;
+ALTER TABLE `orders` AUTO_INCREMENT = 1;
+ALTER TABLE `invoice_items` AUTO_INCREMENT = 1;
+ALTER TABLE `invoices` AUTO_INCREMENT = 1;
+ALTER TABLE `product_sizes` AUTO_INCREMENT = 1;
+ALTER TABLE `product_variants` AUTO_INCREMENT = 1;
+ALTER TABLE `product_images` AUTO_INCREMENT = 1;
+ALTER TABLE `product_translations` AUTO_INCREMENT = 1;
+ALTER TABLE `products` AUTO_INCREMENT = 1;
 
--- =============================================================================
--- Verify (run after commit)
--- =============================================================================
--- SELECT COUNT(*) AS products FROM products;
--- SELECT COUNT(*) AS invoice_items FROM invoice_items;
--- SELECT COUNT(*) AS distributions FROM invoice_distributions;
--- SELECT COUNT(*) AS orders FROM orders;
+-- Verify:
+-- SELECT COUNT(*) FROM products;
+-- SELECT COUNT(*) FROM invoices;
+-- SELECT COUNT(*) FROM invoice_distributions;
 
--- =============================================================================
--- OPTIONAL — also zero wallets / points history (UNCOMMENT if you want a full
--- commercial reset, not only products/stock)
--- =============================================================================
+-- OPTIONAL — also zero wallets / points (uncomment if needed):
 -- SET FOREIGN_KEY_CHECKS = 0;
--- TRUNCATE TABLE `wallet_transactions`;
--- TRUNCATE TABLE `points_ledger`;
+-- DELETE FROM `wallet_transactions`;
+-- DELETE FROM `points_ledger`;
 -- UPDATE `wallet_accounts` SET `balance_points` = 0, `balance_cents` = 0;
 -- SET FOREIGN_KEY_CHECKS = 1;
