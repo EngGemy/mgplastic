@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PHP_VERSION: '8.2'
+  PHP_VERSION: '8.3'
   NODE_VERSION: '20'
   DEFAULT_CPANEL_APP_PATH: /home/mgplasti/mgplastic_app
   DEFAULT_CPANEL_PUBLIC_PATH: /home/mgplasti/public_html
@@ -45,7 +45,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
-          extensions: bcmath, ctype, curl, dom, fileinfo, json, mbstring, openssl, pdo, pdo_sqlite, sqlite3, tokenizer, xml, zip
+          extensions: bcmath, ctype, curl, dom, fileinfo, gd, iconv, json, mbstring, openssl, pdo, pdo_sqlite, sqlite3, tokenizer, xml, zip, zlib
           coverage: none
           tools: composer:v2
 
@@ -92,7 +92,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
-          extensions: bcmath, ctype, curl, dom, fileinfo, json, mbstring, openssl, pdo, tokenizer, xml, zip
+          extensions: bcmath, ctype, curl, dom, fileinfo, gd, iconv, json, mbstring, openssl, pdo, tokenizer, xml, zip, zlib
           coverage: none
           tools: composer:v2
 
