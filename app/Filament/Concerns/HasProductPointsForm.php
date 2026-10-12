@@ -34,7 +34,7 @@ trait HasProductPointsForm
                         'percent' => 'نسبة من سعر/تكلفة الوحدة',
                         'fixed' => 'قيمة ثابتة لكل نقطة',
                     ])
-                    ->placeholder('اختر نوع التحويل')
+                    ->default('fixed')
                     ->required()
                     ->live(),
             ]),
@@ -74,10 +74,11 @@ trait HasProductPointsForm
 
                 Forms\Components\TextInput::make('point_value_fixed')
                     ->label('قيمة النقطة الواحدة')
-                    ->helperText('مثال: 0.10 يعني كل نقطة = 0.10 د.ل')
+                    ->helperText('كل نقطة = 0.05 د.ل. القيمة دي ظاهرة تلقائياً ويمكن تعديلها.')
                     ->numeric()
                     ->minValue(0)
                     ->step(0.0001)
+                    ->default(0.05)
                     ->suffix('د.ل / نقطة')
                     ->visible(fn (Get $get) => $get('point_value_type') === 'fixed')
                     ->required(fn (Get $get) => $get('point_value_type') === 'fixed')
