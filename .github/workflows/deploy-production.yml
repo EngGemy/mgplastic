@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PHP_VERSION: '8.3'
+  PHP_VERSION: '8.2'
   NODE_VERSION: '20'
   DEFAULT_CPANEL_APP_PATH: /home/mgplasti/mgplastic_app
   DEFAULT_CPANEL_PUBLIC_PATH: /home/mgplasti/public_html
