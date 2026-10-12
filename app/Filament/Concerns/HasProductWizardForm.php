@@ -4,6 +4,7 @@ namespace App\Filament\Concerns;
 
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductTag;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -141,6 +142,18 @@ trait HasProductWizardForm
                         'categoryId' => $get('product_category_id'),
                     ])->render()
                 )),
+
+            Forms\Components\TagsInput::make('tag_names')
+                ->label('الوسوم')
+                ->placeholder('اختر وسم من التصنيف أو اكتب وسمًا جديدًا')
+                ->helperText('الاقتراحات من الفئة الرئيسية والتصنيف الفرعي. الوسم الجديد يُحفظ على التصنيف المختار.')
+                ->suggestions(fn (Get $get) => ProductTag::suggestionsFor(
+                    $get('parent_category_id') ? (int) $get('parent_category_id') : null,
+                    $get('product_category_id') ? (int) $get('product_category_id') : null,
+                ))
+                ->splitKeys(['Tab', ','])
+                ->reorderable()
+                ->columnSpanFull(),
         ];
     }
 

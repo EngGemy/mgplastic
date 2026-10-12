@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
@@ -31,6 +31,37 @@ class ProductCategory extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
+    }
+
+    public function tags(): HasMany
+    {
+        return $this->hasMany(ProductTag::class, 'product_category_id');
+    }
+
+    /**
+     * @param  list<mixed>  $names
+     */
+    public function syncOwnedTagNames(array $names): void
+    {
+        $names = ProductTag::normalizeNames($names);
+        $existing = $this->tags()->get()->keyBy(fn (ProductTag $tag) => mb_strtolower($tag->name));
+        $keepIds = [];
+
+        foreach ($names as $name) {
+            $key = mb_strtolower($name);
+            $tag = $existing->get($key);
+            if ($tag) {
+                if ($tag->name !== $name) {
+                    $tag->name = $name;
+                    $tag->save();
+                }
+            } else {
+                $tag = $this->tags()->create(['name' => $name]);
+            }
+            $keepIds[] = $tag->id;
+        }
+
+        $this->tags()->whereNotIn('id', $keepIds === [] ? [0] : $keepIds)->delete();
     }
 
     // اختياري: اسم مترجم سريع
@@ -64,7 +95,9 @@ class ProductCategory extends Model
                 $hit = true;
             }
 
-            if ($hit) return true;
+            if ($hit) {
+                return true;
+            }
 
             $node = $node->parent; // اصعد للأب
         }

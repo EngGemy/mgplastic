@@ -17,10 +17,11 @@ class EditProductCategory extends EditRecord
         /** @var ProductCategory $record */
         $record = $this->record;
 
-        $data['name_en']        = optional($record->translate('en'))->name;
+        $data['name_en'] = optional($record->translate('en'))->name;
         $data['description_en'] = optional($record->translate('en'))->description;
-        $data['name_ar']        = optional($record->translate('ar'))->name;
+        $data['name_ar'] = optional($record->translate('ar'))->name;
         $data['description_ar'] = optional($record->translate('ar'))->description;
+        $data['tag_names'] = $record->tags()->orderBy('name')->pluck('name')->all();
 
         return $data;
     }
@@ -31,15 +32,15 @@ class EditProductCategory extends EditRecord
         /** @var ProductCategory $record */
         $record = $this->record;
 
-        if (!empty($data['parent_id']) && (int)$data['parent_id'] === (int)$record->id) {
+        if (! empty($data['parent_id']) && (int) $data['parent_id'] === (int) $record->id) {
             throw ValidationException::withMessages([
                 'parent_id' => [__('A category cannot be its own parent.')],
             ]);
         }
 
         return [
-            'slug'      => $data['slug'] ?? null,
-            'image'     => $data['image'] ?? null,
+            'slug' => $data['slug'] ?? null,
+            'image' => $data['image'] ?? null,
             'parent_id' => $data['parent_id'] ?? null,
         ];
     }
@@ -48,12 +49,13 @@ class EditProductCategory extends EditRecord
     {
         /** @var ProductCategory $record */
         $record = $this->record;
-        $data   = $this->form->getState();
+        $data = $this->form->getState();
 
-        $record->translateOrNew('en')->name        = $data['name_en'] ?? '';
+        $record->translateOrNew('en')->name = $data['name_en'] ?? '';
         $record->translateOrNew('en')->description = $data['description_en'] ?? '';
-        $record->translateOrNew('ar')->name        = $data['name_ar'] ?? '';
+        $record->translateOrNew('ar')->name = $data['name_ar'] ?? '';
         $record->translateOrNew('ar')->description = $data['description_ar'] ?? '';
         $record->save();
+        $record->syncOwnedTagNames($data['tag_names'] ?? []);
     }
 }

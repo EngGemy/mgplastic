@@ -215,6 +215,7 @@ Route::prefix('v1/blogs')->group(function () {
 
 Route::prefix('v1/products')->group(function () {
     // READ (public)
+    Route::get('/', [ProductController::class, 'index']);
     Route::get('/categories', [ProductController::class, 'categories']);
     Route::get('/category/{id}', [ProductController::class, 'productsByCategory'])->whereNumber('id');
     Route::get('/{id}', [ProductController::class, 'show'])->whereNumber('id');

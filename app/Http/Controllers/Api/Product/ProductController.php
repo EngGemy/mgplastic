@@ -8,6 +8,7 @@ use App\Http\Resources\ProductResource;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductImage;
+use App\Models\ProductTag;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
@@ -45,10 +46,39 @@ class ProductController extends Controller
     // ---------------- READ ----------------
 
     /**
+     * GET /api/v1/products
+     * Filter: category_id, parent_id, tag/tags, search/q, classification, standard_id, color_id, with_children, per_page, page
+     */
+    public function index(Request $request)
+    {
+        $lang = $this->language($request);
+        app()->setLocale($lang);
+
+        $query = Product::query()->with($this->productRelations());
+        $this->applyProductFilters($query, $request);
+
+        $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
+        $page = $query->latest('id')->paginate($perPage);
+
+        return response()->json([
+            'status' => true,
+            'data' => ProductResource::collection($page),
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'per_page' => $page->perPage(),
+                'total' => $page->total(),
+            ],
+        ])->header('Content-Language', $lang);
+    }
+
+    /**
      * GET /v1/products/categories
      * - Tree mode (default): all parents with children
      * - Children mode: ?parent_id=ID => that parent with its children
      * - ?include_empty=false => hide empty parents/children
+     * - ?search or ?q => name or description
+     * - ?tag or ?tags => comma-separated tag names on the category
      */
     public function categories(Request $request)
     {
@@ -56,11 +86,12 @@ class ProductController extends Controller
         app()->setLocale($lang);
 
         $includeEmpty = filter_var($request->query('include_empty', 'true'), FILTER_VALIDATE_BOOLEAN);
+        $filtering = $this->categoryFiltersActive($request);
 
         // children mode
         if ($request->filled('parent_id')) {
             $parent = ProductCategory::query()
-                ->with(['translations'])
+                ->with(['translations', 'tags'])
                 ->withCount('products')
                 ->find((int) $request->query('parent_id'));
 
@@ -70,9 +101,10 @@ class ProductController extends Controller
             }
 
             $children = $parent->children()
-                ->with(['translations'])
+                ->with(['translations', 'tags'])
                 ->withCount('products')
-                ->when(! $includeEmpty, fn($q) => $q->has('products'))
+                ->when(! $includeEmpty, fn ($q) => $q->has('products'))
+                ->tap(fn ($q) => $this->applyCategoryFilters($q, $request))
                 ->orderBy('id')
                 ->get();
 
@@ -85,20 +117,29 @@ class ProductController extends Controller
             ])->header('Content-Language', $lang);
         }
 
+        if ($filtering) {
+            return response()->json([
+                'status' => true,
+                'data' => ProductCategoryResource::collection(
+                    $this->filteredCategoryTree($includeEmpty, $request)
+                ),
+            ])->header('Content-Language', $lang);
+        }
+
         // tree mode
         $parents = ProductCategory::query()
             ->whereNull('parent_id')
-            ->with(['translations'])
+            ->with(['translations', 'tags'])
             ->withCount('products')
-            ->when(! $includeEmpty, fn($q) => $q->has('products'))
+            ->when(! $includeEmpty, fn ($q) => $q->has('products'))
             ->orderBy('id')
             ->get();
 
         $parents->load([
             'children' => function ($q) use ($includeEmpty) {
-                $q->with(['translations'])
+                $q->with(['translations', 'tags'])
                     ->withCount('products')
-                    ->when(! $includeEmpty, fn($qq) => $qq->has('products'))
+                    ->when(! $includeEmpty, fn ($qq) => $qq->has('products'))
                     ->orderBy('id');
             }
         ]);
@@ -113,7 +154,7 @@ class ProductController extends Controller
      * GET /v1/products/category/{id}
      * - products for a given child category
      * - ?with_children=true => include direct children too
-     * - ?standard_id, ?color_id, ?search
+     * - ?standard_id, ?color_id, ?search, ?tag, ?classification
      * - ?per_page=15 => paginate
      */
     public function productsByCategory($categoryId, Request $request)
@@ -129,8 +170,7 @@ class ProductController extends Controller
 
         $withChildren = filter_var($request->query('with_children', 'false'), FILTER_VALIDATE_BOOLEAN);
 
-        $query = Product::query()
-            ->with(['translations','images','variants','color','standard','category.translations']);
+        $query = Product::query()->with($this->productRelations());
 
         if ($withChildren) {
             $ids = ProductCategory::query()
@@ -143,15 +183,7 @@ class ProductController extends Controller
             $query->where('product_category_id', $categoryId);
         }
 
-        if ($request->filled('standard_id')) {
-            $query->where('product_standard_id', (int) $request->query('standard_id'));
-        }
-        if ($request->filled('color_id')) {
-            $query->where('product_color_id', (int) $request->query('color_id'));
-        }
-        if ($request->filled('search') || $request->filled('q')) {
-            $query->search((string) ($request->query('search') ?? $request->query('q')));
-        }
+        $this->applyProductFilters($query, $request, false);
 
         $perPage = (int) $request->query('per_page', 0);
         if ($perPage > 0) {
@@ -174,6 +206,133 @@ class ProductController extends Controller
             'status' => true,
             'data'   => ProductResource::collection($products),
         ])->header('Content-Language', $lang);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function productRelations(): array
+    {
+        return ['translations', 'images', 'variants', 'color', 'standard', 'category.translations', 'tags'];
+    }
+
+    private function applyProductFilters($query, Request $request, bool $allowCategory = true): void
+    {
+        if ($allowCategory) {
+            $categoryId = $request->query('category_id', $request->query('product_category_id'));
+            if ($categoryId !== null && $categoryId !== '') {
+                $categoryId = (int) $categoryId;
+                $withChildren = filter_var($request->query('with_children', 'false'), FILTER_VALIDATE_BOOLEAN);
+                if ($withChildren) {
+                    $ids = ProductCategory::query()
+                        ->where('id', $categoryId)
+                        ->orWhere('parent_id', $categoryId)
+                        ->pluck('id');
+                    $query->whereIn('product_category_id', $ids);
+                } else {
+                    $query->where('product_category_id', $categoryId);
+                }
+            } elseif ($request->filled('parent_id')) {
+                $parentId = (int) $request->query('parent_id');
+                $ids = ProductCategory::query()
+                    ->where('id', $parentId)
+                    ->orWhere('parent_id', $parentId)
+                    ->pluck('id');
+                $query->whereIn('product_category_id', $ids);
+            }
+        }
+
+        if ($request->filled('standard_id')) {
+            $query->where('product_standard_id', (int) $request->query('standard_id'));
+        }
+        if ($request->filled('color_id')) {
+            $query->where('product_color_id', (int) $request->query('color_id'));
+        }
+        if ($request->filled('classification')) {
+            $query->where('classification', (string) $request->query('classification'));
+        }
+        if ($request->filled('search') || $request->filled('q')) {
+            $query->search((string) ($request->query('search') ?? $request->query('q')));
+        }
+
+        $tags = $this->requestedTags($request);
+        if ($tags !== []) {
+            $query->whereHas('tags', fn ($tagsQuery) => $tagsQuery->whereIn('name', $tags));
+        }
+    }
+
+    private function categoryFiltersActive(Request $request): bool
+    {
+        return $this->requestedTags($request) !== []
+            || trim((string) ($request->query('search') ?? $request->query('q') ?? '')) !== '';
+    }
+
+    private function applyCategoryFilters($query, Request $request): void
+    {
+        $term = trim((string) ($request->query('search') ?? $request->query('q') ?? ''));
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $query->whereHas('translations', function ($translations) use ($like) {
+                $translations->where('name', 'like', $like)
+                    ->orWhere('description', 'like', $like);
+            });
+        }
+
+        $tags = $this->requestedTags($request);
+        if ($tags !== []) {
+            $query->whereHas('tags', fn ($tagsQuery) => $tagsQuery->whereIn('name', $tags));
+        }
+    }
+
+    /**
+     * Parents that match, plus parents of matching subcategories.
+     * Children on each parent are only the ones that match.
+     */
+    private function filteredCategoryTree(bool $includeEmpty, Request $request)
+    {
+        $matched = ProductCategory::query()
+            ->with(['translations', 'tags'])
+            ->withCount('products')
+            ->when(! $includeEmpty, fn ($q) => $q->has('products'))
+            ->tap(fn ($q) => $this->applyCategoryFilters($q, $request))
+            ->orderBy('id')
+            ->get();
+
+        $parentIds = $matched
+            ->map(fn (ProductCategory $category) => $category->parent_id ?: $category->id)
+            ->unique()
+            ->values();
+
+        $parents = ProductCategory::query()
+            ->whereIn('id', $parentIds)
+            ->whereNull('parent_id')
+            ->with(['translations', 'tags'])
+            ->withCount('products')
+            ->orderBy('id')
+            ->get();
+
+        $childrenByParent = $matched->whereNotNull('parent_id')->groupBy('parent_id');
+        $parents->each(function (ProductCategory $parent) use ($childrenByParent) {
+            $parent->setRelation(
+                'children',
+                $childrenByParent->get($parent->id, collect())->values()
+            );
+        });
+
+        return $parents;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function requestedTags(Request $request): array
+    {
+        $raw = $request->query('tags', $request->query('tag'));
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        return ProductTag::normalizeNames(is_array($raw) ? $raw : [$raw]);
     }
 
     /** GET /v1/products/{id} */

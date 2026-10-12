@@ -215,6 +215,7 @@ class ProductResource extends JsonResource
             'usage'                 => api_plain_string($usage),
             'product_category_id'   => $this->product_category_id,
             'category_name'         => $categoryName,
+            'tags'                  => $this->whenLoaded('tags', fn ($tags) => $tags->pluck('name')->values()->all()),
             'product_standard_id'   => $this->product_standard_id,
             'standard_name'         => $standardName,
             'product_color_id'      => $this->product_color_id,

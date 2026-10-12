@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
 use App\Models\Product;
+use App\Models\ProductTag;
 use Filament\Forms\Form;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Storage;
@@ -70,6 +71,7 @@ class CreateProduct extends CreateRecord
         $record->translateOrNew('ar')->usage = $data['usage_ar'] ?? '';
 
         $record->save();
+        ProductTag::syncNamesOntoProduct($record, $data['tag_names'] ?? []);
     }
 
     protected function getRedirectUrl(): string

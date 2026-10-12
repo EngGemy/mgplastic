@@ -21,12 +21,28 @@ class ProductCategoryResource extends Resource
     protected static ?string $model = ProductCategory::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';
+
     protected static ?int $navigationSort = 20;
 
-    public static function getNavigationGroup(): ?string { return 'المنتجات'; }
-    public static function getNavigationLabel(): string { return __('Product Categories'); }
-    public static function getModelLabel(): string { return __('Product Category'); }
-    public static function getPluralModelLabel(): string { return __('Product Categories'); }
+    public static function getNavigationGroup(): ?string
+    {
+        return 'المنتجات';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return __('Product Categories');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return __('Product Category');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('Product Categories');
+    }
 
     public static function form(Form $form): Form
     {
@@ -67,6 +83,14 @@ class ProductCategoryResource extends Resource
                         ->openable()
                         ->downloadable()
                         ->columnSpan(4),
+
+                    Forms\Components\TagsInput::make('tag_names')
+                        ->label('وسوم التصنيف')
+                        ->placeholder('اكتب وسمًا ثم Enter')
+                        ->helperText('هذه الوسوم تُقترح عند إضافة منتج داخل هذا التصنيف أو أحد فروعه.')
+                        ->splitKeys(['Tab', ','])
+                        ->reorderable()
+                        ->columnSpanFull(),
 
                     Forms\Components\Tabs::make(__('Translations'))
                         ->columnSpanFull()
@@ -127,8 +151,7 @@ class ProductCategoryResource extends Resource
                     ->state(fn (ProductCategory $record) => $record->name ?? $record->slug)
                     ->searchable(query: function (Builder $query, string $search) {
                         $query->where('slug', 'like', "%{$search}%")
-                            ->orWhereHas('translations', fn ($q) =>
-                            $q->where('name', 'like', "%{$search}%")
+                            ->orWhereHas('translations', fn ($q) => $q->where('name', 'like', "%{$search}%")
                                 ->orWhere('description', 'like', "%{$search}%")
                             );
                     })
@@ -141,6 +164,12 @@ class ProductCategoryResource extends Resource
                     ->sortable()
                     ->badge()
                     ->color('info'),
+
+                Tables\Columns\TextColumn::make('tags_count')
+                    ->label('وسوم')
+                    ->counts('tags')
+                    ->badge()
+                    ->color('gray'),
 
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label(__('Updated at'))
@@ -171,8 +200,7 @@ class ProductCategoryResource extends Resource
                     Tables\Actions\DeleteAction::make()
                         ->requiresConfirmation()
                         ->disabled(fn (Model $record) => $record->children()->exists())
-                        ->tooltip(fn (Model $record) =>
-                        $record->children()->exists()
+                        ->tooltip(fn (Model $record) => $record->children()->exists()
                             ? __('Cannot delete a category that has children.')
                             : null
                         ),
@@ -196,15 +224,15 @@ class ProductCategoryResource extends Resource
     {
         return parent::getEloquentQuery()
             ->with('parent')
-            ->withCount('products'); // يعتمد على FK الصحيح في علاقة products() بالموديل
+            ->withCount(['products', 'tags']); // يعتمد على FK الصحيح في علاقة products() بالموديل
     }
 
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListProductCategories::route('/'),
+            'index' => Pages\ListProductCategories::route('/'),
             'create' => Pages\CreateProductCategory::route('/create'),
-            'edit'   => Pages\EditProductCategory::route('/{record}/edit'),
+            'edit' => Pages\EditProductCategory::route('/{record}/edit'),
         ];
     }
 }

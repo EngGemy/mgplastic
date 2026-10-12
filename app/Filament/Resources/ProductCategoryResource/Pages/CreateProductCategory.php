@@ -13,8 +13,8 @@ class CreateProductCategory extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         return [
-            'slug'      => $data['slug'] ?? null,
-            'image'     => $data['image'] ?? null,
+            'slug' => $data['slug'] ?? null,
+            'image' => $data['image'] ?? null,
             'parent_id' => $data['parent_id'] ?? null,
         ];
     }
@@ -22,12 +22,13 @@ class CreateProductCategory extends CreateRecord
     protected function afterCreate(): void
     {
         $record = $this->record;
-        $data   = $this->form->getState();
+        $data = $this->form->getState();
 
-        $record->translateOrNew('en')->name        = $data['name_en'] ?? '';
+        $record->translateOrNew('en')->name = $data['name_en'] ?? '';
         $record->translateOrNew('en')->description = $data['description_en'] ?? '';
-        $record->translateOrNew('ar')->name        = $data['name_ar'] ?? '';
+        $record->translateOrNew('ar')->name = $data['name_ar'] ?? '';
         $record->translateOrNew('ar')->description = $data['description_ar'] ?? '';
         $record->save();
+        $record->syncOwnedTagNames($data['tag_names'] ?? []);
     }
 }

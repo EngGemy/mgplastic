@@ -2,16 +2,15 @@
 
 namespace App\Models;
 
+use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-
 
 class Product extends Model
 {
@@ -46,10 +45,10 @@ class Product extends Model
     ];
 
     protected $casts = [
-        'length_m'     => 'float',
+        'length_m' => 'float',
         'thickness_mm' => 'float',
-        'volume_ml'    => 'float',
-        'meta'         => 'array',
+        'volume_ml' => 'float',
+        'meta' => 'array',
         'points_per_unit' => 'decimal:4',
         'point_value_percent' => 'decimal:4',
         'point_value_fixed' => 'decimal:4',
@@ -75,6 +74,11 @@ class Product extends Model
     public function images(): HasMany
     {
         return $this->hasMany(ProductImage::class);
+    }
+
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(ProductTag::class, 'product_tag');
     }
 
     public function invoiceItems(): HasMany
@@ -134,6 +138,7 @@ class Product extends Model
                 ->orWhereHas('category.parent.translations', fn (Builder $t) => $t->where('name', 'like', $like))
                 ->orWhere('classification', 'like', $like)
                 ->orWhere('notes', 'like', $like)
+                ->orWhereHas('tags', fn (Builder $t) => $t->where('name', 'like', $like))
                 ->orWhere('id', is_numeric($term) ? (int) $term : 0);
         });
     }
@@ -149,7 +154,8 @@ class Product extends Model
     /** هل التصنيف Accessories/ملحقات؟ */
     public function isAccessories(): bool
     {
-        $cat = $this->category?->loadMissing('parent.translations','translations');
+        $cat = $this->category?->loadMissing('parent.translations', 'translations');
+
         return $cat ? $cat->isAccessoriesFamily() : false;
     }
 
@@ -206,7 +212,6 @@ class Product extends Model
 
         return '—';
     }
-
 
     /**
      * ✅ إجبار إرجاع قيمة الـ path بشكل صحيح حتى لو اتخزنت array/URL
@@ -272,8 +277,11 @@ class Product extends Model
             // أحيانًا FileUpload بيرجع ['path' => '...'] أو ['url'=>'...']
             $value = $value['path'] ?? $value['url'] ?? null;
         }
-        if (!is_string($value)) return null;
+        if (! is_string($value)) {
+            return null;
+        }
         $value = trim($value);
+
         return $value !== '' ? $value : null;
     }
 
@@ -312,6 +320,4 @@ class Product extends Model
     }
 
     /** الحجم باللتر من الملي */
-
-
 }

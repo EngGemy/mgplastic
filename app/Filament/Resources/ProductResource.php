@@ -60,6 +60,7 @@ class ProductResource extends Resource
                 'category.parent',
                 'category.translations',
                 'images',
+                'tags',
             ]);
     }
 
@@ -123,6 +124,14 @@ class ProductResource extends Resource
                     ->label('الدرجة')
                     ->badge()
                     ->color('gray')
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('tags.name')
+                    ->label('الوسوم')
+                    ->badge()
+                    ->color('info')
+                    ->separator(',')
+                    ->limitList(3)
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('points_per_unit')

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductTag;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -35,6 +36,7 @@ class ProductSheetService
         'id' => ['رقم المنتج', 'id'],
         'category_id' => ['رقم التصنيف', 'category_id'],
         'category_name' => ['اسم التصنيف (للعرض)', 'category_name'],
+        'tags' => ['الوسوم', 'tags'],
         'name_ar' => ['الاسم عربي', 'name_ar'],
         'name_en' => ['الاسم إنجليزي', 'name_en'],
         'usage_ar' => ['الاستخدام عربي', 'usage_ar'],
@@ -158,16 +160,16 @@ class ProductSheetService
 
         $row = 2;
         if ($products) {
-            $products->clone()
+            $this->exportSourceQuery($products)
+                ->with(['translations', 'category.translations', 'category.parent.translations', 'tags'])
                 ->reorder()
-                ->with(['translations', 'category.translations', 'category.parent.translations'])
-                ->orderBy('id')
+                ->orderBy('products.id')
                 ->chunkById(200, function ($chunk) use ($productsSheet, &$row) {
                     foreach ($chunk as $product) {
                         $this->writeProductRow($productsSheet, $row, $product);
                         $row++;
                     }
-                });
+                }, 'products.id', 'id');
         }
 
         $lastCategoryRow = $this->writeCategoriesSheet($book->createSheet());
@@ -179,6 +181,27 @@ class ProductSheetService
         $book->disconnectWorksheets();
 
         return $path;
+    }
+
+    private function exportSourceQuery(Builder $products): Builder
+    {
+        $filtered = $products->clone();
+        $filtered->setEagerLoads([]);
+        $base = $filtered->getQuery();
+        $base->columns = null;
+        $base->orders = null;
+        $base->unionOrders = null;
+        $base->limit = null;
+        $base->offset = null;
+        $base->groups = null;
+        $base->havings = null;
+        foreach (['select', 'order', 'union', 'unionOrder', 'groupBy', 'having'] as $binding) {
+            $base->bindings[$binding] = [];
+        }
+
+        $filtered->select('products.id')->distinct()->reorder();
+
+        return Product::query()->whereIn('products.id', $filtered);
     }
 
     private function writeProductHeader(Worksheet $sheet): void
@@ -203,7 +226,7 @@ class ProductSheetService
         $sheet->freezePane('A2');
         $sheet->setAutoFilter("A1:{$lastCol}1");
 
-        $widths = [14, 16, 28, 28, 28, 24, 24, 36, 36, 16, 12, 12, 12, 16, 14, 14, 14, 18, 28, 32];
+        $widths = [14, 16, 28, 28, 28, 28, 24, 24, 36, 36, 16, 12, 12, 12, 16, 14, 14, 14, 18, 28, 32];
         foreach ($widths as $index => $width) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($index + 1))->setWidth($width);
         }
@@ -216,6 +239,7 @@ class ProductSheetService
             'id' => $product->id,
             'category_id' => $product->product_category_id,
             'category_name' => $category ? $this->categoryLabel($category) : '',
+            'tags' => $product->tags->pluck('name')->implode(', '),
             'name_ar' => $product->translate('ar')?->name,
             'name_en' => $product->translate('en')?->name,
             'usage_ar' => $product->translate('ar')?->usage,
@@ -337,7 +361,8 @@ class ProductSheetService
             '5. مع «نسبة» املأ نسبة النقاط وسعر الوحدة بالدينار. مع «ثابت» املأ قيمة النقطة.',
             '6. عمود الصورة: مسار ملف موجود على السيرفر مثل products/main/pipe.jpg. ارفع الصور إلى مجلد المنتجات أولاً، أو اترك الخانة فارغة.',
             '7. «اسم التصنيف (للعرض)» للمعرفة فقط ولا يُستورد. الاعتماد على رقم التصنيف.',
-            '8. بعد التعبئة ارفع الملف من صفحة المنتجات → شيت المنتجات → رفع الشيت.',
+            '8. عمود الوسوم: افصل الوسوم بفاصلة. الاقتراحات نفسها محفوظة على الفئة والتصنيف الفرعي.',
+            '9. بعد التعبئة ارفع الملف من صفحة المنتجات → شيت المنتجات → رفع الشيت.',
         ];
 
         foreach ($lines as $index => $line) {
@@ -541,6 +566,15 @@ class ProductSheetService
             $this->applyTranslation($product, 'ar', 'description', $values['description_ar'] ?? '');
             $this->applyTranslation($product, 'en', 'description', $values['description_en'] ?? '');
             $product->save();
+
+            if (array_key_exists('tags', $values)) {
+                $tagValue = $this->textValue((string) $values['tags']);
+                if ($tagValue === '') {
+                    $product->tags()->sync([]);
+                } elseif (is_string($tagValue)) {
+                    ProductTag::syncNamesOntoProduct($product, ProductTag::splitList($tagValue));
+                }
+            }
         });
 
         return $isNew ? 'created' : 'updated';

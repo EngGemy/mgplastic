@@ -32,6 +32,7 @@ class ProductCategoryResource extends JsonResource
 
         return [
             'id'                => $this->id,
+            'parent_id'         => $this->parent_id,
             'slug'              => $this->slug ?? null,
             'accepted_language' => $lang,
             'name'              => $name,
@@ -42,6 +43,8 @@ class ProductCategoryResource extends JsonResource
 
             // when() avoids extra COUNT if not present
             'products_count'    => $this->when(isset($this->products_count), (int) $this->products_count),
+
+            'tags'              => $this->whenLoaded('tags', fn ($tags) => $tags->pluck('name')->values()->all()),
 
             // include children if relation was eager-loaded
             'children'          => self::collection($this->whenLoaded('children')),

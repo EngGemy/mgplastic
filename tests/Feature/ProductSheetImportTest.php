@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductTag;
 use App\Services\ProductSheetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -144,6 +145,90 @@ class ProductSheetImportTest extends TestCase
         $this->assertSame('premium', $product->classification);
         $this->assertSame('ملاحظة', $product->notes);
         $this->assertEquals(5, (float) $product->points_per_unit);
+
+        @unlink($path);
+    }
+
+    public function test_export_ignores_table_page_offset(): void
+    {
+        $category = ProductCategory::factory()->create();
+        $product = Product::factory()->create([
+            'product_category_id' => $category->id,
+            'points_per_unit' => 1,
+            'point_value_type' => 'fixed',
+            'point_value_fixed' => 0.05,
+        ]);
+
+        $paged = Product::query()
+            ->withCount('images')
+            ->orderByDesc('points_per_unit')
+            ->limit(10)
+            ->offset(50);
+
+        $path = app(ProductSheetService::class)->exportPath($paged);
+        $book = IOFactory::load($path);
+        $sheet = $book->getSheetByName(ProductSheetService::PRODUCTS_SHEET);
+
+        $this->assertSame($product->id, (int) $sheet->getCell('A2')->getValue());
+        $this->assertSame('الوسوم', $sheet->getCell('D1')->getValue());
+
+        @unlink($path);
+    }
+
+    public function test_import_reuses_parent_tag_and_creates_child_tag(): void
+    {
+        $parent = ProductCategory::factory()->create();
+        $child = ProductCategory::factory()->create(['parent_id' => $parent->id]);
+        $parent->tags()->create(['name' => 'صرف']);
+
+        $existing = Product::factory()->create([
+            'product_category_id' => $child->id,
+            'points_per_unit' => 2,
+            'point_value_type' => 'fixed',
+            'point_value_fixed' => 0.2,
+        ]);
+        ProductTag::syncNamesOntoProduct($existing, ['صرف']);
+
+        $path = $this->sheet([
+            [
+                'category_id' => $child->id,
+                'name_ar' => 'كوع جديد',
+                'points_per_unit' => 1,
+                'point_value_type' => 'ثابت',
+                'point_value_fixed' => 0.05,
+                'tags' => 'صرف، جديد',
+            ],
+            [
+                'id' => $existing->id,
+                'tags' => '-',
+            ],
+        ]);
+
+        $result = app(ProductSheetService::class)->import($path);
+
+        $this->assertSame([], $result['errors'], implode(' | ', $result['errors']));
+        $this->assertSame(1, $result['created']);
+        $this->assertSame(1, $result['updated']);
+
+        $created = Product::query()->whereKeyNot($existing->id)->first();
+        $this->assertNotNull($created);
+        $this->assertEqualsCanonicalizing(['صرف', 'جديد'], $created->tags()->pluck('name')->all());
+
+        $reused = ProductTag::query()->where('name', 'صرف')->get();
+        $this->assertCount(1, $reused);
+        $this->assertSame($parent->id, $reused->first()->product_category_id);
+
+        $createdTag = ProductTag::query()->where('name', 'جديد')->first();
+        $this->assertNotNull($createdTag);
+        $this->assertSame($child->id, $createdTag->product_category_id);
+
+        $existing->refresh();
+        $this->assertSame(0, $existing->tags()->count());
+
+        $this->assertEqualsCanonicalizing(
+            ['صرف', 'جديد'],
+            ProductTag::suggestionsFor($parent->id, $child->id),
+        );
 
         @unlink($path);
     }
