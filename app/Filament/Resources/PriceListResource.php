@@ -122,6 +122,9 @@ class PriceListResource extends Resource
                             'browseParentId' => $livewire->browseParentId,
                             'browseCategoryId' => $livewire->browseCategoryId,
                             'catalogSearch' => $livewire->catalogSearch,
+                            'showQuotePreview' => $livewire->showQuotePreview,
+                            'quoteTitle' => $livewire->data['title'] ?? 'قائمة أسعار',
+                            'quoteSubtitle' => $livewire->data['subtitle'] ?? '',
                         ];
                     }),
             ])->columnSpanFull(),

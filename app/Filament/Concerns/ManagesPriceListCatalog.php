@@ -218,11 +218,53 @@ trait ManagesPriceListCatalog
             ->all();
     }
 
+    public bool $showQuotePreview = false;
+
+    public function toggleSection(string $kind, int $id): void
+    {
+        $indexes = [];
+        foreach ($this->quoteLines as $index => $line) {
+            $match = $kind === 'child'
+                ? (int) ($line['category_id'] ?? 0) === $id
+                : (int) ($line['parent_id'] ?? 0) === $id;
+            if ($match) {
+                $indexes[] = $index;
+            }
+        }
+
+        if ($indexes === []) {
+            return;
+        }
+
+        $allOn = collect($indexes)->every(fn (int $index) => $this->lineIsIncluded($this->quoteLines[$index]));
+        $wasEmpty = $this->includedCount() === 0;
+        foreach ($indexes as $index) {
+            $this->quoteLines[$index]['included'] = ! $allOn;
+        }
+
+        if ($wasEmpty && ! $allOn) {
+            $this->suggestScopeTitle($kind === 'child' ? $this->scopeName(null, $id) : $this->scopeName($id, null));
+        }
+
+        $this->showQuotePreview = false;
+    }
+
+    public function openQuotePreview(): void
+    {
+        $this->showQuotePreview = true;
+    }
+
+    public function closeQuotePreview(): void
+    {
+        $this->showQuotePreview = false;
+    }
+
     public function clearQuoteScope(): void
     {
         $this->quoteScopeParentId = null;
         $this->quoteScopeCategoryId = null;
         $this->setIncluded(fn () => false);
+        $this->showQuotePreview = false;
     }
 
     public function addManualQuoteLine(): void
