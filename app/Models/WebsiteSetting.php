@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PriceListWhatsApp;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
@@ -13,7 +14,8 @@ class WebsiteSetting extends Model
         'site_name', 'site_domain', 'seo_title', 'seo_description',
         'about_eyebrow', 'about_title', 'about_subtitle', 'about_paragraphs',
         'about_image', 'about_badge_year', 'about_badge_text', 'about_values',
-        'contact_phone', 'price_list_phones', 'contact_whatsapp', 'contact_email',
+        'contact_phone', 'price_list_phones', 'contact_whatsapp',
+        'support_phone', 'support_whatsapp', 'contact_email',
         'contact_address', 'contact_address_detail',
         'contact_work_days', 'contact_work_hours',
         'map_latitude', 'map_longitude',
@@ -89,6 +91,8 @@ class WebsiteSetting extends Model
             'contact_phone' => '+218913456789',
             'price_list_phones' => self::defaultPriceListPhones(),
             'contact_whatsapp' => '+218913456789',
+            'support_phone' => null,
+            'support_whatsapp' => null,
             'contact_email' => 'info@mg-plastic.ly',
             'contact_address' => 'طرابلس، ليبيا',
             'contact_address_detail' => 'شارع عمر المختار — المنطقة الصناعية',
@@ -113,6 +117,41 @@ class WebsiteSetting extends Model
             ],
             'footer_tagline' => 'مصنع أدوات السباكة الأول في ليبيا — تصنيع وتوزيع بمعايير عالية منذ ٢٠١٠.',
         ];
+    }
+
+    /**
+     * Support contacts shown in the mobile apps.
+     *
+     * @return array{phone: ?string, phone_url: ?string, whatsapp: ?string, whatsapp_url: ?string}
+     */
+    public function supportContacts(): array
+    {
+        $phone = trim((string) $this->support_phone);
+        $whatsapp = trim((string) $this->support_whatsapp);
+
+        return [
+            'phone' => $phone !== '' ? $phone : null,
+            'phone_url' => $this->supportTelUrl($phone),
+            'whatsapp' => $whatsapp !== '' ? $whatsapp : null,
+            'whatsapp_url' => $this->supportWhatsAppUrl($whatsapp),
+        ];
+    }
+
+    private function supportTelUrl(string $phone): ?string
+    {
+        $digits = PriceListWhatsApp::international($phone);
+
+        return $digits ? 'tel:+'.$digits : null;
+    }
+
+    private function supportWhatsAppUrl(string $phone): ?string
+    {
+        $digits = PriceListWhatsApp::international($phone);
+        if ($digits === null || strlen($digits) < 11) {
+            return null;
+        }
+
+        return 'https://wa.me/'.$digits;
     }
 
     /** Same logo as the main Filament admin panel (`brandLogo`). */

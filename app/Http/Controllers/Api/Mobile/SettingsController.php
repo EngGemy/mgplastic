@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AppFlag;
 use App\Models\ConversionRule;
 use App\Models\SystemLabel;
+use App\Models\WebsiteSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -44,6 +45,7 @@ class SettingsController extends Controller
                 'invoices' => SystemLabel::get('invoices', 'الفواتير'),
                 'withdrawals' => SystemLabel::get('withdrawal_requests', 'طلبات السحب'),
             ],
+            'support' => WebsiteSetting::instance()->supportContacts(),
             'links' => [
                 'terms' => url('/api/v1/terms'),
                 'privacy' => url('/api/v1/privacy'),

@@ -104,6 +104,20 @@ class ManageWebsiteSettings extends Page implements HasForms
                                 ])->columns(3)->columnSpanFull(),
                             ])->columns(2),
 
+                        Forms\Components\Tabs\Tab::make('دعم التطبيق')
+                            ->schema([
+                                Forms\Components\TextInput::make('support_phone')
+                                    ->label('رقم الدعم')
+                                    ->tel()
+                                    ->placeholder('0916126065')
+                                    ->helperText('يظهر في التطبيق كزر اتصال. اتركه فارغاً لإخفاء الزر.'),
+                                Forms\Components\TextInput::make('support_whatsapp')
+                                    ->label('واتساب الدعم')
+                                    ->tel()
+                                    ->placeholder('0916126065')
+                                    ->helperText('يظهر في التطبيق كزر واتساب. الرقم الليبي 0916… يتحول تلقائياً لرابط wa.me.'),
+                            ])->columns(2),
+
                         Forms\Components\Tabs\Tab::make('التواصل')
                             ->schema([
                                 Forms\Components\TextInput::make('contact_phone')->label('الهاتف'),

@@ -106,7 +106,9 @@ Full guide: [PRODUCT_MODULE.md](PRODUCT_MODULE.md)
 GET /api/v1/mobile/settings
 ```
 
-Returns: conversion rules, withdrawal methods, app labels, terms/privacy links, iOS wallet visibility.
+Returns: conversion rules, withdrawal methods, app labels, support phone and WhatsApp, terms/privacy links, iOS wallet visibility.
+
+Support numbers are edited in admin → إعدادات الموقع → دعم التطبيق. Full contract: [MOBILE_SUPPORT.md](MOBILE_SUPPORT.md)
 
 ---
 
