@@ -84,5 +84,13 @@ class PriceListDocumentTest extends TestCase
             ->assertOk()
             ->assertSee('0920000000')
             ->assertDontSee('0916126065');
+
+        $this->assertSame('شركة الأمل', PriceList::withCustomerSnapshot([
+            'factory_customer_id' => \App\Models\FactoryCustomer::query()->create([
+                'company_name' => 'شركة الأمل',
+                'contact_name' => 'أحمد',
+                'phone' => '0910000000',
+            ])->id,
+        ])['customer_company']);
     }
 }

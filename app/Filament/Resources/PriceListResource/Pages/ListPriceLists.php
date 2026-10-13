@@ -13,7 +13,7 @@ class ListPriceLists extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make()->label('قائمة جديدة'),
+            Actions\CreateAction::make()->label('عرض جديد'),
         ];
     }
 }

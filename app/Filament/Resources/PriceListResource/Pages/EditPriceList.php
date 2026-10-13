@@ -13,6 +13,37 @@ class EditPriceList extends EditRecord
 {
     protected static string $resource = PriceListResource::class;
 
+    protected static ?string $title = 'تعديل عرض السعر';
+
+    public bool $printAfterSave = false;
+
+    public function getSubheading(): ?string
+    {
+        /** @var PriceList $record */
+        $record = $this->record;
+
+        return $record->number;
+    }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        return PriceList::withCustomerSnapshot($data);
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        if ($this->printAfterSave) {
+            return route('admin.price-lists.print', $this->record);
+        }
+
+        return parent::getRedirectUrl();
+    }
+
+    protected function getSavedNotificationTitle(): ?string
+    {
+        return 'تم تحديث عرض السعر';
+    }
+
     protected function getHeaderActions(): array
     {
         return [
@@ -25,9 +56,7 @@ class EditPriceList extends EditRecord
                 ->label('رابط العميل')
                 ->icon('heroicon-o-link')
                 ->action(function () {
-                    /** @var PriceList $record */
-                    $record = $this->record;
-                    $url = URL::temporarySignedRoute('price-lists.share', now()->addDays(30), $record);
+                    $url = URL::temporarySignedRoute('price-lists.share', now()->addDays(30), $this->record);
 
                     Notification::make()
                         ->title('رابط العرض جاهز لمدة 30 يوماً')
@@ -40,8 +69,18 @@ class EditPriceList extends EditRecord
         ];
     }
 
-    protected function getSavedNotificationTitle(): ?string
+    protected function getFormActions(): array
     {
-        return 'تم تحديث قائمة الأسعار';
+        return [
+            $this->getSaveFormAction()->label('حفظ'),
+            Actions\Action::make('savePrint')
+                ->label('حفظ وطباعة')
+                ->color('gray')
+                ->action(function () {
+                    $this->printAfterSave = true;
+                    $this->save();
+                }),
+            $this->getCancelFormAction()->label('رجوع'),
+        ];
     }
 }

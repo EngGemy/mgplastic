@@ -3,21 +3,81 @@
 namespace App\Filament\Resources\PriceListResource\Pages;
 
 use App\Filament\Resources\PriceListResource;
+use App\Models\PriceList;
+use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Support\Facades\URL;
 
 class CreatePriceList extends CreateRecord
 {
     protected static string $resource = PriceListResource::class;
 
-    protected static ?string $title = 'قائمة أسعار جديدة';
+    protected static ?string $title = 'عرض سعر جديد';
+
+    public bool $printAfterSave = false;
+
+    public bool $shareAfterSave = false;
+
+    public function getSubheading(): ?string
+    {
+        return 'ابحث عن عميل المصنع أو أضفه، أضف المنتجات، ثم احفظ للطباعة أو إرسال الرابط.';
+    }
+
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        return PriceList::withCustomerSnapshot($data);
+    }
 
     protected function getRedirectUrl(): string
     {
+        if ($this->printAfterSave) {
+            return route('admin.price-lists.print', $this->record);
+        }
+
         return $this->getResource()::getUrl('edit', ['record' => $this->record]);
+    }
+
+    protected function afterCreate(): void
+    {
+        if (! $this->shareAfterSave) {
+            return;
+        }
+
+        $url = URL::temporarySignedRoute('price-lists.share', now()->addDays(30), $this->record);
+
+        Notification::make()
+            ->title('الرابط جاهز لمدة 30 يوماً')
+            ->body($url)
+            ->success()
+            ->persistent()
+            ->send();
     }
 
     protected function getCreatedNotificationTitle(): ?string
     {
-        return 'تم حفظ قائمة الأسعار';
+        return 'تم حفظ عرض السعر';
+    }
+
+    protected function getFormActions(): array
+    {
+        return [
+            $this->getCreateFormAction()->label('حفظ'),
+            Actions\Action::make('savePrint')
+                ->label('حفظ وطباعة')
+                ->color('gray')
+                ->action(function () {
+                    $this->printAfterSave = true;
+                    $this->create();
+                }),
+            Actions\Action::make('saveShare')
+                ->label('حفظ ونسخ الرابط')
+                ->color('gray')
+                ->action(function () {
+                    $this->shareAfterSave = true;
+                    $this->create();
+                }),
+            $this->getCancelFormAction()->label('إلغاء'),
+        ];
     }
 }

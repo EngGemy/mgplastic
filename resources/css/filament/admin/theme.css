@@ -1517,3 +1517,14 @@
 .dark .mg-pending-store {
     background: rgb(120 53 15 / 20%) !important;
 }
+
+/* عرض السعر: سطور أصناف مضغوطة في صف واحد */
+.fi-resource-price-lists .mg-quote-lines .fi-fo-repeater-item {
+    padding: 0.65rem 0.75rem;
+    border-radius: 12px;
+}
+
+.fi-resource-price-lists .fi-header-subheading {
+    max-width: 42rem;
+    line-height: 1.6;
+}

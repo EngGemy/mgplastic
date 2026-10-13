@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PriceList extends Model
@@ -11,6 +12,7 @@ class PriceList extends Model
         'number',
         'title',
         'subtitle',
+        'factory_customer_id',
         'customer_name',
         'customer_company',
         'customer_phone',
@@ -45,6 +47,35 @@ class PriceList extends Model
     public function items(): HasMany
     {
         return $this->hasMany(PriceListItem::class)->orderBy('sort')->orderBy('id');
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(FactoryCustomer::class, 'factory_customer_id');
+    }
+
+    /**
+     * Copy the factory customer onto the printed quote so later edits do not rewrite old lists.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function withCustomerSnapshot(array $data): array
+    {
+        if (empty($data['factory_customer_id'])) {
+            return $data;
+        }
+
+        $customer = FactoryCustomer::query()->find($data['factory_customer_id']);
+        if (! $customer) {
+            return $data;
+        }
+
+        $data['customer_company'] = $customer->company_name;
+        $data['customer_name'] = $customer->contact_name;
+        $data['customer_phone'] = $customer->phone;
+
+        return $data;
     }
 
     public function customerLabel(): ?string
