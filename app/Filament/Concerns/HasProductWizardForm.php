@@ -348,6 +348,35 @@ trait HasProductWizardForm
         ];
     }
 
+    protected static function quotePriceFields(): array
+    {
+        $money = fn (string $name, string $label, string $suffix) => Forms\Components\TextInput::make($name)
+            ->label($label)
+            ->numeric()
+            ->minValue(0)
+            ->step(0.001)
+            ->suffix($suffix)
+            ->placeholder('0');
+
+        return [
+            Forms\Components\Section::make('أسعار قائمة الأسعار')
+                ->description('تظهر في عرض السعر فقط. لا تُرسل للتطبيق ولا لكتالوج المنتجات ولا لنقاط البيع.')
+                ->schema([
+                    Forms\Components\TextInput::make('pieces_per_box')
+                        ->label('عبوة الصندوق')
+                        ->numeric()
+                        ->minValue(1)
+                        ->suffix('قطعة')
+                        ->helperText('مثال: 12 تُطبع 12-قطعة'),
+                    $money('piece_price_lyd', 'سعر القطعة (دينار)', 'د.ل'),
+                    $money('piece_price_aed', 'سعر القطعة (درهم)', 'د.إ'),
+                    $money('box_price_lyd', 'سعر الصندوق (دينار)', 'د.ل'),
+                    $money('box_price_aed', 'سعر الصندوق (درهم)', 'د.إ'),
+                ])
+                ->columns(2),
+        ];
+    }
+
     public static function editTabbedForm(Form $form): Form
     {
         return $form->schema([
@@ -365,6 +394,10 @@ trait HasProductWizardForm
                         Forms\Components\Tabs\Tab::make('المواصفات')
                             ->icon('heroicon-o-cube')
                             ->schema(static::productSpecsFields()),
+
+                        Forms\Components\Tabs\Tab::make('أسعار العرض')
+                            ->icon('heroicon-o-banknotes')
+                            ->schema(static::quotePriceFields()),
 
                         Forms\Components\Tabs\Tab::make('النقاط')
                             ->icon('heroicon-o-star')
@@ -406,6 +439,11 @@ trait HasProductWizardForm
                     ->description('الأبعاد والدرجة')
                     ->icon('heroicon-o-cube')
                     ->schema(static::productSpecsFields()),
+
+                Forms\Components\Wizard\Step::make('أسعار العرض')
+                    ->description('قطعة وصندوق — للقائمة فقط')
+                    ->icon('heroicon-o-banknotes')
+                    ->schema(static::quotePriceFields()),
 
                 Forms\Components\Wizard\Step::make('النقاط')
                     ->description('قيمة النقاط وتحويلها المالي')

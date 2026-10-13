@@ -13,7 +13,7 @@ class WebsiteSetting extends Model
         'site_name', 'site_domain', 'seo_title', 'seo_description',
         'about_eyebrow', 'about_title', 'about_subtitle', 'about_paragraphs',
         'about_image', 'about_badge_year', 'about_badge_text', 'about_values',
-        'contact_phone', 'contact_whatsapp', 'contact_email',
+        'contact_phone', 'price_list_phones', 'contact_whatsapp', 'contact_email',
         'contact_address', 'contact_address_detail',
         'contact_work_days', 'contact_work_hours',
         'map_latitude', 'map_longitude',
@@ -24,6 +24,7 @@ class WebsiteSetting extends Model
 
     protected $casts = [
         'about_paragraphs' => 'array',
+        'price_list_phones' => 'array',
         'about_values' => 'array',
         'points_chain' => 'array',
         'points_features' => 'array',
@@ -34,6 +35,32 @@ class WebsiteSetting extends Model
     public static function instance(): self
     {
         return static::query()->firstOrCreate([], static::defaults());
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function defaultPriceListPhones(): array
+    {
+        return ['0916126065', '0919842523', '0912159316', '0922159316'];
+    }
+
+    /**
+     * Phones printed on every price list. Null means the factory numbers.
+     *
+     * @return list<string>
+     */
+    public function priceListPhones(): array
+    {
+        if (! is_array($this->price_list_phones)) {
+            return self::defaultPriceListPhones();
+        }
+
+        return collect($this->price_list_phones)
+            ->map(fn ($phone) => trim((string) $phone))
+            ->filter()
+            ->values()
+            ->all();
     }
 
     public static function defaults(): array
@@ -60,6 +87,7 @@ class WebsiteSetting extends Model
                 ['icon' => 'ti-star', 'title' => 'نظام النقاط', 'desc' => 'مكافأة السباكين على ولائهم'],
             ],
             'contact_phone' => '+218913456789',
+            'price_list_phones' => self::defaultPriceListPhones(),
             'contact_whatsapp' => '+218913456789',
             'contact_email' => 'info@mg-plastic.ly',
             'contact_address' => 'طرابلس، ليبيا',
@@ -106,7 +134,6 @@ class WebsiteSetting extends Model
     /**
      * Flatten nested repeater / JSON shapes into plain paragraph strings.
      *
-     * @param  mixed  $paragraphs
      * @return list<string>
      */
     public static function normalizeParagraphs(mixed $paragraphs): array

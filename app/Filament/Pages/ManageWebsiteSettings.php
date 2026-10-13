@@ -60,6 +60,10 @@ class ManageWebsiteSettings extends Page implements HasForms
             }
         }
 
+        if (blank($data['price_list_phones'] ?? null)) {
+            $data['price_list_phones'] = WebsiteSetting::defaultPriceListPhones();
+        }
+
         $this->form->fill($data);
     }
 
@@ -103,6 +107,11 @@ class ManageWebsiteSettings extends Page implements HasForms
                         Forms\Components\Tabs\Tab::make('التواصل')
                             ->schema([
                                 Forms\Components\TextInput::make('contact_phone')->label('الهاتف'),
+                                Forms\Components\TagsInput::make('price_list_phones')
+                                    ->label('هواتف قائمة الأسعار')
+                                    ->placeholder('اكتب الرقم ثم Enter')
+                                    ->helperText('تظهر في فوتر كل قوائم الأسعار. تغييرها هنا يحدّث كل المطبوعات.')
+                                    ->columnSpanFull(),
                                 Forms\Components\TextInput::make('contact_whatsapp')->label('واتساب'),
                                 Forms\Components\TextInput::make('contact_email')->label('البريد')->email(),
                                 Forms\Components\TextInput::make('contact_address')->label('العنوان'),

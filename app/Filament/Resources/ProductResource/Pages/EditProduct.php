@@ -52,6 +52,11 @@ class EditProduct extends EditRecord
             'point_value_percent' => $data['point_value_percent'] ?? null,
             'point_value_fixed' => $data['point_value_fixed'] ?? null,
             'reference_unit_price_cents' => $data['reference_unit_price_cents'] ?? null,
+            'pieces_per_box' => $data['pieces_per_box'] ?? null,
+            'piece_price_lyd' => $data['piece_price_lyd'] ?? null,
+            'piece_price_aed' => $data['piece_price_aed'] ?? null,
+            'box_price_lyd' => $data['box_price_lyd'] ?? null,
+            'box_price_aed' => $data['box_price_aed'] ?? null,
             'main_image' => $this->normalizeUploadPath($data['main_image'] ?? null),
             'meta' => $data['meta'] ?? null,
         ];

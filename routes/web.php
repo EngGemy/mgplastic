@@ -1,10 +1,10 @@
 <?php
 
-use App\Support\AdminPanelPath;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Web\LandingController;
 use App\Http\Controllers\Web\PortalController;
 use App\Http\Controllers\Web\WebsiteRegistrationController;
+use App\Support\AdminPanelPath;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', [LandingController::class, 'index'])->name('landing');
 Route::get('/portal', [PortalController::class, 'index'])->name('portal');
@@ -23,6 +23,17 @@ Route::middleware(['web', 'auth'])
         Route::get('{invoice}/download', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'download'])->name('download');
         Route::get('{invoice}/export', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'exportJson'])->name('export');
     });
+
+Route::middleware(['web', 'auth'])
+    ->prefix(AdminPanelPath::segment().'/price-lists')
+    ->name('admin.price-lists.')
+    ->group(function () {
+        Route::get('{priceList}/print', [\App\Http\Controllers\Admin\PriceListDocumentController::class, 'print'])->name('print');
+    });
+
+Route::get('/price-lists/{priceList}/share', [\App\Http\Controllers\Admin\PriceListDocumentController::class, 'share'])
+    ->middleware('signed')
+    ->name('price-lists.share');
 
 // Signed shareable withdrawal receipt (opens without app token)
 Route::get('/withdrawals/{withdrawal}/receipt', [\App\Http\Controllers\WithdrawalReceiptWebController::class, 'show'])

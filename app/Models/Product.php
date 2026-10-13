@@ -26,6 +26,11 @@ class Product extends Model
         'thickness_mm',
         'volume_ml',
         'classification',
+        'pieces_per_box',
+        'piece_price_lyd',
+        'piece_price_aed',
+        'box_price_lyd',
+        'box_price_aed',
         'notes',
         'main_image',
         'meta',
@@ -48,6 +53,11 @@ class Product extends Model
         'length_m' => 'float',
         'thickness_mm' => 'float',
         'volume_ml' => 'float',
+        'pieces_per_box' => 'integer',
+        'piece_price_lyd' => 'decimal:3',
+        'piece_price_aed' => 'decimal:3',
+        'box_price_lyd' => 'decimal:3',
+        'box_price_aed' => 'decimal:3',
         'meta' => 'array',
         'points_per_unit' => 'decimal:4',
         'point_value_percent' => 'decimal:4',
@@ -79,6 +89,24 @@ class Product extends Model
     public function tags(): BelongsToMany
     {
         return $this->belongsToMany(ProductTag::class, 'product_tag');
+    }
+
+    /**
+     * Snapshot copied onto a price-list line. These prices stay off the public catalog.
+     *
+     * @return array{product_id: int, item_name: string, pieces_per_box: ?int, piece_price_lyd: float|string, piece_price_aed: float|string, box_price_lyd: float|string, box_price_aed: float|string}
+     */
+    public function quoteLinePayload(): array
+    {
+        return [
+            'product_id' => $this->id,
+            'item_name' => localized_name($this, 'name', 'منتج #'.$this->id),
+            'pieces_per_box' => $this->pieces_per_box,
+            'piece_price_lyd' => $this->piece_price_lyd ?? 0,
+            'piece_price_aed' => $this->piece_price_aed ?? 0,
+            'box_price_lyd' => $this->box_price_lyd ?? 0,
+            'box_price_aed' => $this->box_price_aed ?? 0,
+        ];
     }
 
     public function invoiceItems(): HasMany
