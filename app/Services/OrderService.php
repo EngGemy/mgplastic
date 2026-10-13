@@ -35,6 +35,18 @@ class OrderService
             throw new \DomainException('أضف منتجاً واحداً على الأقل للطلب');
         }
 
+        if ($channel === OrderStatus::CHANNEL_RETAIL_TO_PLUMBER && $supplier) {
+            $requested = [];
+            foreach ($prepared['items'] as $row) {
+                $requested[(int) $row['product_id']] = (int) $row['quantity'];
+            }
+
+            $this->inventory->allocateFromStock(
+                $this->inventory->stockForRetailTrader($supplier),
+                $requested,
+            );
+        }
+
         $order = DB::transaction(function () use ($requester, $supplier, $channel, $prepared, $meta) {
             $order = Order::create([
                 'channel' => $channel,

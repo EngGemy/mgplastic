@@ -124,6 +124,35 @@ Prefix: `/api/v1/mobile/plumber` — requires role `plumber`
 | GET | `/withdrawals` | List withdrawal requests |
 | GET | `/withdrawals/{id}` | Single withdrawal |
 | POST | `/withdrawals` | Request withdrawal |
+| GET | `/products` | MG catalog for a supply order. Optional `retail_trader_id` limits the list to that shop's stock |
+| POST | `/orders` | Place a supply order. Quantities are checked against the shop's stock |
+
+**Shop stock on the product list**
+
+`GET /api/v1/mobile/plumber/products?retail_trader_id={id}&page=&search=&category_id=&tag=`
+
+Without `retail_trader_id` the response is the full MG catalog, same fields as before.
+
+With `retail_trader_id` the list contains only products that shop has in stock (`available_quantity` > 0). Each item keeps the existing fields and adds `available_quantity`. Pagination stays `{ items, pagination: { current_page, last_page, per_page, total } }`.
+
+`search` and `q` both search. `tag` or `tags` filters by tag name. `category_id` and `page` / `per_page` work as before.
+
+The shop must be an approved, active retail trader. Unknown ids return 404. An inactive or unapproved shop returns 403.
+
+`POST /api/v1/mobile/plumber/orders` rejects a line whose quantity is above that shop's stock with 422 and a message that includes the available quantity.
+
+```json
+{
+  "id": 12,
+  "name": "ماسورة 160 بوصة خط ذهبي MG",
+  "category_id": 3,
+  "category_name": "مواسير الذهبي",
+  "image_url": "https://...",
+  "points_per_unit": 230.3,
+  "has_points": true,
+  "available_quantity": 40
+}
+```
 
 **Withdrawal example:**
 
