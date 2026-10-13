@@ -126,8 +126,14 @@ class WebsiteSetting extends Model
      */
     public function supportContacts(): array
     {
-        $phone = trim((string) $this->support_phone);
-        $whatsapp = trim((string) $this->support_whatsapp);
+        $phone = trim((string) $this->contact_phone);
+        $whatsapp = trim((string) $this->contact_whatsapp);
+        if ($whatsapp === '') {
+            $whatsapp = $phone;
+        }
+        if ($phone === '') {
+            $phone = $whatsapp;
+        }
 
         return [
             'phone' => $phone !== '' ? $phone : null,

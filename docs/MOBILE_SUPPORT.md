@@ -2,7 +2,9 @@
 
 The support button in the app reads one public endpoint. Numbers are changed from the admin panel, not in the app.
 
-**Admin:** إعدادات الموقع → تبويب **دعم التطبيق**  
+**Admin:** إعدادات الموقع → تبويب **التواصل** → الهاتف وواتساب
+
+The app uses those same two numbers. There is no separate support number. If WhatsApp is empty, the app uses the phone number for both buttons.  
 **Production:** `GET https://mg-plastic.com/api/v1/mobile/settings`  
 **Local:** `GET http://127.0.0.1:8000/api/v1/mobile/settings`
 

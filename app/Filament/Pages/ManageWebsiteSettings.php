@@ -104,29 +104,19 @@ class ManageWebsiteSettings extends Page implements HasForms
                                 ])->columns(3)->columnSpanFull(),
                             ])->columns(2),
 
-                        Forms\Components\Tabs\Tab::make('دعم التطبيق')
-                            ->schema([
-                                Forms\Components\TextInput::make('support_phone')
-                                    ->label('رقم الدعم')
-                                    ->tel()
-                                    ->placeholder('0916126065')
-                                    ->helperText('يظهر في التطبيق كزر اتصال. اتركه فارغاً لإخفاء الزر.'),
-                                Forms\Components\TextInput::make('support_whatsapp')
-                                    ->label('واتساب الدعم')
-                                    ->tel()
-                                    ->placeholder('0916126065')
-                                    ->helperText('يظهر في التطبيق كزر واتساب. الرقم الليبي 0916… يتحول تلقائياً لرابط wa.me.'),
-                            ])->columns(2),
-
                         Forms\Components\Tabs\Tab::make('التواصل')
                             ->schema([
-                                Forms\Components\TextInput::make('contact_phone')->label('الهاتف'),
+                                Forms\Components\TextInput::make('contact_phone')
+                                    ->label('الهاتف')
+                                    ->helperText('نفس الرقم يظهر في التطبيق كزر اتصال الدعم.'),
+                                Forms\Components\TextInput::make('contact_whatsapp')
+                                    ->label('واتساب')
+                                    ->helperText('نفس الرقم يظهر في التطبيق كزر واتساب الدعم. لو فاضي، التطبيق يستخدم رقم الهاتف.'),
                                 Forms\Components\TagsInput::make('price_list_phones')
                                     ->label('هواتف قائمة الأسعار')
                                     ->placeholder('اكتب الرقم ثم Enter')
                                     ->helperText('تظهر في فوتر كل قوائم الأسعار. تغييرها هنا يحدّث كل المطبوعات.')
                                     ->columnSpanFull(),
-                                Forms\Components\TextInput::make('contact_whatsapp')->label('واتساب'),
                                 Forms\Components\TextInput::make('contact_email')->label('البريد')->email(),
                                 Forms\Components\TextInput::make('contact_address')->label('العنوان'),
                                 Forms\Components\TextInput::make('contact_address_detail')->label('تفاصيل العنوان'),

@@ -14,20 +14,33 @@ class MobileSupportSettingsTest extends TestCase
     {
         $settings = WebsiteSetting::instance();
         $settings->update([
-            'support_phone' => '0916126065',
-            'support_whatsapp' => '0916126065',
+            'contact_phone' => '0916126065',
+            'contact_whatsapp' => '0922159316',
+            'support_phone' => null,
+            'support_whatsapp' => null,
         ]);
 
         $this->getJson('/api/v1/mobile/settings')
             ->assertOk()
             ->assertJsonPath('data.support.phone', '0916126065')
             ->assertJsonPath('data.support.phone_url', 'tel:+218916126065')
-            ->assertJsonPath('data.support.whatsapp', '0916126065')
-            ->assertJsonPath('data.support.whatsapp_url', 'https://wa.me/218916126065');
+            ->assertJsonPath('data.support.whatsapp', '0922159316')
+            ->assertJsonPath('data.support.whatsapp_url', 'https://wa.me/218922159316');
 
         $settings->update([
-            'support_phone' => '',
-            'support_whatsapp' => null,
+            'contact_phone' => '0919842523',
+            'contact_whatsapp' => '',
+        ]);
+
+        $this->getJson('/api/v1/mobile/settings')
+            ->assertOk()
+            ->assertJsonPath('data.support.phone', '0919842523')
+            ->assertJsonPath('data.support.whatsapp', '0919842523')
+            ->assertJsonPath('data.support.whatsapp_url', 'https://wa.me/218919842523');
+
+        $settings->update([
+            'contact_phone' => '',
+            'contact_whatsapp' => null,
         ]);
 
         $this->getJson('/api/v1/mobile/settings')

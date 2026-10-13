@@ -108,7 +108,7 @@ GET /api/v1/mobile/settings
 
 Returns: conversion rules, withdrawal methods, app labels, support phone and WhatsApp, terms/privacy links, iOS wallet visibility.
 
-Support numbers are edited in admin → إعدادات الموقع → دعم التطبيق. Full contract: [MOBILE_SUPPORT.md](MOBILE_SUPPORT.md)
+Support numbers are the website contact phone and WhatsApp (admin → إعدادات الموقع → التواصل). Full contract: [MOBILE_SUPPORT.md](MOBILE_SUPPORT.md)
 
 ---
 
