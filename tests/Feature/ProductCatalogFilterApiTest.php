@@ -91,5 +91,9 @@ class ProductCatalogFilterApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.id', $elbow->id)
             ->assertJsonCount(1, 'data');
+
+        $this->getJson('/api/v1/products/'.$elbow->id, $headers)
+            ->assertOk()
+            ->assertJsonPath('data.tags.0', 'كوع');
     }
 }

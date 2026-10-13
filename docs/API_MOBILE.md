@@ -85,6 +85,21 @@ POST /api/v1/auth/verify-otp
 
 ---
 
+## Product module
+
+Public catalog: categories, subcategories, tags, and product filters. No token.
+
+Full guide: [PRODUCT_MODULE.md](PRODUCT_MODULE.md)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/products/categories` | Category tree, or filter by `search` / `tag` / `parent_id` |
+| GET | `/api/v1/products` | Filter products |
+| GET | `/api/v1/products/category/{id}` | Products in one category |
+| GET | `/api/v1/products/{id}` | One product |
+
+---
+
 ## Settings (public)
 
 ```http

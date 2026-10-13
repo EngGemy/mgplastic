@@ -764,6 +764,7 @@ class ProductController extends Controller
             'color',
             'sizes.system',
             'variants',
+            'tags',
         ])->findOrFail($id);
 
         // --- Locale (الموبايل يرسل Accept-Language للميــدلوير/أب لاحقاً؛ هنا نستخدم القيمة الحالية) ---
@@ -991,6 +992,7 @@ class ProductController extends Controller
 
                 'product_category_id' => $product->product_category_id,
                 'category_name'       => (string) (optional($product->category->translate($locale) ?: $product->category->translate('en'))->name ?? ''),
+                'tags'                => $product->tags->pluck('name')->values()->all(),
                 'product_standard_id' => $product->product_standard_id,
                 'standard_name'       => optional($product->standard)->name ?? null,
                 'product_color_id'    => $product->product_color_id,
