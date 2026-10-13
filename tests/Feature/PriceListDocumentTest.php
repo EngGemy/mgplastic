@@ -133,10 +133,11 @@ class PriceListDocumentTest extends TestCase
         $other->save();
 
         $component = Livewire::test(CreatePriceList::class)
-            ->assertSee('نطاق العرض')
+            ->assertSee('الكتالوج')
+            ->assertSee('العرض')
+            ->call('openCatalogCategory', $parent->id, $category->id)
             ->assertSee('كوع ظاهر')
-            ->assertSee('هذا القسم فقط')
-            ->assertSee('أضف القسم');
+            ->assertSee('إضافة القسم');
 
         $lines = collect($component->get('quoteLines'));
         $this->assertFalse((bool) $lines->first(fn (array $line) => $line['item_name'] === 'كوع ظاهر')['included']);

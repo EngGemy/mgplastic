@@ -24,7 +24,7 @@ class CreatePriceList extends CreateRecord
 
     public function getSubheading(): ?string
     {
-        return 'المنتجات قدامك ومقسّمة. اختَر التصنيف كله أو جزءًا منه، راجع السعر، ثم احفظ أو أرسل واتساب.';
+        return 'من الكتالوج اختَر تصنيفًا وأضِفه، أو صنفًا واحدًا. راجع السعر في العرض ثم احفظ أو أرسل واتساب.';
     }
 
     public function mount(): void

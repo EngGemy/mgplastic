@@ -97,6 +97,127 @@ trait ManagesPriceListCatalog
         }
     }
 
+    public string $catalogSearch = '';
+
+    public ?int $browseParentId = null;
+
+    public ?int $browseCategoryId = null;
+
+    public function openCatalogParent(int $parentId): void
+    {
+        $this->browseParentId = $parentId;
+        $this->browseCategoryId = null;
+        $this->catalogSearch = '';
+    }
+
+    public function openCatalogCategory(int $parentId, int $categoryId): void
+    {
+        $this->browseParentId = $parentId;
+        $this->browseCategoryId = $categoryId;
+        $this->catalogSearch = '';
+    }
+
+    public function addBrowsedProducts(): void
+    {
+        $wasEmpty = $this->includedCount() === 0;
+
+        if (trim($this->catalogSearch) !== '') {
+            foreach ($this->catalogRows() as $row) {
+                $this->quoteLines[$row['_index']]['included'] = true;
+            }
+
+            return;
+        }
+
+        if ($this->browseCategoryId) {
+            $this->addSectionScope((int) $this->browseParentId, (int) $this->browseCategoryId);
+            if ($wasEmpty) {
+                $this->suggestScopeTitle($this->scopeName((int) $this->browseParentId, (int) $this->browseCategoryId));
+            }
+
+            return;
+        }
+
+        if ($this->browseParentId) {
+            $this->addParentProducts((int) $this->browseParentId);
+            if ($wasEmpty) {
+                $this->suggestScopeTitle($this->scopeName((int) $this->browseParentId, null));
+            }
+        }
+    }
+
+    public function addParentProducts(int $parentId): void
+    {
+        foreach ($this->quoteLines as $index => $line) {
+            if ((int) ($line['parent_id'] ?? 0) === $parentId) {
+                $this->quoteLines[$index]['included'] = true;
+            }
+        }
+    }
+
+    public function toggleLine(int $index): void
+    {
+        if (! isset($this->quoteLines[$index])) {
+            return;
+        }
+
+        $this->quoteLines[$index]['included'] = ! $this->lineIsIncluded($this->quoteLines[$index]);
+    }
+
+    public function removeSectionAt(int $index): void
+    {
+        $name = (string) ($this->quoteLines[$index]['category_name'] ?? '');
+        if ($name === '') {
+            return;
+        }
+
+        $this->removeSection($name);
+    }
+
+    public function removeSection(string $name): void
+    {
+        foreach ($this->quoteLines as $index => $line) {
+            if (($line['category_name'] ?? '') === $name) {
+                $this->quoteLines[$index]['included'] = false;
+            }
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function catalogRows(): array
+    {
+        $search = mb_strtolower(trim($this->catalogSearch));
+
+        return collect($this->quoteLines)
+            ->map(function (array $line, int $index) {
+                $line['_index'] = $index;
+                $line['included'] = $this->lineIsIncluded($line);
+
+                return $line;
+            })
+            ->filter(function (array $line) use ($search) {
+                if ($search !== '') {
+                    $haystack = mb_strtolower(($line['item_name'] ?? '').' '.($line['category_name'] ?? ''));
+
+                    return str_contains($haystack, $search);
+                }
+
+                if ($this->browseCategoryId) {
+                    return (int) ($line['category_id'] ?? 0) === (int) $this->browseCategoryId;
+                }
+
+                if ($this->browseParentId) {
+                    return (int) ($line['parent_id'] ?? 0) === (int) $this->browseParentId;
+                }
+
+                return false;
+            })
+            ->values()
+            ->all();
+    }
+
     public function clearQuoteScope(): void
     {
         $this->quoteScopeParentId = null;
@@ -354,6 +475,11 @@ trait ManagesPriceListCatalog
     /**
      * @param  array<string, mixed>  $line
      */
+    private function includedCount(): int
+    {
+        return collect($this->quoteLines)->filter(fn (array $line) => $this->lineIsIncluded($line))->count();
+    }
+
     private function lineIsIncluded(array $line): bool
     {
         return ! in_array($line['included'] ?? true, [false, 0, '0', 'false', 'off', '', null], true);

@@ -1,147 +1,131 @@
-<div
-    class="mg-quote-sheet"
-    x-data="{
-        q: '',
-        parent: @js($quoteScopeParentId),
-        category: @js($quoteScopeCategoryId),
-        children: @js($children),
-        show(parentId, categoryId, name, categoryName) {
-            if (this.parent && Number(this.parent) !== Number(parentId || 0)) return false;
-            if (this.category && Number(this.category) !== Number(categoryId || 0)) return false;
-            const needle = this.q.trim().toLowerCase();
-            if (!needle) return true;
-            return (String(name) + ' ' + String(categoryName)).toLowerCase().includes(needle);
-        },
-        showGroup(parentId, categoryId) {
-            if (this.q) return false;
-            if (this.parent && Number(this.parent) !== Number(parentId || 0)) return false;
-            if (this.category && Number(this.category) !== Number(categoryId || 0)) return false;
-            return true;
-        },
-        setIncluded(checked) {
-            this.$root.querySelectorAll('[data-quote-row]').forEach((row) => {
-                if (row.offsetParent === null) return;
-                const box = row.querySelector('[data-include]');
-                if (!box || box.checked === checked) return;
-                box.checked = checked;
-                box.dispatchEvent(new Event('input', { bubbles: true }));
-                box.dispatchEvent(new Event('change', { bubbles: true }));
-            });
-        }
-    }"
->
-    <div class="mg-quote-sheet__head">
-        <div>
-            <strong>نطاق العرض</strong>
-            <span>{{ count($quoteLines) }} منتج ظاهر، {{ collect($quoteLines)->filter(fn ($line) => ! in_array($line['included'] ?? false, [false, 0, '0', 'false', 'off', '', null], true))->count() }} داخل العرض. الطباعة تطلع مقسّمة حسب القسم.</span>
-        </div>
-        <div class="mg-quote-sheet__actions">
-            <button type="button" wire:click="applyAllProducts">كل المنتجات</button>
-            <button type="button" wire:click="clearQuoteScope">مسح التحديد</button>
-            @unless($quoteIsNew)
-                <button type="button" wire:click="addMissingProducts">أضف المنتجات الجديدة</button>
-            @endunless
-            <button type="button" wire:click="addManualQuoteLine">سطر يدوي</button>
-        </div>
-    </div>
+@php
+    $isIncluded = fn (array $line): bool => ! in_array($line['included'] ?? false, [false, 0, '0', 'false', 'off', '', null], true);
+    $chosen = collect($quoteLines)->filter($isIncluded);
+    $sectionCount = $chosen->pluck('category_name')->unique()->count();
+    $searching = trim((string) $catalogSearch) !== '';
+    $addLabel = $searching ? 'إضافة النتائج' : ($browseCategoryId ? 'إضافة القسم' : 'إضافة التصنيف');
+    $canAdd = $searching || $browseParentId || $browseCategoryId;
+@endphp
 
-    <div class="mg-quote-sheet__tools">
-        <input type="search" placeholder="ابحث بالاسم أو التصنيف" x-model="q" @keydown.enter.prevent autocomplete="off">
-        <button type="button" @click="setIncluded(false)">استبعاد الظاهر</button>
-        <button type="button" @click="setIncluded(true)">إرجاع الظاهر</button>
-    </div>
-
-    <div class="mg-quote-chips">
-        <button type="button" @click="parent = null; category = null" :class="parent ? '' : 'is-active'">إظهار الكل</button>
-        @foreach($parents as $parent)
-            <button
-                type="button"
-                wire:click="applyParentScope({{ (int) $parent['id'] }})"
-                class="{{ (int) $quoteScopeParentId === (int) $parent['id'] && ! $quoteScopeCategoryId ? 'is-active' : '' }}"
-            >{{ $parent['name'] }} كله</button>
-        @endforeach
-    </div>
-
-    <div class="mg-quote-chips mg-quote-chips--sub" x-show="parent" x-cloak>
-        <template x-for="child in children.filter(item => Number(item.parent_id) === Number(parent))" :key="child.id">
-            <button
-                type="button"
-                @click="$wire.applySectionScope(Number(child.parent_id), Number(child.id))"
-                :class="Number(category) === Number(child.id) ? 'is-active' : ''"
-                x-text="child.name + ' فقط'"
-            ></button>
-        </template>
-    </div>
-
-    <div class="mg-quote-sheet__scroll">
-        <table>
-            <thead>
-                <tr>
-                    <th>داخل العرض</th>
-                    <th>الصنف</th>
-                    <th>التصنيف</th>
-                    <th>العبوة</th>
-                    <th>قطعة درهم</th>
-                    <th>قطعة دينار</th>
-                    <th>صندوق درهم</th>
-                    <th>صندوق دينار</th>
-                </tr>
-            </thead>
-            <tbody>
-                @php $previousGroup = null; @endphp
-                @forelse($quoteLines as $index => $line)
-                    @if(($line['category_name'] ?? '') !== $previousGroup)
-                        @php $previousGroup = $line['category_name'] ?? ''; @endphp
-                        <tr
-                            class="mg-quote-sheet__group"
-                            x-show="showGroup(@js($line['parent_id']), @js($line['category_id']))"
-                        >
-                            <td colspan="8">
-                                <div class="mg-quote-sheet__groupbar">
-                                    <span>{{ $previousGroup }}</span>
-                                    @if(! empty($line['category_id']))
-                                        <button type="button" wire:click="applySectionScope({{ (int) $line['parent_id'] }}, {{ (int) $line['category_id'] }})">هذا القسم فقط</button>
-                                        <button type="button" wire:click="addSectionScope({{ (int) $line['parent_id'] }}, {{ (int) $line['category_id'] }})">أضف القسم</button>
-                                    @elseif(! empty($line['parent_id']))
-                                        <button type="button" wire:click="applyParentScope({{ (int) $line['parent_id'] }})">هذا التصنيف كله</button>
-                                    @endif
-                                </div>
-                            </td>
-                        </tr>
+<div class="mg-studio">
+    <section class="mg-pane mg-pane--quote">
+        <header class="mg-pane__head">
+            <div>
+                <strong>العرض</strong>
+                <span>
+                    @if($chosen->isEmpty())
+                        فاضي. أضف من الكتالوج.
+                    @else
+                        {{ $chosen->count() }} صنف في {{ $sectionCount }} {{ $sectionCount === 1 ? 'قسم' : 'أقسام' }}
                     @endif
-                    <tr
-                        data-quote-row
-                        x-show="show(@js($line['parent_id']), @js($line['category_id']), @js($line['item_name']), @js($line['category_name']))"
-                    >
-                        <td>
-                            <input type="checkbox" data-include wire:model="quoteLines.{{ $index }}.included" @checked($line['included'])>
-                        </td>
-                        <td>
-                            <input type="text" value="{{ $line['item_name'] }}" wire:model="quoteLines.{{ $index }}.item_name" autocomplete="off">
-                        </td>
-                        <td class="mg-quote-sheet__cat">{{ $line['category_name'] }}</td>
-                        <td>
-                            <input type="number" min="0" step="1" value="{{ $line['pieces_per_box'] }}" wire:model="quoteLines.{{ $index }}.pieces_per_box">
-                        </td>
-                        <td>
-                            <input type="number" min="0" step="any" value="{{ $line['piece_price_aed'] }}" wire:model="quoteLines.{{ $index }}.piece_price_aed">
-                        </td>
-                        <td>
-                            <input type="number" min="0" step="any" value="{{ $line['piece_price_lyd'] }}" wire:model="quoteLines.{{ $index }}.piece_price_lyd">
-                        </td>
-                        <td>
-                            <input type="number" min="0" step="any" value="{{ $line['box_price_aed'] }}" wire:model="quoteLines.{{ $index }}.box_price_aed">
-                        </td>
-                        <td>
-                            <input type="number" min="0" step="any" value="{{ $line['box_price_lyd'] }}" wire:model="quoteLines.{{ $index }}.box_price_lyd">
-                        </td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="8">لا توجد منتجات بعد.</td>
-                    </tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+                </span>
+            </div>
+            <div class="mg-pane__actions">
+                @if($chosen->isNotEmpty())
+                    <button type="button" wire:click="clearQuoteScope">تفريغ</button>
+                @endif
+                <button type="button" wire:click="addManualQuoteLine">سطر يدوي</button>
+            </div>
+        </header>
+
+        <div class="mg-pane__body">
+            @if($chosen->isEmpty())
+                <p class="mg-studio__empty">اختَر تصنيفًا من الكتالوج، ثم أضف القسم كله أو صنفًا واحدًا. السعر يتراجع هنا، والطباعة تطلع بنفس الأقسام.</p>
+            @endif
+
+            @php $previous = null; @endphp
+            @foreach($quoteLines as $index => $line)
+                @continue(! $isIncluded($line))
+                @if(($line['category_name'] ?? '') !== $previous)
+                    @php $previous = $line['category_name'] ?? ''; @endphp
+                    <div class="mg-q-section">
+                        <span>{{ $previous }}</span>
+                        <button type="button" wire:click="removeSectionAt({{ $index }})">حذف القسم</button>
+                    </div>
+                @endif
+                <article class="mg-q-line">
+                    <div class="mg-q-line__top">
+                        <input type="text" value="{{ $line['item_name'] }}" wire:model="quoteLines.{{ $index }}.item_name" autocomplete="off">
+                        <button type="button" wire:click="toggleLine({{ $index }})">إزالة</button>
+                    </div>
+                    <div class="mg-q-prices">
+                        <label>العبوة<input type="number" min="0" step="1" value="{{ $line['pieces_per_box'] }}" wire:model="quoteLines.{{ $index }}.pieces_per_box"></label>
+                        <label>قطعة درهم<input type="number" min="0" step="any" value="{{ $line['piece_price_aed'] }}" wire:model="quoteLines.{{ $index }}.piece_price_aed"></label>
+                        <label>قطعة دينار<input type="number" min="0" step="any" value="{{ $line['piece_price_lyd'] }}" wire:model="quoteLines.{{ $index }}.piece_price_lyd"></label>
+                        <label>صندوق درهم<input type="number" min="0" step="any" value="{{ $line['box_price_aed'] }}" wire:model="quoteLines.{{ $index }}.box_price_aed"></label>
+                        <label>صندوق دينار<input type="number" min="0" step="any" value="{{ $line['box_price_lyd'] }}" wire:model="quoteLines.{{ $index }}.box_price_lyd"></label>
+                    </div>
+                </article>
+            @endforeach
+        </div>
+    </section>
+
+    <section class="mg-pane mg-pane--catalog">
+        <header class="mg-pane__head">
+            <div>
+                <strong>الكتالوج</strong>
+                <span>تصنيف كامل، أو أصناف من جواه.</span>
+            </div>
+        </header>
+
+        <div class="mg-tree">
+            @foreach($parents as $parent)
+                <button
+                    type="button"
+                    wire:click="openCatalogParent({{ (int) $parent['id'] }})"
+                    class="{{ (int) $browseParentId === (int) $parent['id'] && ! $browseCategoryId ? 'is-active' : '' }}"
+                >{{ $parent['name'] }}</button>
+                @foreach(collect($children)->where('parent_id', $parent['id']) as $child)
+                    <button
+                        type="button"
+                        class="is-child {{ (int) $browseCategoryId === (int) $child['id'] ? 'is-active' : '' }}"
+                        wire:click="openCatalogCategory({{ (int) $child['parent_id'] }}, {{ (int) $child['id'] }})"
+                    >{{ $child['name'] }}</button>
+                @endforeach
+            @endforeach
+            <button type="button" class="is-all" wire:click="applyAllProducts">إضافة كل المنتجات</button>
+            @unless($quoteIsNew)
+                <button type="button" class="is-all" wire:click="addMissingProducts">إضافة المنتجات الجديدة</button>
+            @endunless
+        </div>
+
+        <div class="mg-catalog__tools">
+            <input
+                type="search"
+                placeholder="ابحث عن صنف"
+                wire:model.live.debounce.300ms="catalogSearch"
+                wire:keydown.enter.prevent
+                autocomplete="off"
+            >
+            @if($canAdd)
+                <button type="button" wire:click="addBrowsedProducts">{{ $addLabel }}</button>
+            @endif
+        </div>
+
+        <div class="mg-pane__body">
+            @forelse($catalogRows as $row)
+                <div class="mg-cat-row {{ $row['included'] ? 'is-in' : '' }}">
+                    <div>
+                        <strong>{{ $row['item_name'] }}</strong>
+                        <small>
+                            @if($searching){{ $row['category_name'] }} · @endif
+                            {{ (int) ($row['pieces_per_box'] ?? 0) > 0 ? $row['pieces_per_box'].'-قطعة' : 'بدون عبوة' }}
+                            · قطعة {{ $row['piece_price_lyd'] }} د.ل / {{ $row['piece_price_aed'] }} د.إ
+                        </small>
+                    </div>
+                    <button type="button" wire:click="toggleLine({{ (int) $row['_index'] }})" class="{{ $row['included'] ? 'is-in' : '' }}">
+                        {{ $row['included'] ? 'في العرض' : 'إضافة' }}
+                    </button>
+                </div>
+            @empty
+                <p class="mg-studio__empty">
+                    @if($searching)
+                        لا يوجد صنف بهذا الاسم.
+                    @else
+                        اختَر تصنيفًا من القائمة.
+                    @endif
+                </p>
+            @endforelse
+        </div>
+    </section>
 </div>

@@ -110,21 +110,21 @@ class PriceListResource extends Resource
                     ->columnSpan(4),
             ]),
 
-            Forms\Components\Section::make('الأصناف')
-                ->description('اختَر نطاق العرض: كل المنتجات، أو تصنيف كامل، أو قسم واحد، أو جزء من المنتجات. الطباعة تطلع مقسّمة.')
-                ->schema([
-                    Forms\Components\View::make('filament.forms.components.price-list-sheet')
-                        ->viewData(function ($livewire): array {
-                            return [
-                                'quoteLines' => $livewire->quoteLines,
-                                'parents' => $livewire->quoteParents(),
-                                'children' => $livewire->quoteChildren(),
-                                'quoteIsNew' => $livewire->quoteIsNew,
-                                'quoteScopeParentId' => $livewire->quoteScopeParentId,
-                                'quoteScopeCategoryId' => $livewire->quoteScopeCategoryId,
-                            ];
-                        }),
-                ]),
+            Forms\Components\Group::make([
+                Forms\Components\View::make('filament.forms.components.price-list-sheet')
+                    ->viewData(function ($livewire): array {
+                        return [
+                            'quoteLines' => $livewire->quoteLines,
+                            'parents' => $livewire->quoteParents(),
+                            'children' => $livewire->quoteChildren(),
+                            'quoteIsNew' => $livewire->quoteIsNew,
+                            'catalogRows' => $livewire->catalogRows(),
+                            'browseParentId' => $livewire->browseParentId,
+                            'browseCategoryId' => $livewire->browseCategoryId,
+                            'catalogSearch' => $livewire->catalogSearch,
+                        ];
+                    }),
+            ])->columnSpanFull(),
         ]);
     }
 
