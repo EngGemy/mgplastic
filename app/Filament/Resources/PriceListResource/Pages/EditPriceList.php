@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\PriceListResource\Pages;
 
+use App\Filament\Concerns\ManagesPriceListCatalog;
 use App\Filament\Resources\PriceListResource;
 use App\Models\PriceList;
 use Filament\Actions;
@@ -11,11 +12,19 @@ use Illuminate\Support\Facades\URL;
 
 class EditPriceList extends EditRecord
 {
+    use ManagesPriceListCatalog;
+
     protected static string $resource = PriceListResource::class;
 
     protected static ?string $title = 'تعديل عرض السعر';
 
     public bool $printAfterSave = false;
+
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+        $this->loadSavedQuoteLines();
+    }
 
     public function getSubheading(): ?string
     {
@@ -36,12 +45,22 @@ class EditPriceList extends EditRecord
             return route('admin.price-lists.print', $this->record);
         }
 
+        if ($this->whatsAppAfterSave) {
+            return $this->getResource()::getUrl('edit', ['record' => $this->record]);
+        }
+
         return parent::getRedirectUrl();
     }
 
     protected function getSavedNotificationTitle(): ?string
     {
         return 'تم تحديث عرض السعر';
+    }
+
+    protected function afterSave(): void
+    {
+        $this->syncQuoteLines();
+        $this->openWhatsAppIfRequested();
     }
 
     protected function getHeaderActions(): array
@@ -52,6 +71,11 @@ class EditPriceList extends EditRecord
                 ->icon('heroicon-o-printer')
                 ->url(fn () => route('admin.price-lists.print', $this->record))
                 ->openUrlInNewTab(),
+            Actions\Action::make('whatsapp')
+                ->label('واتساب')
+                ->icon('heroicon-o-paper-airplane')
+                ->color('success')
+                ->action(fn () => $this->openQuoteWhatsApp()),
             Actions\Action::make('share')
                 ->label('رابط العميل')
                 ->icon('heroicon-o-link')
@@ -78,6 +102,14 @@ class EditPriceList extends EditRecord
                 ->color('gray')
                 ->action(function () {
                     $this->printAfterSave = true;
+                    $this->save();
+                }),
+            Actions\Action::make('saveWhatsApp')
+                ->label('حفظ وإرسال واتساب')
+                ->icon('heroicon-o-paper-airplane')
+                ->color('success')
+                ->action(function () {
+                    $this->whatsAppAfterSave = true;
                     $this->save();
                 }),
             $this->getCancelFormAction()->label('رجوع'),

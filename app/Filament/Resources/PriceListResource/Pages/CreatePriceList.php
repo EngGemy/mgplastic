@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\PriceListResource\Pages;
 
+use App\Filament\Concerns\ManagesPriceListCatalog;
 use App\Filament\Resources\PriceListResource;
 use App\Models\PriceList;
 use Filament\Actions;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\URL;
 
 class CreatePriceList extends CreateRecord
 {
+    use ManagesPriceListCatalog;
+
     protected static string $resource = PriceListResource::class;
 
     protected static ?string $title = 'عرض سعر جديد';
@@ -21,7 +24,13 @@ class CreatePriceList extends CreateRecord
 
     public function getSubheading(): ?string
     {
-        return 'ابحث عن عميل المصنع أو أضفه، أضف المنتجات، ثم احفظ للطباعة أو إرسال الرابط.';
+        return 'كل المنتجات جاهزة للمراجعة. عدّل السعر، ثم احفظ أو أرسل العرض على واتساب.';
+    }
+
+    public function mount(): void
+    {
+        parent::mount();
+        $this->loadAutomaticQuoteLines();
     }
 
     protected function mutateFormDataBeforeCreate(array $data): array
@@ -40,6 +49,9 @@ class CreatePriceList extends CreateRecord
 
     protected function afterCreate(): void
     {
+        $this->syncQuoteLines();
+        $this->openWhatsAppIfRequested();
+
         if (! $this->shareAfterSave) {
             return;
         }
@@ -68,6 +80,14 @@ class CreatePriceList extends CreateRecord
                 ->color('gray')
                 ->action(function () {
                     $this->printAfterSave = true;
+                    $this->create();
+                }),
+            Actions\Action::make('saveWhatsApp')
+                ->label('حفظ وإرسال واتساب')
+                ->icon('heroicon-o-paper-airplane')
+                ->color('success')
+                ->action(function () {
+                    $this->whatsAppAfterSave = true;
                     $this->create();
                 }),
             Actions\Action::make('saveShare')

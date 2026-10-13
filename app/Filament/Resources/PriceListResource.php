@@ -6,19 +6,11 @@ use App\Filament\Concerns\AdminOnlyResource;
 use App\Filament\Resources\PriceListResource\Pages;
 use App\Models\FactoryCustomer;
 use App\Models\PriceList;
-use App\Models\Product;
-use App\Models\ProductCategory;
-use App\Models\ProductTag;
-use App\Services\PriceListProductQuery;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Forms\Get;
-use Filament\Forms\Set;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Support\Str;
 
 class PriceListResource extends Resource
 {
@@ -119,126 +111,17 @@ class PriceListResource extends Resource
             ]),
 
             Forms\Components\Section::make('الأصناف')
-                ->description('اكتب اسم المنتج واختره ليُضاف بسعر القطعة وسعر الصندوق.')
+                ->description('كل المنتجات محمّلة. راجع السعر والتفاصيل ثم احفظ أو أرسل واتساب.')
                 ->schema([
-                    Forms\Components\Select::make('quick_product')
-                        ->hiddenLabel()
-                        ->placeholder('أضف منتجاً…')
-                        ->searchable()
-                        ->getSearchResultsUsing(fn (string $search) => static::productSearchOptions($search))
-                        ->dehydrated(false)
-                        ->live()
-                        ->afterStateUpdated(function ($state, Get $get, Set $set) {
-                            if (! $state) {
-                                return;
-                            }
-                            static::appendProductIds($get, $set, [(int) $state]);
-                            $set('quick_product', null);
-                        })
-                        ->columnSpanFull(),
-                    Forms\Components\Actions::make([
-                        Forms\Components\Actions\Action::make('add_group')
-                            ->label('إضافة تصنيف كامل')
-                            ->icon('heroicon-o-squares-plus')
-                            ->color('gray')
-                            ->modalHeading('إضافة منتجات تصنيف')
-                            ->modalSubmitActionLabel('إضافة')
-                            ->form([
-                                Forms\Components\Select::make('parent_id')
-                                    ->label('الفئة')
-                                    ->options(fn () => static::categoryOptions(null))
-                                    ->searchable()
-                                    ->preload()
-                                    ->live(),
-                                Forms\Components\Select::make('category_id')
-                                    ->label('التصنيف')
-                                    ->options(fn (Get $get) => static::categoryOptions($get('parent_id') ? (int) $get('parent_id') : null, true))
-                                    ->searchable()
-                                    ->preload(),
-                                Forms\Components\Select::make('tag')
-                                    ->label('الوسم')
-                                    ->options(fn () => ProductTag::query()->orderBy('name')->pluck('name', 'name'))
-                                    ->searchable(),
-                                Forms\Components\TextInput::make('search')
-                                    ->label('بحث داخل التصنيف'),
-                            ])
-                            ->action(function (array $data, \Livewire\Component $livewire) {
-                                $state = $livewire->data;
-                                $items = $state['items'] ?? [];
-                                $products = app(PriceListProductQuery::class)->matching(
-                                    filled($data['parent_id'] ?? null) ? (int) $data['parent_id'] : null,
-                                    filled($data['category_id'] ?? null) ? (int) $data['category_id'] : null,
-                                    $data['tag'] ?? null,
-                                    $data['search'] ?? null,
-                                    static::existingProductIds(is_array($items) ? $items : []),
-                                    251,
-                                );
-
-                                $ids = $products->pluck('id')->map(fn ($id) => (int) $id)->all();
-                                $except = static::existingProductIds(is_array($items) ? $items : []);
-                                $ids = array_values(array_diff($ids, $except));
-                                if ($ids === []) {
-                                    Notification::make()->title('لا توجد منتجات جديدة للإضافة')->warning()->send();
-
-                                    return;
-                                }
-
-                                $found = Product::query()->with('translations')->whereIn('id', array_slice($ids, 0, 250))->get();
-                                $sort = is_array($items) ? count($items) : 0;
-                                foreach ($found as $product) {
-                                    $sort++;
-                                    $items[(string) Str::uuid()] = $product->quoteLinePayload() + ['sort' => $sort];
-                                }
-                                $state['items'] = $items;
-                                $livewire->data = $state;
-
-                                Notification::make()->title('تمت إضافة '.$found->count().' منتج')->success()->send();
-                            }),
-                    ]),
-                    Forms\Components\Repeater::make('items')
-                        ->relationship()
-                        ->hiddenLabel()
-                        ->orderColumn('sort')
-                        ->reorderable()
-                        ->reorderableWithDragAndDrop()
-                        ->addActionLabel('سطر يدوي')
-                        ->extraAttributes(['class' => 'mg-quote-lines'])
-                        ->schema([
-                            Forms\Components\TextInput::make('item_name')
-                                ->label('الصنف')
-                                ->required()
-                                ->maxLength(255)
-                                ->columnSpan(4),
-                            Forms\Components\TextInput::make('pieces_per_box')
-                                ->label('العبوة')
-                                ->numeric()
-                                ->minValue(0)
-                                ->suffix('قطعة')
-                                ->columnSpan(2),
-                            Forms\Components\TextInput::make('piece_price_aed')
-                                ->label('قطعة درهم')
-                                ->numeric()
-                                ->default(0)
-                                ->columnSpan(1),
-                            Forms\Components\TextInput::make('piece_price_lyd')
-                                ->label('قطعة دينار')
-                                ->numeric()
-                                ->default(0)
-                                ->columnSpan(1),
-                            Forms\Components\TextInput::make('box_price_aed')
-                                ->label('صندوق درهم')
-                                ->numeric()
-                                ->default(0)
-                                ->columnSpan(2),
-                            Forms\Components\TextInput::make('box_price_lyd')
-                                ->label('صندوق دينار')
-                                ->numeric()
-                                ->default(0)
-                                ->columnSpan(2),
-                            Forms\Components\Hidden::make('product_id'),
-                        ])
-                        ->columns(12)
-                        ->columnSpanFull(),
+                    Forms\Components\View::make('filament.forms.components.price-list-sheet')
+                        ->viewData(function ($livewire): array {
+                            return [
+                                'quoteLines' => $livewire->quoteLines,
+                                'parents' => $livewire->quoteParents(),
+                                'children' => $livewire->quoteChildren(),
+                                'quoteIsNew' => $livewire->quoteIsNew,
+                            ];
+                        }),
                 ]),
         ]);
     }
@@ -295,88 +178,5 @@ class PriceListResource extends Resource
             'create' => Pages\CreatePriceList::route('/create'),
             'edit' => Pages\EditPriceList::route('/{record}/edit'),
         ];
-    }
-
-    /**
-     * @return array<int|string, string>
-     */
-    private static function categoryOptions(?int $parentId, bool $children = false): array
-    {
-        $query = ProductCategory::query()->with('translations')->orderBy('id');
-        if ($parentId) {
-            $query->where('parent_id', $parentId);
-        } elseif ($children) {
-            $query->whereNotNull('parent_id');
-        } else {
-            $query->whereNull('parent_id');
-        }
-
-        return $query->get()->mapWithKeys(fn (ProductCategory $category) => [
-            $category->id => localized_name($category, 'name', 'تصنيف #'.$category->id),
-        ])->all();
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private static function productSearchOptions(string $search): array
-    {
-        return Product::query()
-            ->search($search)
-            ->limit(20)
-            ->get()
-            ->mapWithKeys(fn (Product $product) => [
-                $product->id => localized_name($product, 'name', 'منتج #'.$product->id),
-            ])
-            ->all();
-    }
-
-    /**
-     * @param  array<int|string, mixed>  $items
-     * @return list<int>
-     */
-    private static function existingProductIds(array $items): array
-    {
-        return collect($items)
-            ->pluck('product_id')
-            ->filter()
-            ->map(fn ($id) => (int) $id)
-            ->all();
-    }
-
-    /**
-     * @param  list<int>  $productIds
-     */
-    private static function appendProductIds(Get $get, Set $set, array $productIds): void
-    {
-        $current = $get('items') ?? [];
-        if (! is_array($current)) {
-            $current = [];
-        }
-
-        $except = static::existingProductIds($current);
-        $productIds = array_values(array_diff(array_unique($productIds), $except));
-
-        if ($productIds === []) {
-            Notification::make()->title('لا توجد منتجات جديدة للإضافة')->warning()->send();
-
-            return;
-        }
-
-        $truncated = count($productIds) > 250;
-        $products = Product::query()->with('translations')->whereIn('id', array_slice($productIds, 0, 250))->get();
-        $sort = count($current);
-        foreach ($products as $product) {
-            $sort++;
-            $current[(string) Str::uuid()] = $product->quoteLinePayload() + ['sort' => $sort];
-        }
-
-        $set('items', $current);
-
-        $notice = Notification::make()->title('تمت إضافة '.$products->count().' منتج')->success();
-        if ($truncated) {
-            $notice->body('الحد في المرة الواحدة 250 منتج.');
-        }
-        $notice->send();
     }
 }

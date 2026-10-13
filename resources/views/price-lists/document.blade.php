@@ -10,8 +10,8 @@
         html, body { margin: 0; padding: 0; }
         body {
             font-family: 'Cairo', sans-serif;
-            background: #e8edf5;
-            color: #0f172a;
+            background: #e7eef8;
+            color: #12336f;
         }
         .toolbar {
             position: sticky;
@@ -21,13 +21,13 @@
             gap: 10px;
             align-items: center;
             padding: 12px 20px;
-            background: #0f172a;
+            background: #1848a0;
             color: #fff;
         }
         .toolbar strong { flex: 1; font-weight: 700; }
         .toolbar button, .toolbar a {
             background: #fff;
-            color: #0f172a;
+            color: #1848a0;
             border: 0;
             border-radius: 999px;
             padding: 8px 16px;
@@ -37,12 +37,13 @@
             text-decoration: none;
             cursor: pointer;
         }
+        .toolbar a.wa { background: #25D366; color: #08301a; }
         .sheet {
             width: 210mm;
             min-height: 297mm;
             margin: 18px auto 40px;
             background: #fff;
-            box-shadow: 0 18px 50px rgb(15 23 42 / 12%);
+            box-shadow: 0 18px 50px rgb(24 72 160 / 12%);
             padding: 14mm 12mm 24mm;
             position: relative;
         }
@@ -52,31 +53,38 @@
             align-items: center;
             gap: 16px;
             padding-bottom: 12px;
-            border-bottom: 3px solid #0f172a;
+        }
+        .brand-rule {
+            height: 5px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #18a850 0 32%, #1848a0 32% 100%);
+            margin-bottom: 16px;
         }
         .brand {
             display: flex;
             align-items: center;
             gap: 12px;
         }
-        .brand img { height: 54px; width: auto; background: #0f172a; border-radius: 10px; padding: 6px 8px; }
-        .brand-name { font-size: 22px; font-weight: 800; letter-spacing: 0.02em; line-height: 1; }
-        .brand-sub { margin-top: 4px; color: #64748b; font-size: 12px; font-weight: 700; }
-        .doc-no { text-align: left; }
-        .doc-no span { display: block; color: #64748b; font-size: 11px; font-weight: 700; }
-        .doc-no strong { font-size: 18px; }
+        .brand img { height: 64px; width: auto; background: #fff; }
+        .brand-name { font-size: 22px; font-weight: 800; letter-spacing: 0.02em; line-height: 1; color: #1848a0; }
+        .brand-sub { margin-top: 4px; color: #18a850; font-size: 12px; font-weight: 700; }
+        .doc-no { text-align: left; color: #1848a0; }
+        .doc-no span { display: block; color: #5b7194; font-size: 11px; font-weight: 700; }
+        .doc-no strong { font-size: 18px; color: #1848a0; }
         .title {
-            margin: 18px 0 4px;
+            margin: 14px 0 4px;
             text-align: center;
             font-size: 26px;
             font-weight: 800;
             line-height: 1.35;
+            color: #1848a0;
         }
         .subtitle {
             text-align: center;
             font-size: 18px;
             font-weight: 700;
             margin-bottom: 14px;
+            color: #18a850;
         }
         .meta {
             display: flex;
@@ -89,7 +97,7 @@
         .to {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
-            border-right: 4px solid #1a56db;
+            border-right: 4px solid #18a850;
             border-radius: 10px;
             padding: 10px 14px;
             margin-bottom: 14px;
@@ -103,11 +111,11 @@
         }
         thead { display: table-header-group; }
         th {
-            background: #111827;
+            background: #1848a0;
             color: #fff;
             font-weight: 800;
             padding: 8px 6px;
-            border: 1px solid #111827;
+            border: 1px solid #1848a0;
             text-align: center;
             line-height: 1.3;
         }
@@ -118,8 +126,8 @@
             font-weight: 700;
             vertical-align: middle;
         }
-        td.name { text-align: right; font-weight: 800; }
-        tbody tr:nth-child(even) td { background: #f8fafc; }
+        td.name { text-align: right; font-weight: 800; color: #12336f; }
+        tbody tr:nth-child(even) td { background: #f3f7fd; }
         .notes {
             margin-top: 14px;
             font-size: 13px;
@@ -127,7 +135,7 @@
         }
         .footer {
             margin-top: 22px;
-            background: #111827;
+            background: #1848a0;
             color: #fff;
             border-radius: 999px;
             display: flex;
@@ -148,8 +156,8 @@
             width: 28px;
             height: 28px;
             border-radius: 50%;
-            background: #fff;
-            color: #111827;
+            background: #18a850;
+            color: #fff;
             display: grid;
             place-items: center;
             font-size: 14px;
@@ -159,7 +167,7 @@
             height: 34px;
             border-radius: 50%;
             background: #fff;
-            color: #111827;
+            color: #1848a0;
             display: grid;
             place-items: center;
             font-weight: 800;
@@ -177,6 +185,9 @@
 <body>
     <div class="toolbar">
         <strong>{{ $priceList->number }}</strong>
+        @if(!empty($whatsappUrl))
+            <a class="wa" href="{{ $whatsappUrl }}" target="_blank" rel="noopener">إرسال واتساب</a>
+        @endif
         <button type="button" onclick="window.print()">طباعة / حفظ PDF</button>
     </div>
 
@@ -198,6 +209,7 @@
                 @endif
             </div>
         </header>
+        <div class="brand-rule"></div>
 
         <h1 class="title">{{ $priceList->title }}</h1>
         @if($priceList->subtitle)

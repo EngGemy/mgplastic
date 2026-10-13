@@ -1518,10 +1518,185 @@
     background: rgb(120 53 15 / 20%) !important;
 }
 
-/* عرض السعر: سطور أصناف مضغوطة في صف واحد */
-.fi-resource-price-lists .mg-quote-lines .fi-fo-repeater-item {
-    padding: 0.65rem 0.75rem;
+/* مراجعة عرض السعر */
+.mg-quote-sheet {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 16rem);
+    min-height: 28rem;
+    background: #fff;
+    border: 1px solid #d5e3f6;
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.mg-quote-sheet [x-cloak] { display: none !important; }
+
+.mg-quote-sheet__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #1848a0;
+    color: #fff;
+}
+
+.mg-quote-sheet__head strong { display: block; font-size: 15px; }
+
+.mg-quote-sheet__head span {
+    display: block;
+    margin-top: 2px;
+    color: #d7e6ff;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.mg-quote-sheet__actions,
+.mg-quote-sheet__tools {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.mg-quote-sheet__actions button,
+.mg-quote-sheet__tools button {
+    flex: none;
+    border: 0;
+    border-radius: 999px;
+    background: #18a850;
+    color: #fff;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.mg-quote-sheet__tools {
+    padding: 10px 12px 0;
+}
+
+.mg-quote-sheet__tools input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid #d5e3f6;
     border-radius: 12px;
+    padding: 9px 12px;
+    font-family: inherit;
+    font-weight: 700;
+    color: #12336f;
+    background: #f7faff;
+}
+
+.mg-quote-sheet__tools input:focus {
+    outline: 2px solid #1848a0;
+    border-color: #1848a0;
+}
+
+.mg-quote-sheet__tools button {
+    background: #fff;
+    color: #1848a0;
+    border: 1px solid #d5e3f6;
+}
+
+.mg-quote-sheet .mg-quote-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 10px 12px 0;
+}
+
+.mg-quote-sheet .mg-quote-chips button {
+    flex: none;
+    border: 1px solid #d5e3f6;
+    background: #fff;
+    color: #1848a0;
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.mg-quote-sheet .mg-quote-chips button.is-active {
+    background: #1848a0;
+    border-color: #1848a0;
+    color: #fff;
+}
+
+.mg-quote-sheet .mg-quote-chips--sub button.is-active {
+    background: #18a850;
+    border-color: #18a850;
+}
+
+.mg-quote-sheet__scroll {
+    overflow: auto;
+    margin-top: 8px;
+}
+
+.mg-quote-sheet table {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: collapse;
+}
+
+.mg-quote-sheet th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #eef5ff;
+    color: #1848a0;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: right;
+    padding: 8px;
+}
+
+.mg-quote-sheet td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #eef3f9;
+    vertical-align: middle;
+}
+
+.mg-quote-sheet__group td {
+    background: #1848a0;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.mg-quote-sheet__cat {
+    color: #5b7194;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.mg-quote-sheet input[type="text"],
+.mg-quote-sheet input[type="number"] {
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: #f7faff;
+    color: #12336f;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 6px 8px;
+}
+
+.mg-quote-sheet input:focus {
+    outline: 2px solid #1848a0;
+    border-color: #1848a0;
+    background: #fff;
+}
+
+.mg-quote-sheet input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #18a850;
 }
 
 .fi-resource-price-lists .fi-header-subheading {
