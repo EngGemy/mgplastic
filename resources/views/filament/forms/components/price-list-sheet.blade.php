@@ -2,8 +2,8 @@
     class="mg-quote-sheet"
     x-data="{
         q: '',
-        parent: null,
-        category: null,
+        parent: @js($quoteScopeParentId),
+        category: @js($quoteScopeCategoryId),
         children: @js($children),
         show(parentId, categoryId, name, categoryName) {
             if (this.parent && Number(this.parent) !== Number(parentId || 0)) return false;
@@ -32,10 +32,12 @@
 >
     <div class="mg-quote-sheet__head">
         <div>
-            <strong>مراجعة العرض</strong>
-            <span>{{ count($quoteLines) }} منتج جاهز. عدّل السعر والتفاصيل، وألغِ تحديد ما لا يدخل العرض.</span>
+            <strong>نطاق العرض</strong>
+            <span>{{ count($quoteLines) }} منتج ظاهر، {{ collect($quoteLines)->filter(fn ($line) => ! in_array($line['included'] ?? false, [false, 0, '0', 'false', 'off', '', null], true))->count() }} داخل العرض. الطباعة تطلع مقسّمة حسب القسم.</span>
         </div>
         <div class="mg-quote-sheet__actions">
+            <button type="button" wire:click="applyAllProducts">كل المنتجات</button>
+            <button type="button" wire:click="clearQuoteScope">مسح التحديد</button>
             @unless($quoteIsNew)
                 <button type="button" wire:click="addMissingProducts">أضف المنتجات الجديدة</button>
             @endunless
@@ -50,24 +52,23 @@
     </div>
 
     <div class="mg-quote-chips">
-        <button type="button" @click="parent = null; category = null" :class="parent ? '' : 'is-active'">الكل</button>
+        <button type="button" @click="parent = null; category = null" :class="parent ? '' : 'is-active'">إظهار الكل</button>
         @foreach($parents as $parent)
             <button
                 type="button"
-                @click="parent = {{ (int) $parent['id'] }}; category = null"
-                :class="Number(parent) === {{ (int) $parent['id'] }} ? 'is-active' : ''"
-            >{{ $parent['name'] }}</button>
+                wire:click="applyParentScope({{ (int) $parent['id'] }})"
+                class="{{ (int) $quoteScopeParentId === (int) $parent['id'] && ! $quoteScopeCategoryId ? 'is-active' : '' }}"
+            >{{ $parent['name'] }} كله</button>
         @endforeach
     </div>
 
     <div class="mg-quote-chips mg-quote-chips--sub" x-show="parent" x-cloak>
-        <button type="button" @click="category = null" :class="category ? '' : 'is-active'">كل الفرعي</button>
         <template x-for="child in children.filter(item => Number(item.parent_id) === Number(parent))" :key="child.id">
             <button
                 type="button"
-                @click="category = child.id"
+                @click="$wire.applySectionScope(Number(child.parent_id), Number(child.id))"
                 :class="Number(category) === Number(child.id) ? 'is-active' : ''"
-                x-text="child.name"
+                x-text="child.name + ' فقط'"
             ></button>
         </template>
     </div>
@@ -95,7 +96,17 @@
                             class="mg-quote-sheet__group"
                             x-show="showGroup(@js($line['parent_id']), @js($line['category_id']))"
                         >
-                            <td colspan="8">{{ $previousGroup }}</td>
+                            <td colspan="8">
+                                <div class="mg-quote-sheet__groupbar">
+                                    <span>{{ $previousGroup }}</span>
+                                    @if(! empty($line['category_id']))
+                                        <button type="button" wire:click="applySectionScope({{ (int) $line['parent_id'] }}, {{ (int) $line['category_id'] }})">هذا القسم فقط</button>
+                                        <button type="button" wire:click="addSectionScope({{ (int) $line['parent_id'] }}, {{ (int) $line['category_id'] }})">أضف القسم</button>
+                                    @elseif(! empty($line['parent_id']))
+                                        <button type="button" wire:click="applyParentScope({{ (int) $line['parent_id'] }})">هذا التصنيف كله</button>
+                                    @endif
+                                </div>
+                            </td>
                         </tr>
                     @endif
                     <tr

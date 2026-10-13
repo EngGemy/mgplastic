@@ -20,6 +20,10 @@ trait ManagesPriceListCatalog
 
     public bool $quoteIsNew = true;
 
+    public ?int $quoteScopeParentId = null;
+
+    public ?int $quoteScopeCategoryId = null;
+
     public function loadAutomaticQuoteLines(): void
     {
         $this->quoteIsNew = true;
@@ -55,6 +59,49 @@ trait ManagesPriceListCatalog
             ->title($added > 0 ? 'تمت إضافة '.$added.' منتج جديد للمراجعة' : 'كل المنتجات موجودة في العرض')
             ->success()
             ->send();
+    }
+
+    public function applyAllProducts(): void
+    {
+        $this->quoteScopeParentId = null;
+        $this->quoteScopeCategoryId = null;
+        $this->setIncluded(fn () => true);
+    }
+
+    public function applyParentScope(int $parentId): void
+    {
+        $this->quoteScopeParentId = $parentId;
+        $this->quoteScopeCategoryId = null;
+        $this->setIncluded(fn (array $line) => (int) ($line['parent_id'] ?? 0) === $parentId);
+        $this->suggestScopeTitle($this->scopeName($parentId, null));
+    }
+
+    public function applySectionScope(int $parentId, int $categoryId): void
+    {
+        $parentId = $parentId ?: null;
+        $categoryId = $categoryId ?: null;
+        $this->quoteScopeParentId = $parentId;
+        $this->quoteScopeCategoryId = $categoryId;
+        $this->setIncluded(fn (array $line) => $this->sameSection($line, $parentId, $categoryId));
+        $this->suggestScopeTitle($this->scopeName($parentId, $categoryId));
+    }
+
+    public function addSectionScope(int $parentId, int $categoryId): void
+    {
+        $parentId = $parentId ?: null;
+        $categoryId = $categoryId ?: null;
+        foreach ($this->quoteLines as $index => $line) {
+            if ($this->sameSection($line, $parentId, $categoryId)) {
+                $this->quoteLines[$index]['included'] = true;
+            }
+        }
+    }
+
+    public function clearQuoteScope(): void
+    {
+        $this->quoteScopeParentId = null;
+        $this->quoteScopeCategoryId = null;
+        $this->setIncluded(fn () => false);
     }
 
     public function addManualQuoteLine(): void
@@ -94,6 +141,7 @@ trait ManagesPriceListCatalog
             $rows[] = [
                 'product_id' => filled($line['product_id'] ?? null) ? (int) $line['product_id'] : null,
                 'item_name' => $name,
+                'section_name' => trim((string) ($line['category_name'] ?? '')) ?: null,
                 'pieces_per_box' => ($line['pieces_per_box'] ?? '') === '' || $line['pieces_per_box'] === null
                     ? null
                     : (int) $line['pieces_per_box'],
@@ -203,7 +251,7 @@ trait ManagesPriceListCatalog
             'piece_price_aed' => $this->quoteMoney($product->piece_price_aed),
             'box_price_lyd' => $this->quoteMoney($product->box_price_lyd),
             'box_price_aed' => $this->quoteMoney($product->box_price_aed),
-            'included' => true,
+            'included' => false,
             'parent_id' => $category?->parent_id ?: $category?->id,
             'category_id' => $category?->parent_id ? $category->id : null,
             'category_name' => $this->categoryLabel($category),
@@ -228,8 +276,65 @@ trait ManagesPriceListCatalog
             'included' => true,
             'parent_id' => $category?->parent_id ?: $category?->id,
             'category_id' => $category?->parent_id ? $category->id : null,
-            'category_name' => $this->categoryLabel($category),
+            'category_name' => $item->section_name ?: $this->categoryLabel($category),
         ];
+    }
+
+    /**
+     * @param  callable(array<string, mixed>): bool  $matcher
+     */
+    private function setIncluded(callable $matcher): void
+    {
+        foreach ($this->quoteLines as $index => $line) {
+            $this->quoteLines[$index]['included'] = $matcher($line);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function sameSection(array $line, ?int $parentId, ?int $categoryId): bool
+    {
+        if ($categoryId) {
+            return (int) ($line['category_id'] ?? 0) === $categoryId;
+        }
+
+        if ($parentId) {
+            return (int) ($line['parent_id'] ?? 0) === $parentId && empty($line['category_id']);
+        }
+
+        return ($line['category_name'] ?? '') === 'سطر يدوي';
+    }
+
+    private function scopeName(?int $parentId, ?int $categoryId): ?string
+    {
+        if ($categoryId) {
+            $category = ProductCategory::query()->with(['translations', 'parent.translations'])->find($categoryId);
+
+            return $category ? $this->categoryLabel($category) : null;
+        }
+
+        if ($parentId) {
+            $category = ProductCategory::query()->with('translations')->find($parentId);
+
+            return $category ? localized_name($category, 'name', 'تصنيف #'.$category->id) : null;
+        }
+
+        return null;
+    }
+
+    private function suggestScopeTitle(?string $title): void
+    {
+        if ($title === null || $title === '') {
+            return;
+        }
+
+        $current = trim((string) ($this->data['title'] ?? ''));
+        if ($current === '' || $current === 'قائمة أسعار') {
+            $data = $this->data;
+            $data['title'] = $title;
+            $this->data = $data;
+        }
     }
 
     private function categoryLabel(?ProductCategory $category): string

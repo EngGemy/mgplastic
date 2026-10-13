@@ -111,7 +111,7 @@ class PriceListResource extends Resource
             ]),
 
             Forms\Components\Section::make('الأصناف')
-                ->description('كل المنتجات محمّلة. راجع السعر والتفاصيل ثم احفظ أو أرسل واتساب.')
+                ->description('اختَر نطاق العرض: كل المنتجات، أو تصنيف كامل، أو قسم واحد، أو جزء من المنتجات. الطباعة تطلع مقسّمة.')
                 ->schema([
                     Forms\Components\View::make('filament.forms.components.price-list-sheet')
                         ->viewData(function ($livewire): array {
@@ -120,6 +120,8 @@ class PriceListResource extends Resource
                                 'parents' => $livewire->quoteParents(),
                                 'children' => $livewire->quoteChildren(),
                                 'quoteIsNew' => $livewire->quoteIsNew,
+                                'quoteScopeParentId' => $livewire->quoteScopeParentId,
+                                'quoteScopeCategoryId' => $livewire->quoteScopeCategoryId,
                             ];
                         }),
                 ]),

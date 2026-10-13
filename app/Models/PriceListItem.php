@@ -11,6 +11,7 @@ class PriceListItem extends Model
         'price_list_id',
         'product_id',
         'item_name',
+        'section_name',
         'pieces_per_box',
         'piece_price_lyd',
         'piece_price_aed',

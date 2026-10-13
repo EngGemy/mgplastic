@@ -128,6 +128,16 @@
         }
         td.name { text-align: right; font-weight: 800; color: #12336f; }
         tbody tr:nth-child(even) td { background: #f3f7fd; }
+        tr.section td,
+        tbody tr.section td,
+        tbody tr.section:nth-child(even) td {
+            background: #1848a0;
+            color: #fff;
+            text-align: right;
+            font-size: 13px;
+            font-weight: 800;
+            border-inline-start: 6px solid #18a850;
+        }
         .notes {
             margin-top: 14px;
             font-size: 13px;
@@ -239,9 +249,17 @@
                 </tr>
             </thead>
             <tbody>
+                @php $section = null; $number = 0; @endphp
                 @forelse($priceList->items as $item)
+                    @if(($item->section_name ?: '') !== '' && ($item->section_name ?: '') !== $section)
+                        @php $section = $item->section_name; @endphp
+                        <tr class="section">
+                            <td colspan="7">{{ $section }}</td>
+                        </tr>
+                    @endif
+                    @php $number++; @endphp
                     <tr>
-                        <td>{{ $loop->iteration }}</td>
+                        <td>{{ $number }}</td>
                         <td class="name">{{ $item->item_name }}</td>
                         <td>{{ $item->packLabel() }}</td>
                         <td>{{ $item->money('piece_price_aed') }}</td>

@@ -125,15 +125,31 @@ class PriceListDocumentTest extends TestCase
         $hidden->translateOrNew('ar')->name = 'مخفي';
         $hidden->save();
 
+        $otherParent = ProductCategory::factory()->create();
+        $otherParent->translateOrNew('ar')->name = 'النظام الأمريكي';
+        $otherParent->save();
+        $other = Product::factory()->create(['product_category_id' => $otherParent->id]);
+        $other->translateOrNew('ar')->name = 'ماسورة أمريكي';
+        $other->save();
+
         $component = Livewire::test(CreatePriceList::class)
-            ->assertSee('مراجعة العرض')
+            ->assertSee('نطاق العرض')
             ->assertSee('كوع ظاهر')
-            ->assertSee('مخفي')
-            ->assertSee('حفظ وإرسال واتساب');
+            ->assertSee('هذا القسم فقط')
+            ->assertSee('أضف القسم');
 
         $lines = collect($component->get('quoteLines'));
-        $keep = $lines->search(fn (array $line) => $line['item_name'] === 'كوع ظاهر');
-        $drop = $lines->search(fn (array $line) => $line['item_name'] === 'مخفي');
+        $this->assertFalse((bool) $lines->first(fn (array $line) => $line['item_name'] === 'كوع ظاهر')['included']);
+
+        $component->call('applySectionScope', $parent->id, $category->id);
+        $scoped = collect($component->get('quoteLines'));
+        $this->assertTrue((bool) $scoped->first(fn (array $line) => $line['item_name'] === 'كوع ظاهر')['included']);
+        $this->assertTrue((bool) $scoped->first(fn (array $line) => $line['item_name'] === 'مخفي')['included']);
+        $this->assertFalse((bool) $scoped->first(fn (array $line) => $line['item_name'] === 'ماسورة أمريكي')['included']);
+
+        $component->call('addSectionScope', $otherParent->id, 0);
+        $keep = collect($component->get('quoteLines'))->search(fn (array $line) => $line['item_name'] === 'كوع ظاهر');
+        $drop = collect($component->get('quoteLines'))->search(fn (array $line) => $line['item_name'] === 'مخفي');
 
         $component
             ->fillForm([
@@ -146,11 +162,19 @@ class PriceListDocumentTest extends TestCase
             ->call('create')
             ->assertHasNoFormErrors();
 
-        $list = PriceList::query()->first();
+        $list = PriceList::query()->with('items')->first();
         $this->assertNotNull($list);
-        $this->assertCount(1, $list->items);
-        $this->assertSame('كوع ظاهر', $list->items->first()->item_name);
-        $this->assertEquals(15, (float) $list->items->first()->piece_price_lyd);
+        $this->assertCount(2, $list->items);
+        $kept = $list->items->firstWhere('item_name', 'كوع ظاهر');
+        $this->assertSame('ملحقات · أكواع', $kept->section_name);
+        $this->assertEquals(15, (float) $kept->piece_price_lyd);
+        $this->assertSame('النظام الأمريكي', $list->items->firstWhere('item_name', 'ماسورة أمريكي')->section_name);
+
+        $this->get(URL::signedRoute('price-lists.share', $list))
+            ->assertOk()
+            ->assertSee('ملحقات · أكواع')
+            ->assertSee('النظام الأمريكي')
+            ->assertDontSee('مخفي');
     }
 
     public function test_whatsapp_link_uses_the_customer_phone_on_the_admin_sheet(): void
