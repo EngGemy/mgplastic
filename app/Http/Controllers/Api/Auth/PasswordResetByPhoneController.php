@@ -19,7 +19,7 @@ class PasswordResetByPhoneController extends Controller
     {
         $request->validate(['phone' => 'required|string']);
 
-        $user = User::where('phone', $request->phone)->first();
+        $user = User::findByPhone((string) $request->phone);
 
         // Avoid enumeration
         if (! $user) {
@@ -29,7 +29,7 @@ class PasswordResetByPhoneController extends Controller
             ]);
         }
 
-        if ($user->otp_last_sent_at && now()->diffInSeconds($user->otp_last_sent_at) < 60) {
+        if ($user->otp_last_sent_at && abs(now()->diffInSeconds($user->otp_last_sent_at)) < 60) {
             return response()->json(['status'=>false,'message'=>'Please wait before requesting another OTP'], 429);
         }
 
@@ -58,7 +58,7 @@ class PasswordResetByPhoneController extends Controller
             'otp'   => 'required|string',
         ]);
 
-        $user = User::where('phone', $request->phone)->first();
+        $user = User::findByPhone((string) $request->phone);
         if (! $user) {
             return response()->json(['status'=>false,'message'=>'User not found'],404);
         }
@@ -111,7 +111,7 @@ class PasswordResetByPhoneController extends Controller
             'password'              => 'required|string|min:6|confirmed',
         ]);
 
-        $user = User::where('phone', $request->phone)->first();
+        $user = User::findByPhone((string) $request->phone);
 
         if (! $user) {
             return response()->json(['status'=>false,'message'=>'User not found'],404);

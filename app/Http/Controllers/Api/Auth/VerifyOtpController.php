@@ -108,7 +108,7 @@ class VerifyOtpController extends Controller
         }
 
         // Prevent spam
-        if ($user->otp_last_sent_at && now()->diffInSeconds($user->otp_last_sent_at) < 60) {
+        if ($user->otp_last_sent_at && abs(now()->diffInSeconds($user->otp_last_sent_at)) < 60) {
             return response()->json(['status'=>false,'message'=>'Please wait before requesting another OTP'],429);
         }
 

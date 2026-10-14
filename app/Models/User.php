@@ -203,15 +203,64 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
             return static::query()->where('email', $identifier)->first();
         }
 
-        $digits = preg_replace('/\D+/', '', $identifier) ?: $identifier;
+        $variants = static::phoneLookupVariants($identifier);
+        if ($variants === []) {
+            return null;
+        }
 
-        return static::query()
-            ->where(function ($q) use ($identifier, $digits) {
-                $q->where('phone', $identifier)
-                    ->orWhere('phone', $digits)
-                    ->orWhere('phone', ltrim($identifier, '+'));
-            })
-            ->first();
+        return static::query()->whereIn('phone', $variants)->first();
+    }
+
+    /**
+     * Local and international forms of one Libyan mobile, so login and
+     * forgot-password find the same account.
+     *
+     * @return list<string>
+     */
+    public static function phoneLookupVariants(string $phone): array
+    {
+        $raw = trim($phone);
+        $digits = preg_replace('/\D+/', '', $raw) ?? '';
+        $set = [];
+
+        foreach ([$raw, $digits, ltrim($raw, '+')] as $value) {
+            if ($value !== '') {
+                $set[$value] = $value;
+            }
+        }
+
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
+            $set[$digits] = $digits;
+        }
+
+        if (preg_match('/^218(9[1-5]\d{7})$/', $digits, $match)) {
+            $local = $match[1];
+        } elseif (preg_match('/^0(9[1-5]\d{7})$/', $digits, $match)) {
+            $local = $match[1];
+        } elseif (preg_match('/^(9[1-5]\d{7})$/', $digits, $match)) {
+            $local = $match[1];
+        } else {
+            $local = null;
+        }
+
+        if ($local !== null) {
+            foreach (['0'.$local, $local, '218'.$local, '+218'.$local] as $value) {
+                $set[$value] = $value;
+            }
+        }
+
+        return array_values($set);
+    }
+
+    public static function findByPhone(string $phone): ?self
+    {
+        $variants = static::phoneLookupVariants($phone);
+        if ($variants === []) {
+            return null;
+        }
+
+        return static::query()->whereIn('phone', $variants)->first();
     }
 
     public function parentDistributor(): BelongsTo
