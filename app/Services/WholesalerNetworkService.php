@@ -18,9 +18,13 @@ class WholesalerNetworkService
         }
 
         $stock = app(NetworkInventoryService::class)->stockForWholesaler($wholesaler);
-        $distributedPoints = $this->netPoints($wholesaler->id, 2, 'from_user_id');
-        $factoryPoints = $this->invoicePoints($wholesaler->id);
-        $remainingPoints = max(0, $factoryPoints - $distributedPoints);
+        $incomingPoints = $this->invoicePoints($wholesaler->id);
+        $traderInvoicePoints = $this->outgoingInvoicePoints($wholesaler->id);
+        $distributedPoints = $traderInvoicePoints > 0
+            ? $traderInvoicePoints
+            : $this->netPoints($wholesaler->id, 2, 'from_user_id');
+        $factoryPoints = $incomingPoints + $traderInvoicePoints;
+        $remainingPoints = max(0, $incomingPoints - $distributedPoints);
 
         return [
             'balance_points' => $remainingPoints,
@@ -60,16 +64,21 @@ class WholesalerNetworkService
     /** @return array{factory_points:int, distributed_points:int, remaining_points:int, plumber_points:int, plumber_balances:int} */
     public function networkTotals(): array
     {
-        $factory = (int) InvoiceItem::query()
+        $incoming = (int) InvoiceItem::query()
             ->whereHas('invoice', fn ($q) => $q->approvedWholesale()->where('invoice_flow', 'incoming'))
             ->sum('total_points');
-        $distributed = $this->netPoints(null, 2);
+        $onTraderInvoices = (int) Invoice::query()
+            ->approvedWholesale()
+            ->where('invoice_flow', 'outgoing')
+            ->sum('points_awarded');
+        $factory = $incoming + $onTraderInvoices;
+        $distributed = $onTraderInvoices > 0 ? $onTraderInvoices : $this->netPoints(null, 2);
         $plumberPoints = $this->netPoints(null, 3);
 
         return [
             'factory_points' => $factory,
             'distributed_points' => $distributed,
-            'remaining_points' => max(0, $factory - $distributed),
+            'remaining_points' => max(0, $incoming - $distributed),
             'plumber_points' => $plumberPoints,
             'plumber_balances' => (int) WalletAccount::query()
                 ->whereHas('owner', fn ($q) => $q->where('role', 'plumber'))
@@ -85,6 +94,15 @@ class WholesalerNetworkService
                 ->where('invoice_flow', 'incoming')
                 ->where('wholesale_distributor_id', $wholesalerId))
             ->sum('total_points');
+    }
+
+    public function outgoingInvoicePoints(int $wholesalerId): int
+    {
+        return (int) Invoice::query()
+            ->approvedWholesale()
+            ->where('invoice_flow', 'outgoing')
+            ->where('wholesale_distributor_id', $wholesalerId)
+            ->sum('points_awarded');
     }
 
     public function inventoryUnits(User $wholesaler): int

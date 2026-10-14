@@ -61,6 +61,7 @@ class WholesaleInvoicesRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('total_item_points')
                     ->label('إجمالي النقاط')
                     ->alignCenter()
+                    ->state(fn (Invoice $record) => $record->documentPoints())
                     ->formatStateUsing(fn ($state) => number_format((int) $state))
                     ->suffix(' نقطة')
                     ->color('warning')

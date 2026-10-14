@@ -9,11 +9,11 @@
     </div>
     <div class="mg-store-inv-stat mg-store-inv-stat--amber">
         <span class="mg-store-inv-stat-num">{{ number_format($stats['total_points']) }}</span>
-        <span class="mg-store-inv-stat-label">نقطة إجمالاً</span>
+        <span class="mg-store-inv-stat-label">إجمالي الفواتير</span>
     </div>
     <div class="mg-store-inv-stat mg-store-inv-stat--green">
         <span class="mg-store-inv-stat-num">{{ number_format($stats['distributed']) }}</span>
-        <span class="mg-store-inv-stat-label">موزّع ({{ $stats['percent'] }}%)</span>
+        <span class="mg-store-inv-stat-label">في فواتير التجار ({{ $stats['percent'] }}%)</span>
     </div>
     <div class="mg-store-inv-stat mg-store-inv-stat--{{ $stats['remaining'] > 0 ? 'orange' : 'gray' }}">
         <span class="mg-store-inv-stat-num">{{ number_format($stats['remaining']) }}</span>

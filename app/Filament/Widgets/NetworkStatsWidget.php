@@ -54,7 +54,7 @@ class NetworkStatsWidget extends BaseWidget
                 ->color('success'),
 
             Stat::make('نقاط من المصنع', number_format($summary['factory_points']))
-                ->description('إجمالي ما استلمته من المصنع')
+                ->description(number_format((int) $summary['distributed_points']).' في فواتير التجار · '.number_format((int) $summary['remaining_points']).' متبقية')
                 ->descriptionIcon('heroicon-o-building-office-2')
                 ->color('primary'),
 

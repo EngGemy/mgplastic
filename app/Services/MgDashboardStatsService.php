@@ -90,8 +90,8 @@ class MgDashboardStatsService
             'cards' => [
                 $this->card('الرقم الموحّد', $user?->network_code ?: '—', 'heroicon-o-qr-code', 'indigo', null, 'هويتك في شبكة MG'),
                 $this->card('رصيد النقاط', $remaining, 'heroicon-o-wallet', 'green', null, 'المتاح للتوزيع الآن'),
-                $this->card('نقاط من المصنع', (int) $summary['factory_points'], 'heroicon-o-building-office-2', 'blue', null, number_format($remaining).' متبقية للتوزيع'),
-                $this->card('موزَّع للقطاعي', (int) $summary['distributed_points'], 'heroicon-o-arrow-trending-up', 'amber', null, 'نقاط خرجت من المخزون'),
+                $this->card('نقاط من المصنع', (int) $summary['factory_points'], 'heroicon-o-building-office-2', 'blue', null, number_format((int) $summary['distributed_points']).' في فواتير التجار · '.number_format($remaining).' متبقية'),
+                $this->card('موزَّع للقطاعي', (int) $summary['distributed_points'], 'heroicon-o-arrow-trending-up', 'amber', null, 'نقاط فواتير التجار القطاعيين'),
                 $this->card('وحدات المخزون', (int) $summary['product_units'], 'heroicon-o-cube', 'teal', null, ($summary['product_types'] ?? 0).' صنف · '.number_format($remaining).' نقطة'),
                 $this->card('تجار قطاعي', (int) $summary['retail_traders_count'], 'heroicon-o-building-office', 'indigo', null, 'تحت شبكتك'),
                 $this->card('توزيعات معلّقة', $pending, 'heroicon-o-clock', $pending > 0 ? 'amber' : 'gray', null, 'مسودات لم تُؤكد'),

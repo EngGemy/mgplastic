@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Invoice;
 use App\Models\User;
 
 class RetailTraderNetworkService
@@ -14,7 +15,15 @@ class RetailTraderNetworkService
 
         $stock = app(NetworkInventoryService::class)->stockForRetailTrader($retailTrader);
         $network = app(WholesalerNetworkService::class);
-        $receivedPoints = $network->netPoints($retailTrader->id, 2, 'to_user_id');
+        $receivedPoints = (int) Invoice::query()
+            ->approvedWholesale()
+            ->where('invoice_flow', 'outgoing')
+            ->where('counterparty_user_id', $retailTrader->id)
+            ->sum('points_awarded');
+
+        if ($receivedPoints === 0) {
+            $receivedPoints = $network->netPoints($retailTrader->id, 2, 'to_user_id');
+        }
         $distributedPoints = $network->netPoints($retailTrader->id, 3, 'from_user_id');
         $remainingPoints = max(0, $receivedPoints - $distributedPoints);
 

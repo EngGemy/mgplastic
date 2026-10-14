@@ -88,6 +88,25 @@ class InvoiceAdjustmentPermissionTest extends TestCase
         $this->assertSame(20, $loaded->distributedPointsSum());
         $this->assertSame(40, $loaded->distributionPercent());
         $this->assertSame(30, $loaded->remainingPointsSum());
+
+        Invoice::factory()->create([
+            'status' => 'approved',
+            'invoice_type' => 'wholesale_pos',
+            'invoice_flow' => 'outgoing',
+            'wholesale_distributor_id' => $wholesaler->id,
+            'counterparty_user_id' => $retail->id,
+            'points_awarded' => 20,
+        ]);
+
+        $withTraderInvoices = app(WholesalerNetworkService::class)->getSummary($wholesaler->fresh());
+
+        $this->assertSame(70, $withTraderInvoices['factory_points']);
+        $this->assertSame(20, $withTraderInvoices['distributed_points']);
+        $this->assertSame(30, $withTraderInvoices['remaining_points']);
+        $this->assertSame(
+            70,
+            WholesaleInvoiceStatsService::forDistributor($wholesaler->id)['total_points']
+        );
     }
 
     public function test_view_only_permission_hides_edit_and_delete(): void

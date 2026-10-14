@@ -127,7 +127,28 @@ class Invoice extends Model
 
     public function getTotalItemPointsAttribute(): int
     {
+        if (array_key_exists('total_item_points', $this->attributes)) {
+            return (int) $this->attributes['total_item_points'];
+        }
+
         return (int) $this->items->sum('total_points');
+    }
+
+    /**
+     * Points written on the invoice itself.
+     * Incoming invoices keep them on the lines. Outgoing invoices issued to a
+     * retail trader keep them in points_awarded and have no lines, so reading
+     * the lines alone drops those points from every total.
+     */
+    public function documentPoints(): int
+    {
+        $items = (int) ($this->attributes['total_item_points'] ?? $this->items->sum('total_points'));
+
+        if ($this->invoice_flow === 'outgoing') {
+            return (int) ($this->points_awarded ?: $items);
+        }
+
+        return $items > 0 ? $items : (int) $this->points_awarded;
     }
 
     public function scopeApprovedWholesale($query)
@@ -176,14 +197,22 @@ class Invoice extends Model
 
     public function remainingPointsSum(): int
     {
-        $total = (int) ($this->total_item_points ?? $this->items->sum('total_points'));
+        if ($this->invoice_flow === 'outgoing') {
+            return 0;
+        }
+
+        $total = $this->documentPoints();
 
         return max(0, $total - $this->distributedPointsSum());
     }
 
     public function distributionPercent(): int
     {
-        $total = (int) ($this->total_item_points ?? $this->items->sum('total_points'));
+        if ($this->invoice_flow === 'outgoing') {
+            return $this->documentPoints() > 0 ? 100 : 0;
+        }
+
+        $total = $this->documentPoints();
 
         if ($total <= 0) {
             return 0;
