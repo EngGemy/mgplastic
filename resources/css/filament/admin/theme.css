@@ -486,11 +486,19 @@
     border-radius: 50%; cursor: pointer; font-size: 1rem; line-height: 1;
 }
 .pos-cart-line-mid { display: flex; gap: 0.5rem; margin: 0.4rem 0; align-items: center; }
-.pos-qty { display: flex; align-items: center; gap: 0.35rem; }
+.pos-qty { display: flex; align-items: center; gap: 0.4rem; }
 .pos-qty button {
-    width: 26px; height: 26px; border-radius: 6px; border: 1px solid #d1d5db;
-    background: #fff; cursor: pointer; font-weight: 700;
+    width: 2.75rem; height: 2.75rem; border-radius: 8px; border: 1px solid #d1d5db;
+    background: #fff; cursor: pointer; font-weight: 800; font-size: 1.25rem;
 }
+.pos-qty input {
+    width: 5.75rem; height: 2.75rem; text-align: center;
+    font-weight: 800; font-size: 1.35rem; font-family: inherit;
+    border: 1px solid #cbd5e1; border-radius: 8px; padding: 0;
+    -moz-appearance: textfield; appearance: textfield;
+}
+.pos-qty input::-webkit-outer-spin-button,
+.pos-qty input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .pos-price-field { flex: 1; }
 .pos-price-field label { font-size: 0.65rem; color: #6b7280; display: block; }
 .pos-input-sm { width: 100%; padding: 0.3rem 0.4rem; border-radius: 6px; border: 1px solid #d1d5db; font-size: 0.8rem; }
