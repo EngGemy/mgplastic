@@ -77,8 +77,7 @@ class CreateDistributorRetailTrader extends Page
         $needle = $codes->normalize($raw);
 
         $retail = $codes->findByCode($needle)
-            ?? User::query()->where('phone', $raw)->first()
-            ?? User::query()->where('phone', $needle)->first();
+            ?? User::findByPhone($raw);
 
         if (! $retail || ! $retail->isRetailTrader()) {
             Notification::make()

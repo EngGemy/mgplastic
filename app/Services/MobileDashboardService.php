@@ -70,11 +70,7 @@ class MobileDashboardService
             'stock_products' => $stock->count(),
             'total_available_qty' => (int) $stock->sum('available_qty'),
             'total_available_points' => (int) $stock->sum('available_points'),
-            'retail_traders_count' => User::query()
-                ->where('role', 'retail_trader')
-                ->where('parent_distributor_id', $user->id)
-                ->where('is_active', true)
-                ->count(),
+            'retail_traders_count' => app(RetailNetworkLinkService::class)->linkedRetailersFor($user)->count(),
             'distributions_sent' => InvoiceDistribution::query()
                 ->where('from_user_id', $user->id)
                 ->count(),

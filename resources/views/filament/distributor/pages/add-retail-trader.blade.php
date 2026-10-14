@@ -83,7 +83,9 @@
                     @if(! $preview['is_active'])
                         <p class="mg-hint" style="color:#b91c1c">هذا الحساب موقوف — لا يمكن إضافته.</p>
                     @elseif($preview['already_linked'])
-                        <button type="button" class="mg-btn mg-btn-primary" disabled>موجود في شبكتك بالفعل</button>
+                        <button type="button" class="mg-btn mg-btn-primary" wire:click="confirmLink" wire:loading.attr="disabled">
+                            فتح في شبكتي — السباكون يظهرون معه
+                        </button>
                     @else
                         <button type="button" class="mg-btn mg-btn-primary" wire:click="confirmLink" wire:loading.attr="disabled">
                             إضافة لشبكتي ✓

@@ -48,10 +48,13 @@
     $financeService = app(\App\Services\PlumberFinanceSummaryService::class);
     $finance = $isPlumber ? $financeService->for($record) : null;
 
-    $retailCount = $isWholesale ? $record->retailTraders()->count() : 0;
+    $linkedRetailIds = $isWholesale
+        ? app(\App\Services\RetailNetworkLinkService::class)->linkedRetailerIds($record)
+        : [];
+    $retailCount = $isWholesale ? count($linkedRetailIds) : 0;
     $plumberCount = $isWholesale
         ? User::where('role', User::ROLE_PLUMBER)
-            ->whereIn('parent_distributor_id', $record->retailTraders()->pluck('id'))->count()
+            ->whereIn('parent_distributor_id', $linkedRetailIds)->count()
         : ($isRetail ? $record->plumbers()->count() : 0);
 
     $permissions = is_array($record->permissions) ? $record->permissions : [];

@@ -3,10 +3,13 @@
     $isWholesale = $record->role === 'wholesale_distributor';
     $isRetail = $record->role === 'retail_trader';
 
-    $retailCount = $isWholesale ? (int) ($record->retail_traders_count ?? $record->retailTraders()->count()) : 0;
+    $linkedRetailIds = $isWholesale
+        ? app(\App\Services\RetailNetworkLinkService::class)->linkedRetailerIds($record)
+        : [];
+    $retailCount = $isWholesale ? count($linkedRetailIds) : 0;
     $plumberCount = $isWholesale
         ? \App\Models\User::where('role', 'plumber')
-            ->whereIn('parent_distributor_id', $record->retailTraders()->pluck('id'))
+            ->whereIn('parent_distributor_id', $linkedRetailIds)
             ->count()
         : (int) ($record->plumbers_count ?? $record->plumbers()->count());
 

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\StoreResource\RelationManagers;
 
 use App\Models\SystemLabel;
 use App\Models\User;
+use App\Services\RetailNetworkLinkService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -45,8 +46,8 @@ class NetworkPlumbersRelationManager extends RelationManager
 
             Forms\Components\Select::make('parent_distributor_id')
                 ->label('موزع القطاعي المسؤول')
-                ->options(fn () => $this->getOwnerRecord()
-                    ->retailTraders()
+                ->options(fn () => User::query()
+                    ->whereIn('id', app(RetailNetworkLinkService::class)->linkedRetailerIds($this->getOwnerRecord()))
                     ->pluck('name', 'id'))
                 ->required()
                 ->searchable(),
@@ -63,7 +64,7 @@ class NetworkPlumbersRelationManager extends RelationManager
         return $table
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->where('role', User::ROLE_PLUMBER)
-                ->whereIn('parent_distributor_id', $this->getOwnerRecord()->retailTraders()->pluck('id')))
+                ->whereIn('parent_distributor_id', app(RetailNetworkLinkService::class)->linkedRetailerIds($this->getOwnerRecord())))
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('الاسم')
@@ -85,7 +86,7 @@ class NetworkPlumbersRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\CreateAction::make()
                     ->label('إضافة '.$plumberLabel)
-                    ->visible(fn () => $this->getOwnerRecord()->retailTraders()->exists())
+                    ->visible(fn () => app(RetailNetworkLinkService::class)->linkedRetailerIds($this->getOwnerRecord()) !== [])
                     ->mutateFormDataUsing(fn (array $data) => array_merge($data, [
                         'role' => User::ROLE_PLUMBER,
                     ])),

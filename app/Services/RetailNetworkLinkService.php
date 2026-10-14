@@ -51,7 +51,7 @@ class RetailNetworkLinkService
         }
 
         $retail = $this->codes->findByCode($needle)
-            ?? User::query()->where('phone', $codeOrPhone)->orWhere('phone', $needle)->first();
+            ?? User::findByPhone($codeOrPhone);
 
         if (! $retail) {
             throw new \DomainException('لم يُعثر على تاجر بهذا الرقم الموحّد — تأكد من الرقم أو سجّله جديداً');
@@ -66,8 +66,10 @@ class RetailNetworkLinkService
         }
 
         if ($this->isLinked($wholesaler, $retail)) {
+            $this->attach($wholesaler, $retail, $linkedBy);
+
             return [
-                'retail' => $retail,
+                'retail' => $retail->fresh(),
                 'created_link' => false,
                 'message' => "التاجر «{$retail->name}» مرتبط بشبكتك مسبقاً — الرقم الموحّد: {$retail->network_code}",
             ];
@@ -151,13 +153,25 @@ class RetailNetworkLinkService
             ],
         ]);
 
-        // Keep legacy FK for first/primary wholesaler if empty.
-        if (! $retailTrader->parent_distributor_id) {
+        $parent = $retailTrader->parent_distributor_id
+            ? User::query()->find($retailTrader->parent_distributor_id)
+            : null;
+
+        if (! $parent || ! $parent->isWholesaleDistributor()) {
             $retailTrader->forceFill([
                 'parent_distributor_id' => $wholesaler->id,
                 'is_independent' => false,
             ])->save();
         }
+    }
+
+    /** @return list<int> */
+    public function linkedRetailerIds(User $wholesaler): array
+    {
+        return $this->linkedRetailersFor($wholesaler)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     public function detach(User $wholesaler, User $retailTrader): void
