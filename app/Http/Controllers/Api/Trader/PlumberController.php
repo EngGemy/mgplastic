@@ -6,8 +6,10 @@ use App\Http\Controllers\Api\Concerns\ApiResponds;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Mobile\UserProfileResource;
 use App\Models\User;
+use App\Services\PlumberRetailLinkService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class PlumberController extends Controller
 {
@@ -18,6 +20,7 @@ class PlumberController extends Controller
         $query = User::query()
             ->where('role', 'plumber')
             ->where('is_active', true)
+            ->where('parent_distributor_id', $request->user()->id)
             ->with([
                 'country',
                 'city',
@@ -48,10 +51,41 @@ class PlumberController extends Controller
         ]);
     }
 
+    public function link(Request $request, PlumberRetailLinkService $links): JsonResponse
+    {
+        $v = Validator::make($request->all(), [
+            'code' => ['required_without:phone', 'nullable', 'string', 'max:50'],
+            'phone' => ['required_without:code', 'nullable', 'string', 'max:50'],
+        ]);
+
+        if ($v->fails()) {
+            return $this->error('أدخل الرقم الموحّد أو رقم الهاتف', 422, $v->errors());
+        }
+
+        $needle = trim((string) ($request->input('code') ?: $request->input('phone')));
+
+        try {
+            $result = $links->linkByCode($request->user(), $needle);
+        } catch (\DomainException $e) {
+            return $this->error($e->getMessage(), 422);
+        }
+
+        $result['plumber']->load([
+            'country',
+            'city',
+            'walletAccounts' => fn ($q) => $q->where('currency', 'LYD'),
+        ]);
+
+        return $this->success([
+            'created_link' => $result['created_link'],
+            'plumber' => new UserProfileResource($result['plumber']),
+        ], $result['message'], $result['created_link'] ? 201 : 200);
+    }
+
     public function show(Request $request, User $plumber): JsonResponse
     {
-        if ($plumber->role !== 'plumber' || ! $plumber->is_active) {
-            return $this->error('غير مصرح', 403);
+        if ($plumber->role !== 'plumber' || ! $plumber->is_active || (int) $plumber->parent_distributor_id !== (int) $request->user()->id) {
+            return $this->error('السباك غير موجود في شبكتك', 404);
         }
 
         $plumber->load([

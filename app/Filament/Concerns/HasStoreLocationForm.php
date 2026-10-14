@@ -44,6 +44,7 @@ trait HasStoreLocationForm
             ->placeholder('مثال: متجر الأندلس')
             ->required()
             ->maxLength(255)
+            ->validationAttribute($nameLabel)
             ->columnSpan($compactPhoto ? 2 : 2);
 
         $fields[] = Forms\Components\TextInput::make('phone')
@@ -52,6 +53,7 @@ trait HasStoreLocationForm
             ->tel()
             ->required()
             ->maxLength(50)
+            ->validationAttribute('رقم الهاتف')
             ->columnSpan(1);
 
         $fields[] = Forms\Components\TextInput::make('email')
@@ -59,6 +61,7 @@ trait HasStoreLocationForm
             ->placeholder('اختياري')
             ->email()
             ->maxLength(255)
+            ->validationAttribute('البريد الإلكتروني')
             ->columnSpan(1);
 
         if ($withPassword) {
@@ -71,6 +74,7 @@ trait HasStoreLocationForm
                 ->required(fn ($record) => $record === null)
                 ->minLength(6)
                 ->maxLength(255)
+                ->validationAttribute('كلمة المرور')
                 ->columnSpan($compactPhoto ? 3 : 1);
         }
 
@@ -85,9 +89,9 @@ trait HasStoreLocationForm
             ->value('id');
     }
 
-    protected static function storeLocationFields(bool $hideCoordinates = false): array
+    protected static function storeLocationFields(): array
     {
-        $fields = [
+        return [
             Forms\Components\Select::make('country_id')
                 ->label('الدولة')
                 ->options(fn () => Country::query()
@@ -101,6 +105,7 @@ trait HasStoreLocationForm
                 ->live()
                 ->afterStateUpdated(fn (Set $set) => $set('city_id', null))
                 ->required()
+                ->validationAttribute('الدولة')
                 ->columnSpan(1),
 
             Forms\Components\Select::make('city_id')
@@ -114,56 +119,38 @@ trait HasStoreLocationForm
                 ->searchable()
                 ->preload()
                 ->required()
+                ->validationAttribute('المدينة')
                 ->columnSpan(1),
 
             Forms\Components\Textarea::make('address')
-                ->label('العنوان التفصيلي')
-                ->placeholder('الحي — الشارع — معلم قريب')
+                ->label('العنوان')
+                ->placeholder('الحي، الشارع، وأقرب معلم')
                 ->rows(2)
+                ->validationAttribute('العنوان')
                 ->columnSpanFull(),
 
             ViewField::make('_location_map')
+                ->hiddenLabel()
                 ->view('filament.forms.osm-map-picker')
                 ->dehydrated(false)
                 ->columnSpanFull(),
+
+            Forms\Components\TextInput::make('latitude')
+                ->label('خط العرض')
+                ->numeric()
+                ->live(debounce: 400)
+                ->default(32.8872)
+                ->validationAttribute('خط العرض')
+                ->columnSpan(1),
+
+            Forms\Components\TextInput::make('longitude')
+                ->label('خط الطول')
+                ->numeric()
+                ->live(debounce: 400)
+                ->default(13.1913)
+                ->validationAttribute('خط الطول')
+                ->columnSpan(1),
         ];
-
-        if (! $hideCoordinates) {
-            array_splice($fields, 3, 0, [
-                Forms\Components\Grid::make(2)->schema([
-                    Forms\Components\TextInput::make('latitude')
-                        ->label('خط العرض')
-                        ->numeric()
-                        ->live(debounce: 400)
-                        ->default(32.8872),
-                    Forms\Components\TextInput::make('longitude')
-                        ->label('خط الطول')
-                        ->numeric()
-                        ->live(debounce: 400)
-                        ->default(13.1913),
-                ]),
-            ]);
-        } else {
-            $fields[] = Forms\Components\Section::make('إحداثيات GPS (اختياري — تُحدَّث من الخريطة)')
-                ->schema([
-                    Forms\Components\TextInput::make('latitude')
-                        ->label('خط العرض')
-                        ->numeric()
-                        ->live(debounce: 400)
-                        ->default(32.8872),
-                    Forms\Components\TextInput::make('longitude')
-                        ->label('خط الطول')
-                        ->numeric()
-                        ->live(debounce: 400)
-                        ->default(13.1913),
-                ])
-                ->columns(2)
-                ->columnSpanFull()
-                ->collapsed()
-                ->compact();
-        }
-
-        return $fields;
     }
 
     protected static function storeDetailsFields(): array
@@ -185,6 +172,7 @@ trait HasStoreLocationForm
                 ->placeholder('https://example.com')
                 ->url()
                 ->maxLength(500)
+                ->validationAttribute('الموقع الإلكتروني')
                 ->prefixIcon('heroicon-o-globe-alt')
                 ->columnSpanFull(),
 

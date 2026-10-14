@@ -2,9 +2,12 @@
 
 namespace App\Filament\Resources\RetailTraderResource\RelationManagers;
 
+use App\Filament\Trader\Resources\TraderPlumberResource;
 use App\Models\User;
+use App\Services\PlumberRetailLinkService;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -27,7 +30,11 @@ class PlumbersRelationManager extends RelationManager
     {
         return $form->schema([
             Forms\Components\TextInput::make('name')->label('الاسم')->required(),
-            Forms\Components\TextInput::make('phone')->label('الهاتف')->tel()->required(),
+            Forms\Components\TextInput::make('phone')
+                ->label('الهاتف')
+                ->tel()
+                ->required()
+                ->rule(fn (?User $record) => TraderPlumberResource::phoneIsFree($record?->id)),
             Forms\Components\TextInput::make('email')->label('البريد')->email(),
             Forms\Components\TextInput::make('password')
                 ->label('كلمة المرور')
@@ -50,11 +57,37 @@ class PlumbersRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->label('إضافة سباك')
+                    ->label('إضافة سباك جديد')
                     ->mutateFormDataUsing(fn (array $data) => array_merge($data, [
                         'role' => User::ROLE_PLUMBER,
                         'parent_distributor_id' => $this->getOwnerRecord()->id,
+                        'is_independent' => false,
                     ])),
+                Tables\Actions\Action::make('linkExisting')
+                    ->label('ربط سباك مسجّل')
+                    ->icon('heroicon-o-link')
+                    ->form([
+                        Forms\Components\TextInput::make('code')
+                            ->label('الرقم الموحّد أو الهاتف')
+                            ->placeholder('MG-P-000012')
+                            ->required(),
+                    ])
+                    ->action(function (array $data): void {
+                        try {
+                            $result = app(PlumberRetailLinkService::class)->linkByCode(
+                                $this->getOwnerRecord(),
+                                (string) $data['code'],
+                            );
+
+                            Notification::make()
+                                ->success()
+                                ->title($result['created_link'] ? 'تمت الإضافة' : 'موجود في الشبكة')
+                                ->body($result['message'])
+                                ->send();
+                        } catch (\DomainException $e) {
+                            Notification::make()->danger()->title('تعذّر الربط')->body($e->getMessage())->send();
+                        }
+                    }),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

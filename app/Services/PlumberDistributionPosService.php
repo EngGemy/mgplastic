@@ -30,6 +30,8 @@ class PlumberDistributionPosService
             throw new \DomainException('هذا السباك موقوف');
         }
 
+        app(PlumberRetailLinkService::class)->assertInNetwork($retailTrader, $plumber);
+
         if (empty($lines)) {
             throw new \DomainException('أضف منتجاً واحداً على الأقل من مخزونك');
         }

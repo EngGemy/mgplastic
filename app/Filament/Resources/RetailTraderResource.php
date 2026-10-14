@@ -95,11 +95,11 @@ class RetailTraderResource extends Resource
     public static function form(Form $form): Form
     {
         return $form
-            ->columns(3)
             ->schema([
                 Forms\Components\Tabs::make('retail_tabs')
                     ->tabs([
                         Forms\Components\Tabs\Tab::make('البيانات')
+                            ->id('profile')
                             ->icon('heroicon-o-user')
                             ->schema([
                                 Forms\Components\Grid::make(3)->schema([
@@ -109,26 +109,42 @@ class RetailTraderResource extends Resource
                                         compactPhoto: true,
                                     ),
                                 ]),
-                                ...self::retailAffiliationFields(),
                                 ...self::brandCompanyFields(),
                             ]),
 
                         Forms\Components\Tabs\Tab::make('الموقع')
+                            ->id('location')
                             ->icon('heroicon-o-map-pin')
-                            ->schema(self::storeLocationFields(hideCoordinates: true)),
+                            ->schema([
+                                Forms\Components\Section::make('عنوان المحل')
+                                    ->description('الدولة والمدينة والعنوان، ثم حدّد النقطة على الخريطة')
+                                    ->icon('heroicon-o-map-pin')
+                                    ->schema(self::storeLocationFields())
+                                    ->columns(2),
+                            ]),
 
-                        Forms\Components\Tabs\Tab::make('إضافي')
+                        Forms\Components\Tabs\Tab::make('الحساب')
+                            ->id('account')
                             ->icon('heroicon-o-cog-6-tooth')
                             ->schema([
-                                ...self::storeDetailsFields(),
-                                Forms\Components\TextInput::make('password')
-                                    ->label('كلمة مرور جديدة')
-                                    ->password()
-                                    ->revealable()
-                                    ->dehydrated(fn ($state) => filled($state))
-                                    ->minLength(6),
-                                ...self::storeStatusFields(),
-                                ...self::storePanelPermissionFields(),
+                                Forms\Components\Section::make('ملاحظات وكلمة المرور')
+                                    ->schema([
+                                        ...self::storeDetailsFields(),
+                                        Forms\Components\TextInput::make('password')
+                                            ->label('كلمة مرور جديدة')
+                                            ->password()
+                                            ->revealable()
+                                            ->dehydrated(fn ($state) => filled($state))
+                                            ->minLength(6)
+                                            ->validationAttribute('كلمة المرور')
+                                            ->helperText('اتركها فارغة إذا لم ترد تغييرها'),
+                                    ]),
+                                Forms\Components\Section::make('حالة الحساب')
+                                    ->schema(self::storeStatusFields())
+                                    ->columns(2),
+                                ...(in_array(auth()->user()?->role, ['super_admin', 'admin'], true)
+                                    ? self::storePanelPermissionFields()
+                                    : []),
                             ]),
                     ])
                     ->columnSpanFull()
@@ -203,11 +219,9 @@ class RetailTraderResource extends Resource
                     ->description('العنوان والخريطة')
                     ->icon('heroicon-o-map-pin')
                     ->schema([
-                        Forms\Components\Placeholder::make('map_help')
-                            ->content('📍 انقر على الخريطة لتحديد موقع المتجر — OpenStreetMap')
-                            ->columnSpanFull(),
-
-                        ...self::storeLocationFields(hideCoordinates: true),
+                        Forms\Components\Section::make('عنوان المحل')
+                            ->schema(self::storeLocationFields())
+                            ->columns(2),
 
                         ...self::storeCatalogFields(),
                     ]),

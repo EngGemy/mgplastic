@@ -117,6 +117,7 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('dashboard', TraderDashboardController::class);
 
         Route::get('plumbers', [TraderPlumberController::class, 'index']);
+        Route::post('plumbers/link', [TraderPlumberController::class, 'link']);
         Route::get('plumbers/{plumber}', [TraderPlumberController::class, 'show']);
 
         Route::get('pos/stock', [TraderPosController::class, 'stock']);

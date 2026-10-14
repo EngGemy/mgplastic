@@ -42,6 +42,7 @@ class TraderPanelProvider extends PanelProvider
             ->databaseNotifications()
             ->resources([
                 \App\Filament\Trader\Resources\TraderOrderResource::class,
+                \App\Filament\Trader\Resources\TraderPlumberResource::class,
                 \App\Filament\Trader\Resources\TraderInvoiceResource::class,
                 \App\Filament\Trader\Resources\TraderDistributionResource::class,
                 \App\Filament\Trader\Resources\TraderMyStoreResource::class,

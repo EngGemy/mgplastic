@@ -49,7 +49,7 @@ class RetailTradersRelationManager extends RelationManager
                 ]),
 
             Forms\Components\Section::make('الموقع')
-                ->schema(self::storeLocationFields(hideCoordinates: true))
+                ->schema(self::storeLocationFields())
                 ->columns(2)
                 ->collapsed(fn ($record) => $record !== null),
 

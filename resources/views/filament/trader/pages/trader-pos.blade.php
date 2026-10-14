@@ -221,7 +221,7 @@
         </div>
         <div class="pos-banner-stat">
             <div class="pos-banner-val">{{ number_format($this->plumbersCount) }}</div>
-            <div class="pos-banner-lbl">سباك بالنظام</div>
+            <div class="pos-banner-lbl">سباك في شبكتك</div>
         </div>
     </div>
 
@@ -246,7 +246,7 @@
                             <input type="text" class="pos-input"
                                 wire:model.live.debounce.200ms="plumberSearch"
                                 @focus="open = true" @input="open = true"
-                                placeholder="اسم / هاتف / رقم موحّد...">
+                                placeholder="سباك من شبكتك — اسم / هاتف / رقم...">
                             <div class="pos-plumber-dropdown" x-show="open" x-cloak>
                                 @forelse($plumbers as $p)
                                     <button type="button" class="pos-plumber-option"
@@ -258,7 +258,7 @@
                                         </span>
                                     </button>
                                 @empty
-                                    <div class="pos-plumber-empty">لا نتائج</div>
+                                    <div class="pos-plumber-empty">لا يوجد في شبكتك. أضفه من صفحة السباكون، أو ينضم عند أول طلب.</div>
                                 @endforelse
                             </div>
                         @endif

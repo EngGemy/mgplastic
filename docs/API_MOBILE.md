@@ -188,8 +188,9 @@ Prefix: `/api/v1/mobile/trader` — requires role `retail_trader`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/dashboard` | Stock summary, plumbers count, wallet |
-| GET | `/plumbers` | My plumbers list |
-| GET | `/plumbers/{id}` | Plumber detail |
+| GET | `/plumbers` | Plumbers linked to this trader (`parent_distributor_id`) |
+| POST | `/plumbers/link` | Link an existing plumber by `code` (MG-P-…) or `phone`. 201 if new, 200 if already yours, 422 if linked to another trader |
+| GET | `/plumbers/{id}` | Plumber detail, only if he belongs to this trader |
 | GET | `/pos/stock` | POS inventory (same as trader panel) |
 | POST | `/pos/checkout` | Sell points to plumber |
 

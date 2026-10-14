@@ -69,6 +69,7 @@ class TraderPos extends Page
         $query = User::query()
             ->where('role', 'plumber')
             ->where('is_active', true)
+            ->where('parent_distributor_id', auth()->id())
             ->orderBy('name');
 
         $term = trim($this->plumberSearch);
@@ -89,6 +90,7 @@ class TraderPos extends Page
         return User::query()
             ->where('role', 'plumber')
             ->where('is_active', true)
+            ->where('parent_distributor_id', auth()->id())
             ->count();
     }
 
@@ -100,6 +102,7 @@ class TraderPos extends Page
 
         return User::query()
             ->where('role', 'plumber')
+            ->where('parent_distributor_id', auth()->id())
             ->whereKey($this->plumberId)
             ->first(['id', 'name', 'phone', 'network_code']);
     }
@@ -109,6 +112,7 @@ class TraderPos extends Page
         $exists = User::query()
             ->where('role', 'plumber')
             ->where('is_active', true)
+            ->where('parent_distributor_id', auth()->id())
             ->whereKey($id)
             ->exists();
 

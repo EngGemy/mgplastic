@@ -68,6 +68,10 @@ class OrderService
                 OrderItem::create(['order_id' => $order->id, ...$row]);
             }
 
+            if ($channel === OrderStatus::CHANNEL_RETAIL_TO_PLUMBER && $supplier && $requester->isPlumber()) {
+                app(PlumberRetailLinkService::class)->linkIfUnassigned($supplier, $requester);
+            }
+
             return $order;
         });
 

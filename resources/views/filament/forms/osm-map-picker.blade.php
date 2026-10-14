@@ -1,5 +1,5 @@
 <div class="osm-wrap" wire:ignore>
-    <p class="osm-hint">📍 انقر على الخريطة لتحديد موقع المتجر — OpenStreetMap</p>
+    <p class="osm-hint">انقر على الخريطة أو اسحب الدبوس لتحديد موقع المحل</p>
     <div id="osm-map-{{ $field->getId() }}" class="osm-map"></div>
 </div>
 
@@ -56,6 +56,10 @@
         syncMarker(parseFloat($wire.get('data.latitude')), parseFloat(value));
     });
 
-    setTimeout(() => map.invalidateSize(), 400);
+    const refresh = () => map.invalidateSize();
+    setTimeout(refresh, 250);
+    if (window.ResizeObserver) {
+        new ResizeObserver(refresh).observe(mapEl);
+    }
 </script>
 @endscript
