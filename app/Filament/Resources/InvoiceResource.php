@@ -11,8 +11,12 @@ use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\User;
 use App\Models\SystemLabel;
+use App\Support\AdminPermissions;
+use App\Support\StorePermissions;
+use App\Services\InvoiceAdjustmentService;
 use Filament\Forms;
 use Filament\Infolists;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Illuminate\Database\Eloquent\Builder;
@@ -76,6 +80,46 @@ class InvoiceResource extends Resource
 
     public static function canDelete($record): bool
     {
+        return $record instanceof Invoice && static::canDeleteInvoice($record);
+    }
+
+    public static function canAdjustInvoiceQuantities(Invoice $invoice): bool
+    {
+        $user = static::currentPanelUser();
+
+        if (! $user || ! static::userCanAccessInvoice($invoice)) {
+            return false;
+        }
+
+        if (static::isNetworkAdmin($user)) {
+            return $user->canAdminPermission(AdminPermissions::INVOICES_MANAGE);
+        }
+
+        if ($user->isWholesaleDistributor()
+            && (int) $invoice->wholesale_distributor_id === (int) $user->id) {
+            return $user->canStorePermission(StorePermissions::INVOICES_EDIT_QTY);
+        }
+
+        return false;
+    }
+
+    public static function canDeleteInvoice(Invoice $invoice): bool
+    {
+        $user = static::currentPanelUser();
+
+        if (! $user || ! static::userCanAccessInvoice($invoice)) {
+            return false;
+        }
+
+        if (static::isNetworkAdmin($user)) {
+            return $user->canAdminPermission(AdminPermissions::INVOICES_MANAGE);
+        }
+
+        if ($user->isWholesaleDistributor()
+            && (int) $invoice->wholesale_distributor_id === (int) $user->id) {
+            return $user->canStorePermission(StorePermissions::INVOICES_DELETE);
+        }
+
         return false;
     }
 
@@ -233,6 +277,22 @@ class InvoiceResource extends Resource
             ])
             ->filtersFormColumns(3)
             ->actions([
+                Tables\Actions\Action::make('delete_invoice')
+                    ->label('حذف')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('حذف الفاتورة')
+                    ->modalDescription('تُحذف الفاتورة وبنودها. لا يمكن الحذف بعد تأكيد التوزيع.')
+                    ->visible(fn (Invoice $record) => static::canDeleteInvoice($record))
+                    ->action(function (Invoice $record) {
+                        try {
+                            app(InvoiceAdjustmentService::class)->deleteInvoice($record);
+                            Notification::make()->success()->title('تم حذف الفاتورة')->send();
+                        } catch (\DomainException $e) {
+                            Notification::make()->danger()->title('تعذّر الحذف')->body($e->getMessage())->send();
+                        }
+                    }),
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make()->label('عرض'),
                     Tables\Actions\Action::make('print')

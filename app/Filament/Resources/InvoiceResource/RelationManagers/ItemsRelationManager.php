@@ -2,9 +2,13 @@
 
 namespace App\Filament\Resources\InvoiceResource\RelationManagers;
 
+use App\Filament\Resources\InvoiceResource;
+use App\Models\InvoiceItem;
 use App\Models\Product;
+use App\Services\InvoiceAdjustmentService;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -99,6 +103,34 @@ class ItemsRelationManager extends RelationManager
                         && ! $this->getOwnerRecord()->isWholesalePos()),
             ])
             ->actions([
+                Tables\Actions\Action::make('editQuantity')
+                    ->label('تعديل الكمية')
+                    ->icon('heroicon-o-pencil-square')
+                    ->visible(fn () => InvoiceResource::canAdjustInvoiceQuantities($this->getOwnerRecord()))
+                    ->fillForm(fn (InvoiceItem $record) => ['quantity' => $record->quantity])
+                    ->form([
+                        Forms\Components\TextInput::make('quantity')
+                            ->label('الكمية')
+                            ->numeric()
+                            ->minValue(1)
+                            ->required()
+                            ->helperText(function (InvoiceItem $record) {
+                                $committed = app(InvoiceAdjustmentService::class)->committedQuantity($record);
+
+                                return $committed > 0
+                                    ? "الحد الأدنى {$committed} لأن هذه الكمية موزّعة"
+                                    : 'تعديل الكمية يعيد حساب نقاط البند';
+                            }),
+                    ])
+                    ->action(function (InvoiceItem $record, array $data) {
+                        try {
+                            app(InvoiceAdjustmentService::class)->updateQuantity($record, (int) $data['quantity']);
+                            Notification::make()->success()->title('تم تعديل الكمية')->send();
+                        } catch (\DomainException $e) {
+                            Notification::make()->danger()->title('تعذّر التعديل')->body($e->getMessage())->send();
+                        }
+                    }),
+
                 Tables\Actions\EditAction::make()
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['unit_price_cents'] = (int) ($data['unit_price_cents'] ?? 0);

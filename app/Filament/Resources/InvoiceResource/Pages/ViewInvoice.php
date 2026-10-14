@@ -7,6 +7,7 @@ use App\Filament\Resources\InvoiceResource;
 use App\Models\InvoiceDistribution;
 use App\Models\User;
 use App\Services\DistributionService;
+use App\Services\InvoiceAdjustmentService;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
@@ -111,6 +112,8 @@ class ViewInvoice extends ViewRecord
                     }
                 }),
 
+            $this->deleteInvoiceAction(),
+
             Actions\Action::make('print_invoice')
                 ->label('طباعة الفاتورة')
                 ->icon('heroicon-o-printer')
@@ -188,6 +191,27 @@ class ViewInvoice extends ViewRecord
                 ->modalHeading('اعتماد الفاتورة')
                 ->modalSubmitActionLabel('اعتماد'),
         ];
+    }
+
+    protected function deleteInvoiceAction(): Actions\Action
+    {
+        return Actions\Action::make('delete_invoice')
+            ->label('حذف الفاتورة')
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->visible(fn () => InvoiceResource::canDeleteInvoice($this->record))
+            ->requiresConfirmation()
+            ->modalHeading('حذف الفاتورة')
+            ->modalDescription('تُحذف الفاتورة وبنودها. لا يمكن الحذف بعد تأكيد توزيع كميات منها.')
+            ->action(function () {
+                try {
+                    app(InvoiceAdjustmentService::class)->deleteInvoice($this->record);
+                    Notification::make()->success()->title('تم حذف الفاتورة')->send();
+                    $this->redirect(static::getResource()::getUrl('index'));
+                } catch (\DomainException $e) {
+                    Notification::make()->danger()->title('تعذّر الحذف')->body($e->getMessage())->send();
+                }
+            });
     }
 
     protected function pendingTierOneReceipt(): ?InvoiceDistribution

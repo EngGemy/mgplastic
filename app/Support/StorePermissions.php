@@ -18,6 +18,10 @@ class StorePermissions
 
     public const INVOICES_VIEW = 'invoices.view';
 
+    public const INVOICES_EDIT_QTY = 'invoices.edit_qty';
+
+    public const INVOICES_DELETE = 'invoices.delete';
+
     public const CATALOG_MANAGE = 'catalog.manage';
 
     public const STORE_PROFILE = 'store.profile';
@@ -31,6 +35,8 @@ class StorePermissions
             self::ORDERS_PLACE => 'إنشاء طلبيات للمورد',
             self::ORDERS_MANAGE => 'إدارة واستلام الطلبيات',
             self::INVOICES_VIEW => 'عرض الفواتير والتوزيعات',
+            self::INVOICES_EDIT_QTY => 'تعديل كميات الفاتورة',
+            self::INVOICES_DELETE => 'حذف الفاتورة',
             self::CATALOG_MANAGE => 'إدارة منتجات المتجر',
             self::STORE_PROFILE => 'تعديل بيانات المتجر',
         ];
