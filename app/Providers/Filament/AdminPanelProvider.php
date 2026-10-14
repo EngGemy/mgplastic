@@ -5,7 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\ProductsReport;
 use Filament\FontProviders\GoogleFontProvider;
-use Filament\Http\Middleware\Authenticate;
+use App\Http\Middleware\AuthenticatePanel;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -74,7 +74,7 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->authMiddleware([
-                Authenticate::class,
+                AuthenticatePanel::class,
                 \App\Http\Middleware\EnsureAdminPanelAccess::class,
             ]);
     }
