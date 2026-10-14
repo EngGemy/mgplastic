@@ -32,7 +32,7 @@ class PlumberRegisterController extends Controller
             'profile_photo' => 'nullable|image|max:2048',
             'role'          => 'required|in:plumber,vendor',
         ], [
-            'role.in' => 'Role must be either plumber or vendor.',
+            'role.in' => 'الدور يجب أن يكون سباكاً أو مورّداً.',
         ]);
 
         if ($validator->fails()) {
@@ -50,7 +50,7 @@ class PlumberRegisterController extends Controller
         if (! $city) {
             return response()->json([
                 'status'  => false,
-                'message' => 'City does not belong to the selected country'
+                'message' => 'المدينة لا تتبع الدولة المختارة'
             ], 422);
         }
 

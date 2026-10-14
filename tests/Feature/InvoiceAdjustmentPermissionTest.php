@@ -8,7 +8,9 @@ use App\Models\InvoiceDistribution;
 use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\InvoiceDistributionItem;
 use App\Services\InvoiceAdjustmentService;
+use App\Services\WholesalerNetworkService;
 use App\Support\StorePermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -33,6 +35,46 @@ class InvoiceAdjustmentPermissionTest extends TestCase
         app(InvoiceAdjustmentService::class)->deleteInvoice($invoice->fresh());
 
         $this->assertDatabaseMissing('invoices', ['id' => $invoice->id]);
+    }
+
+    public function test_changing_invoice_quantity_updates_stock_and_dashboard_together(): void
+    {
+        [$wholesaler, $invoice, $item] = $this->invoiceForWholesaler();
+        User::factory()->create(['role' => 'super_admin']);
+        $retail = User::factory()->create(['role' => 'retail_trader', 'is_active' => true]);
+
+        app(InvoiceAdjustmentService::class)->updateQuantity($item, 10);
+
+        $receipt = InvoiceDistributionItem::query()->where('invoice_item_id', $item->id)->first();
+        $this->assertNotNull($receipt);
+        $this->assertSame(10, (int) $receipt->quantity);
+        $this->assertSame(50, (int) $receipt->points_value);
+
+        $distribution = InvoiceDistribution::query()->create([
+            'invoice_id' => $invoice->id,
+            'from_user_id' => $wholesaler->id,
+            'to_user_id' => $retail->id,
+            'tier' => 2,
+            'status' => 'confirmed',
+            'parent_distribution_id' => $receipt->distribution_id,
+        ]);
+        $distribution->items()->create([
+            'invoice_item_id' => $item->id,
+            'quantity' => 4,
+            'points_value' => 20,
+        ]);
+
+        $summary = app(WholesalerNetworkService::class)->getSummary($wholesaler);
+
+        $this->assertSame(20, $summary['distributed_points']);
+        $this->assertSame(30, $summary['remaining_points']);
+        $this->assertSame(50, $summary['factory_points']);
+        $this->assertSame($summary['remaining_points'], $summary['balance_points']);
+        $this->assertSame(6, $summary['product_units']);
+        $this->assertSame(
+            $summary['factory_points'],
+            $summary['remaining_points'] + $summary['distributed_points']
+        );
     }
 
     public function test_view_only_permission_hides_edit_and_delete(): void

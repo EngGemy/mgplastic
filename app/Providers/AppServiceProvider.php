@@ -7,9 +7,11 @@ use App\Models\InvoiceDistribution;
 use App\Policies\InvoiceDistributionPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use App\Validation\ArabicValidator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ServiceProvider;
 use BezhanSalleh\FilamentLanguageSwitch\LanguageSwitch;
 
@@ -34,6 +36,8 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Gate::policy(InvoiceDistribution::class, InvoiceDistributionPolicy::class);
+
+        Validator::resolver(fn ($translator, $data, $rules, $messages, $attributes) => new ArabicValidator($translator, $data, $rules, $messages, $attributes));
 
         LanguageSwitch::configureUsing(function (LanguageSwitch $switch) {
             $switch

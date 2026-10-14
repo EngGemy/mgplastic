@@ -31,11 +31,11 @@ class RegisterRequest extends FormRequest
             // If one is present, both are required and must belong together
             if ($countryId || $cityId) {
                 if (!$countryId || !$cityId) {
-                    $v->errors()->add('city_id', 'Both country_id and city_id are required together.');
+                    $v->errors()->add('city_id', 'الدولة والمدينة مطلوبان معاً.');
                     return;
                 }
                 if (!\App\Models\City::where('id', $cityId)->where('country_id', $countryId)->exists()) {
-                    $v->errors()->add('city_id', 'City does not belong to the selected country.');
+                    $v->errors()->add('city_id', 'المدينة لا تتبع الدولة المختارة.');
                 }
             }
         });

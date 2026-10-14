@@ -2,9 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\InvoiceDistribution;
 use App\Models\User;
-use App\Models\WalletAccount;
 
 class RetailTraderNetworkService
 {
@@ -14,30 +12,17 @@ class RetailTraderNetworkService
             return [];
         }
 
-        $wallet = WalletAccount::firstOrCreate(
-            ['owner_id' => $retailTrader->id, 'currency' => 'LYD'],
-            ['balance_cents' => 0, 'balance_points' => 0]
-        );
-
-        $receivedPoints = (int) InvoiceDistribution::query()
-            ->where('to_user_id', $retailTrader->id)
-            ->where('tier', 2)
-            ->whereIn('status', ['confirmed', 'points_awarded'])
-            ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
-            ->sum('idi.points_value');
-
-        $distributedPoints = (int) InvoiceDistribution::query()
-            ->where('from_user_id', $retailTrader->id)
-            ->where('tier', 3)
-            ->whereIn('status', ['confirmed', 'points_awarded'])
-            ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
-            ->sum('idi.points_value');
+        $stock = app(NetworkInventoryService::class)->stockForRetailTrader($retailTrader);
+        $remainingPoints = (int) $stock->sum('available_points');
+        $network = app(WholesalerNetworkService::class);
+        $distributedPoints = $network->netPoints($retailTrader->id, 3, 'from_user_id');
 
         return [
-            'balance_points' => (int) $wallet->balance_points,
-            'received_points' => $receivedPoints,
+            'balance_points' => $remainingPoints,
+            'remaining_points' => $remainingPoints,
+            'received_points' => $remainingPoints + $distributedPoints,
             'distributed_points' => $distributedPoints,
-            'product_units' => $this->inventoryUnits($retailTrader),
+            'product_units' => (int) $stock->sum('available_qty'),
             'plumbers_count' => $retailTrader->plumbers()->count(),
         ];
     }

@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
+use App\Models\InvoiceDistributionItem;
 use App\Models\InvoiceItem;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class WholesalerPointsSyncService
 {
@@ -42,8 +44,11 @@ class WholesalerPointsSyncService
 
         if (! $distribution) {
             $fromUser = User::where('role', 'super_admin')->first()
-                ?? User::where('role', 'admin')->first()
-                ?? $wholesaler;
+                ?? User::where('role', 'admin')->first();
+
+            if (! $fromUser) {
+                return;
+            }
 
             $items = $invoice->items->map(fn (InvoiceItem $item) => [
                 'invoice_item_id' => $item->id,
@@ -62,6 +67,56 @@ class WholesalerPointsSyncService
 
         if ($distribution->status === 'draft') {
             $this->distributions->confirmDistribution($distribution->fresh(['items']));
+        }
+
+        $this->reconcileTierOne($invoice->fresh('items'), $distribution->fresh('items'));
+    }
+
+    /**
+     * Keep the factory receipt line equal to the invoice line, so stock,
+     * factory points, and later quantity edits stay the same number.
+     */
+    public function reconcileTierOne(Invoice $invoice, InvoiceDistribution $distribution): void
+    {
+        if ((int) $distribution->tier !== 1) {
+            return;
+        }
+
+        $distribution->load('items');
+
+        foreach ($invoice->items as $item) {
+            $downstream = (int) InvoiceDistributionItem::query()
+                ->where('invoice_item_id', $item->id)
+                ->whereHas('distribution', fn ($q) => $q
+                    ->where('invoice_id', $invoice->id)
+                    ->where('tier', '>=', 2)
+                    ->whereIn('status', ['draft', 'confirmed', 'points_awarded'])
+                )
+                ->sum(DB::raw('quantity - COALESCE(returned_quantity, 0)'));
+
+            $target = max((int) $item->quantity, $downstream);
+            $points = (int) floor($target * (float) $item->points_per_unit);
+            $line = $distribution->items->firstWhere('invoice_item_id', $item->id);
+
+            if (! $line) {
+                InvoiceDistributionItem::query()->create([
+                    'distribution_id' => $distribution->id,
+                    'invoice_item_id' => $item->id,
+                    'quantity' => $target,
+                    'points_value' => $points,
+                ]);
+
+                continue;
+            }
+
+            if ((int) $line->quantity === $target && (int) $line->points_value === $points) {
+                continue;
+            }
+
+            $line->forceFill([
+                'quantity' => $target,
+                'points_value' => $points,
+            ])->save();
         }
     }
 

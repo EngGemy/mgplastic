@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class InvoiceAdjustmentService
@@ -33,6 +34,18 @@ class InvoiceAdjustmentService
             'quantity' => $quantity,
             'total_points' => $points,
         ])->save();
+
+        $item->load('invoice');
+        $invoice = $item->invoice;
+        $wholesalerId = (int) ($invoice?->wholesale_distributor_id ?? 0);
+
+        if ($invoice && $invoice->isWholesalePos() && $invoice->invoice_flow === 'incoming' && $wholesalerId > 0) {
+            $wholesaler = User::query()->find($wholesalerId);
+
+            if ($wholesaler?->isWholesaleDistributor()) {
+                app(WholesalerPointsSyncService::class)->ensureIncomingReceipt($invoice->fresh('items'), $wholesaler);
+            }
+        }
 
         return $item->fresh();
     }

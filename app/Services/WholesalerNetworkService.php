@@ -5,53 +5,53 @@ namespace App\Services;
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\User;
-use App\Models\WalletAccount;
 
 class WholesalerNetworkService
 {
-    public function __construct(
-        protected WholesalerPointsSyncService $sync,
-    ) {}
-
     public function getSummary(User $wholesaler): array
     {
         if (! $wholesaler->isWholesaleDistributor()) {
             return [];
         }
 
-        $this->sync->syncForWholesaler($wholesaler);
-
-        $wallet = WalletAccount::firstOrCreate(
-            ['owner_id' => $wholesaler->id, 'currency' => 'LYD'],
-            ['balance_cents' => 0, 'balance_points' => 0]
-        );
-
-        $factoryPoints = (int) Invoice::query()
-            ->where('wholesale_distributor_id', $wholesaler->id)
-            ->where('invoice_type', 'wholesale_pos')
-            ->where('invoice_flow', 'incoming')
-            ->where('status', 'approved')
-            ->join('invoice_items', 'invoice_items.invoice_id', '=', 'invoices.id')
-            ->sum('invoice_items.total_points');
-
-        $distributedPoints = (int) InvoiceDistribution::query()
-            ->where('from_user_id', $wholesaler->id)
-            ->where('tier', 2)
-            ->whereIn('status', ['confirmed', 'points_awarded'])
-            ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
-            ->sum('idi.points_value');
-
-        $productUnits = $this->inventoryUnits($wholesaler);
-        $productTypes = $this->distinctProductsInStock($wholesaler);
+        $stock = app(NetworkInventoryService::class)->stockForWholesaler($wholesaler);
+        $remainingPoints = (int) $stock->sum('available_points');
+        $distributedPoints = $this->netPoints($wholesaler->id, 2, 'from_user_id');
 
         return [
-            'balance_points' => (int) $wallet->balance_points,
-            'factory_points' => $factoryPoints,
+            'balance_points' => $remainingPoints,
+            'remaining_points' => $remainingPoints,
+            'factory_points' => $remainingPoints + $distributedPoints,
             'distributed_points' => $distributedPoints,
-            'product_units' => $productUnits,
-            'product_types' => $productTypes,
+            'product_units' => (int) $stock->sum('available_qty'),
+            'product_types' => $stock->count(),
             'retail_traders_count' => app(RetailNetworkLinkService::class)->linkedRetailersFor($wholesaler)->count(),
         ];
+    }
+
+    public function netPoints(int $userId, int $tier, string $userColumn): int
+    {
+        if (! in_array($userColumn, ['from_user_id', 'to_user_id'], true)) {
+            return 0;
+        }
+
+        $lines = InvoiceDistribution::query()
+            ->where($userColumn, $userId)
+            ->where('tier', $tier)
+            ->whereIn('invoice_distributions.status', ['confirmed', 'points_awarded'])
+            ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
+            ->get(['idi.quantity', 'idi.returned_quantity', 'idi.points_value']);
+
+        return (int) $lines->sum(function ($line) {
+            $quantity = (int) $line->quantity;
+            $net = max(0, $quantity - (int) $line->returned_quantity);
+
+            if ($quantity <= 0 || $net <= 0) {
+                return 0;
+            }
+
+            return (int) floor(((int) $line->points_value) * $net / $quantity);
+        });
     }
 
     public function inventoryUnits(User $wholesaler): int

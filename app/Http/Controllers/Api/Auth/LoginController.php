@@ -33,7 +33,7 @@ class LoginController extends Controller
         if (trim($identifier) === '') {
             return response()->json([
                 'status' => false,
-                'message' => 'login, phone, or email is required',
+                'message' => 'أدخل رقم الهاتف أو البريد الإلكتروني',
             ], 422);
         }
 

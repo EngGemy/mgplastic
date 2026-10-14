@@ -13,6 +13,8 @@ class MgCrmDashboardWidget extends Widget
 
     protected static ?int $sort = -200;
 
+    protected static ?string $pollingInterval = '30s';
+
     protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool

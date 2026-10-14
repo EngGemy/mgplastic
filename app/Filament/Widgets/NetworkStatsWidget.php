@@ -48,8 +48,8 @@ class NetworkStatsWidget extends BaseWidget
         $confirmedToday = $this->scopedConfirmedTodayCount($user->id);
 
         return [
-            Stat::make('رصيد النقاط', number_format($summary['balance_points']))
-                ->description('الرصيد الحالي في محفظتك')
+            Stat::make('رصيد النقاط', number_format($summary['remaining_points'] ?? $summary['balance_points']))
+                ->description('المتاح للتوزيع الآن')
                 ->descriptionIcon('heroicon-o-wallet')
                 ->color('success'),
 
@@ -92,8 +92,8 @@ class NetworkStatsWidget extends BaseWidget
         $confirmedToday = $this->scopedConfirmedTodayCount($user->id);
 
         return [
-            Stat::make('رصيد النقاط', number_format($summary['balance_points']))
-                ->description('الرصيد الحالي في محفظتك')
+            Stat::make('رصيد النقاط', number_format($summary['remaining_points'] ?? $summary['balance_points']))
+                ->description('المتاح للبيع للسباك')
                 ->descriptionIcon('heroicon-o-wallet')
                 ->color('success'),
 
