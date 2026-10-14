@@ -13,6 +13,7 @@ use App\Support\StorePermissions;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -298,6 +299,24 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
             'retail_trader_id',
             'wholesaler_id'
         )->withPivot(['linked_by', 'linked_at'])->withTimestamps();
+    }
+
+    /**
+     * Retail traders that belong to this wholesaler, either as the primary
+     * parent or through the network pivot. The pivot check must not use
+     * users.id inside whereHas — that column collides with the outer users table
+     * and hides linked traders (the profile then 404s).
+     */
+    public function scopeVisibleToWholesaler(Builder $query, int $wholesalerId): Builder
+    {
+        return $query->where(function (Builder $inner) use ($wholesalerId) {
+            $inner->where('users.parent_distributor_id', $wholesalerId)
+                ->orWhereIn('users.id', function ($sub) use ($wholesalerId) {
+                    $sub->select('retail_trader_id')
+                        ->from('wholesaler_retail_trader')
+                        ->where('wholesaler_id', $wholesalerId);
+                });
+        });
     }
 
     public function isLinkedToWholesaler(User $wholesaler): bool

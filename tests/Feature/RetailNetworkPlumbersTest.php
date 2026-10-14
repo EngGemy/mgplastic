@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Distributor\Resources\DistributorRetailTraderResource;
 use App\Models\User;
 use App\Services\RetailNetworkLinkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,5 +50,9 @@ class RetailNetworkPlumbersTest extends TestCase
                 ->exists()
         );
         $this->assertSame($other->id, $retail->fresh()->parent_distributor_id);
+
+        $this->actingAs($wholesaler);
+        $visibleIds = DistributorRetailTraderResource::getEloquentQuery()->pluck('id')->all();
+        $this->assertContains($retail->id, $visibleIds);
     }
 }

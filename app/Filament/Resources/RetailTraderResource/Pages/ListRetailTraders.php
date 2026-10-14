@@ -34,10 +34,7 @@ class ListRetailTraders extends ListRecords
         $user = auth()->user();
         if ($user?->isWholesaleDistributor()) {
             $wid = (int) $user->id;
-            $base->where(function (Builder $q) use ($wid) {
-                $q->where('parent_distributor_id', $wid)
-                    ->orWhereHas('linkedWholesalers', fn (Builder $lq) => $lq->where('users.id', $wid));
-            });
+            $base->visibleToWholesaler($wid);
         }
 
         return [

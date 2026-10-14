@@ -85,10 +85,7 @@ class RetailTraderResource extends Resource
 
         if ($user?->isWholesaleDistributor()) {
             $wholesalerId = (int) $user->id;
-            $query->where(function (Builder $q) use ($wholesalerId) {
-                $q->where('parent_distributor_id', $wholesalerId)
-                    ->orWhereHas('linkedWholesalers', fn (Builder $lq) => $lq->where('users.id', $wholesalerId));
-            });
+            $query->visibleToWholesaler($wholesalerId);
         }
 
         return $query;

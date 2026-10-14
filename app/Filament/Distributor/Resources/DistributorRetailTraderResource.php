@@ -44,10 +44,7 @@ class DistributorRetailTraderResource extends Resource
 
         return parent::getEloquentQuery()
             ->where('role', 'retail_trader')
-            ->where(function (Builder $q) use ($wholesalerId) {
-                $q->where('parent_distributor_id', $wholesalerId)
-                    ->orWhereHas('linkedWholesalers', fn (Builder $w) => $w->where('users.id', $wholesalerId));
-            })
+            ->visibleToWholesaler((int) $wholesalerId)
             ->with(['country', 'city'])
             ->withCount('plumbers');
     }
