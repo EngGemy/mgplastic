@@ -137,16 +137,27 @@ class Invoice extends Model
 
     public function scopeWithDistributionStats(Builder $query): Builder
     {
+        $net = self::netPointsSql();
+
         return $query
             ->withSum('items as total_item_points', 'total_points')
             ->withCount('items')
-            ->selectRaw('invoices.*, (
-                SELECT COALESCE(SUM(idi.points_value), 0)
+            ->selectRaw("invoices.*, (
+                SELECT COALESCE(SUM({$net}), 0)
                 FROM invoice_distribution_items idi
-                INNER JOIN invoice_distributions id ON id.id = idi.distribution_id
-                WHERE id.invoice_id = invoices.id
-                AND id.status IN (\'confirmed\', \'points_awarded\')
-            ) as distributed_points_sum');
+                INNER JOIN invoice_distributions dist ON dist.id = idi.distribution_id
+                WHERE dist.invoice_id = invoices.id
+                AND dist.tier = 2
+                AND dist.status IN ('confirmed', 'points_awarded')
+            ) as distributed_points_sum");
+    }
+
+    public static function netPointsSql(string $points = 'idi.points_value', string $qty = 'idi.quantity', string $returned = 'idi.returned_quantity'): string
+    {
+        $cast = \Illuminate\Support\Facades\DB::connection()->getDriverName() === 'sqlite' ? 'INTEGER' : 'SIGNED';
+        $net = "({$qty} - COALESCE({$returned}, 0))";
+
+        return "CASE WHEN {$qty} > 0 AND {$net} > 0 THEN CAST(({$points} * {$net}) / {$qty} AS {$cast}) ELSE 0 END";
     }
 
     public function distributedPointsSum(): int
@@ -156,9 +167,11 @@ class Invoice extends Model
         }
 
         return (int) $this->distributions()
+            ->where('tier', 2)
             ->whereIn('status', ['confirmed', 'points_awarded'])
-            ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
-            ->sum('idi.points_value');
+            ->with('items')
+            ->get()
+            ->sum(fn ($distribution) => $distribution->items->sum(fn ($item) => $item->netPoints()));
     }
 
     public function remainingPointsSum(): int

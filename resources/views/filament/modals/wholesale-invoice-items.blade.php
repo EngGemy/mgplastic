@@ -33,9 +33,9 @@
                             $distributedQty = (int) $item->distributionItems
                                 ->filter(fn ($di) => $di->distribution
                                     && $di->distribution->invoice_id === $invoice->id
-                                    && $di->distribution->tier === 1
+                                    && (int) $di->distribution->tier === 2
                                     && in_array($di->distribution->status, ['confirmed', 'points_awarded'], true))
-                                ->sum('quantity');
+                                ->sum(fn ($di) => $di->netQuantity());
 
                             $remainingQty = max(0, $item->quantity - $distributedQty);
                         @endphp

@@ -4,7 +4,10 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
+use App\Models\InvoiceDistributionItem;
+use App\Models\InvoiceItem;
 use App\Models\User;
+use App\Models\WalletAccount;
 
 class WholesalerNetworkService
 {
@@ -15,13 +18,14 @@ class WholesalerNetworkService
         }
 
         $stock = app(NetworkInventoryService::class)->stockForWholesaler($wholesaler);
-        $remainingPoints = (int) $stock->sum('available_points');
         $distributedPoints = $this->netPoints($wholesaler->id, 2, 'from_user_id');
+        $factoryPoints = $this->invoicePoints($wholesaler->id);
+        $remainingPoints = max(0, $factoryPoints - $distributedPoints);
 
         return [
             'balance_points' => $remainingPoints,
             'remaining_points' => $remainingPoints,
-            'factory_points' => $remainingPoints + $distributedPoints,
+            'factory_points' => $factoryPoints,
             'distributed_points' => $distributedPoints,
             'product_units' => (int) $stock->sum('available_qty'),
             'product_types' => $stock->count(),
@@ -29,29 +33,58 @@ class WholesalerNetworkService
         ];
     }
 
-    public function netPoints(int $userId, int $tier, string $userColumn): int
+    public function netPoints(?int $userId, int $tier, ?string $userColumn = null): int
     {
-        if (! in_array($userColumn, ['from_user_id', 'to_user_id'], true)) {
-            return 0;
-        }
-
         $lines = InvoiceDistribution::query()
-            ->where($userColumn, $userId)
             ->where('tier', $tier)
             ->whereIn('invoice_distributions.status', ['confirmed', 'points_awarded'])
+            ->when($userId, function ($query) use ($userId, $userColumn) {
+                if (! in_array($userColumn, ['from_user_id', 'to_user_id'], true)) {
+                    $query->whereRaw('1 = 0');
+
+                    return;
+                }
+
+                $query->where($userColumn, $userId);
+            })
             ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
             ->get(['idi.quantity', 'idi.returned_quantity', 'idi.points_value']);
 
-        return (int) $lines->sum(function ($line) {
-            $quantity = (int) $line->quantity;
-            $net = max(0, $quantity - (int) $line->returned_quantity);
+        return (int) $lines->sum(fn ($line) => InvoiceDistributionItem::pointsFor(
+            (int) $line->quantity,
+            (int) $line->returned_quantity,
+            (int) $line->points_value,
+        ));
+    }
 
-            if ($quantity <= 0 || $net <= 0) {
-                return 0;
-            }
+    /** @return array{factory_points:int, distributed_points:int, remaining_points:int, plumber_points:int, plumber_balances:int} */
+    public function networkTotals(): array
+    {
+        $factory = (int) InvoiceItem::query()
+            ->whereHas('invoice', fn ($q) => $q->approvedWholesale()->where('invoice_flow', 'incoming'))
+            ->sum('total_points');
+        $distributed = $this->netPoints(null, 2);
+        $plumberPoints = $this->netPoints(null, 3);
 
-            return (int) floor(((int) $line->points_value) * $net / $quantity);
-        });
+        return [
+            'factory_points' => $factory,
+            'distributed_points' => $distributed,
+            'remaining_points' => max(0, $factory - $distributed),
+            'plumber_points' => $plumberPoints,
+            'plumber_balances' => (int) WalletAccount::query()
+                ->whereHas('owner', fn ($q) => $q->where('role', 'plumber'))
+                ->sum('balance_points'),
+        ];
+    }
+
+    public function invoicePoints(int $wholesalerId): int
+    {
+        return (int) InvoiceItem::query()
+            ->whereHas('invoice', fn ($q) => $q
+                ->approvedWholesale()
+                ->where('invoice_flow', 'incoming')
+                ->where('wholesale_distributor_id', $wholesalerId))
+            ->sum('total_points');
     }
 
     public function inventoryUnits(User $wholesaler): int

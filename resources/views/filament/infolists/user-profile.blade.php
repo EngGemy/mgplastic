@@ -57,6 +57,10 @@
             ->whereIn('parent_distributor_id', $linkedRetailIds)->count()
         : ($isRetail ? $record->plumbers()->count() : 0);
 
+    $points = $isWholesale
+        ? app(\App\Services\WholesalerNetworkService::class)->getSummary($record)
+        : ($isRetail ? app(\App\Services\RetailTraderNetworkService::class)->getSummary($record) : null);
+
     $permissions = is_array($record->permissions) ? $record->permissions : [];
 
     $countryName = app()->getLocale() === 'ar'
@@ -217,9 +221,15 @@
             <div class="mgp-stat"><div class="ic">📷</div><div class="num">{{ number_format($worksImages) }}</div><div class="lbl">صورة</div></div>
             <div class="mgp-stat"><div class="ic">🎬</div><div class="num">{{ number_format($worksVideos) }}</div><div class="lbl">فيديو</div></div>
         @elseif($isWholesale)
+            <div class="mgp-stat"><div class="ic">⭐</div><div class="num">{{ number_format((int) ($points['factory_points'] ?? 0)) }}</div><div class="lbl">إجمالي النقاط</div></div>
+            <div class="mgp-stat"><div class="ic">📤</div><div class="num">{{ number_format((int) ($points['distributed_points'] ?? 0)) }}</div><div class="lbl">موزّع للقطاعي</div></div>
+            <div class="mgp-stat"><div class="ic">📥</div><div class="num">{{ number_format((int) ($points['remaining_points'] ?? 0)) }}</div><div class="lbl">متبقي للتوزيع</div></div>
             <div class="mgp-stat"><div class="ic">🏬</div><div class="num">{{ number_format($retailCount) }}</div><div class="lbl">تاجر قطاعي</div></div>
             <div class="mgp-stat"><div class="ic">🔧</div><div class="num">{{ number_format($plumberCount) }}</div><div class="lbl">سباك بالشبكة</div></div>
         @elseif($isRetail)
+            <div class="mgp-stat"><div class="ic">⭐</div><div class="num">{{ number_format((int) ($points['received_points'] ?? 0)) }}</div><div class="lbl">إجمالي النقاط</div></div>
+            <div class="mgp-stat"><div class="ic">📤</div><div class="num">{{ number_format((int) ($points['distributed_points'] ?? 0)) }}</div><div class="lbl">موزّع للسباكين</div></div>
+            <div class="mgp-stat"><div class="ic">📥</div><div class="num">{{ number_format((int) ($points['remaining_points'] ?? 0)) }}</div><div class="lbl">متبقي للبيع</div></div>
             <div class="mgp-stat"><div class="ic">🔧</div><div class="num">{{ number_format($plumberCount) }}</div><div class="lbl">سباك تابع</div></div>
         @elseif($isAdmin)
             <div class="mgp-stat"><div class="ic">🔑</div><div class="num">{{ $role === 'super_admin' ? '∞' : count($permissions) }}</div><div class="lbl">{{ $role === 'super_admin' ? 'صلاحيات كاملة' : 'صلاحية' }}</div></div>

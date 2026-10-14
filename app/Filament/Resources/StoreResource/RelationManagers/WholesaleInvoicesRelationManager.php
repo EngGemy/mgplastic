@@ -36,6 +36,7 @@ class WholesaleInvoicesRelationManager extends RelationManager
                     'stats' => WholesaleInvoiceStatsService::forDistributor($this->getOwnerRecord()->id),
                 ])->render()
             ))
+            ->poll('30s')
             ->defaultSort('approved_at', 'desc')
             ->striped()
             ->paginated([10, 25, 50])
@@ -90,11 +91,12 @@ class WholesaleInvoicesRelationManager extends RelationManager
                     ->query(fn ($query) => $query->whereRaw('(
                         SELECT COALESCE(SUM(ii.total_points), 0) FROM invoice_items ii WHERE ii.invoice_id = invoices.id
                     ) > (
-                        SELECT COALESCE(SUM(idi.points_value), 0)
+                        SELECT COALESCE(SUM('.Invoice::netPointsSql().'), 0)
                         FROM invoice_distribution_items idi
-                        INNER JOIN invoice_distributions id ON id.id = idi.distribution_id
-                        WHERE id.invoice_id = invoices.id
-                        AND id.status IN (\'confirmed\', \'points_awarded\')
+                        INNER JOIN invoice_distributions dist ON dist.id = idi.distribution_id
+                        WHERE dist.invoice_id = invoices.id
+                        AND dist.tier = 2
+                        AND dist.status IN (\'confirmed\', \'points_awarded\')
                     )')),
 
                 Tables\Filters\Filter::make('fully_distributed')
@@ -102,11 +104,12 @@ class WholesaleInvoicesRelationManager extends RelationManager
                     ->query(fn ($query) => $query->whereRaw('(
                         SELECT COALESCE(SUM(ii.total_points), 0) FROM invoice_items ii WHERE ii.invoice_id = invoices.id
                     ) <= (
-                        SELECT COALESCE(SUM(idi.points_value), 0)
+                        SELECT COALESCE(SUM('.Invoice::netPointsSql().'), 0)
                         FROM invoice_distribution_items idi
-                        INNER JOIN invoice_distributions id ON id.id = idi.distribution_id
-                        WHERE id.invoice_id = invoices.id
-                        AND id.status IN (\'confirmed\', \'points_awarded\')
+                        INNER JOIN invoice_distributions dist ON dist.id = idi.distribution_id
+                        WHERE dist.invoice_id = invoices.id
+                        AND dist.tier = 2
+                        AND dist.status IN (\'confirmed\', \'points_awarded\')
                     )')),
             ])
             ->actions([

@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\InvoiceDistribution;
 use App\Models\WalletAccount;
+use App\Services\WholesalerNetworkService;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
@@ -22,7 +23,8 @@ class DistributionSummaryWidget extends BaseWidget
 
     protected function getStats(): array
     {
-        $totalPointsAwarded = WalletAccount::sum('balance_points');
+        $network = app(WholesalerNetworkService::class)->networkTotals();
+        $totalPointsAwarded = (int) $network['factory_points'];
         $pendingDistributions = InvoiceDistribution::where('status', 'draft')->count();
         $confirmedToday = InvoiceDistribution::where('status', 'confirmed')
             ->whereDate('confirmed_at', today())
@@ -30,8 +32,8 @@ class DistributionSummaryWidget extends BaseWidget
         $plumbersWithPoints = WalletAccount::where('balance_points', '>', 0)->count();
 
         return [
-            Stat::make('إجمالي النقاط الممنوحة', number_format($totalPointsAwarded))
-                ->description('لجميع السباكين')
+            Stat::make('إجمالي النقاط', number_format($totalPointsAwarded))
+                ->description(number_format($network['remaining_points']).' متبقية في الجملة · '.number_format($network['plumber_balances']).' رصيد السباكين')
                 ->descriptionIcon('heroicon-o-star')
                 ->color('success')
                 ->chart([7, 4, 6, 8, 12, 10, 14]),

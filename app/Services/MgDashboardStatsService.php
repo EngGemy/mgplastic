@@ -6,7 +6,6 @@ use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\Product;
 use App\Models\User;
-use App\Models\WalletAccount;
 use App\Services\RetailTraderNetworkService;
 use App\Services\WholesalerNetworkService;
 
@@ -41,12 +40,19 @@ class MgDashboardStatsService
         $pendingInvoices = Invoice::where('status', 'pending_review')->count();
         $pendingDistributions = InvoiceDistribution::where('status', 'draft')->count();
 
-        $totalPoints = (int) WalletAccount::sum('balance_points');
+        $network = app(WholesalerNetworkService::class)->networkTotals();
+        $totalPoints = (int) $network['factory_points'];
         $pointsThisMonth = (int) InvoiceDistribution::query()
-            ->where('invoice_distributions.status', 'points_awarded')
+            ->where('tier', 3)
+            ->whereIn('invoice_distributions.status', ['confirmed', 'points_awarded'])
             ->where('invoice_distributions.created_at', '>=', now()->startOfMonth())
             ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
-            ->sum('idi.points_value');
+            ->get(['idi.quantity', 'idi.returned_quantity', 'idi.points_value'])
+            ->sum(fn ($line) => \App\Models\InvoiceDistributionItem::pointsFor(
+                (int) $line->quantity,
+                (int) $line->returned_quantity,
+                (int) $line->points_value,
+            ));
 
         $products = Product::count();
         $stores = User::where('role', 'wholesale_distributor')->count();
@@ -59,7 +65,7 @@ class MgDashboardStatsService
                 $this->card('إجمالي المستخدمين', $usersTotal, 'heroicon-o-users', 'blue', $this->trend($usersThisMonth, $usersLastMonth), "{$retailTraders} قطاعي • {$plumbers} سباك"),
                 $this->card('موزعو الجملة', $distributors, 'heroicon-o-building-storefront', 'indigo', null, 'متاجر الشبكة الرئيسية'),
                 $this->card('فواتير قيد المراجعة', $pendingInvoices, 'heroicon-o-document-check', 'amber', null, $pendingDistributions.' توزيع مسودة'),
-                $this->card('إجمالي النقاط', $totalPoints, 'heroicon-o-star', 'green', ['text' => number_format($pointsThisMonth).' نقطة هذا الشهر', 'positive' => true], 'رصيد السباكين والشبكة'),
+                $this->card('إجمالي النقاط', $totalPoints, 'heroicon-o-star', 'green', ['text' => number_format($pointsThisMonth).' وصلت للسباكين هذا الشهر', 'positive' => true], number_format($network['remaining_points']).' متبقية في الجملة · '.number_format($network['plumber_balances']).' رصيد السباكين'),
                 $this->card('المنتجات', $products, 'heroicon-o-cube', 'purple', null, $stores.' موزع جملة'),
             ],
         ];

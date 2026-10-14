@@ -32,6 +32,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\WalletAccount;
 use App\Models\WithdrawalRequest;
+use App\Services\RetailTraderNetworkService;
 use App\Services\WholesalerNetworkService;
 use Filament\Widgets\Widget;
 
@@ -65,7 +66,7 @@ class QuickAccessWidget extends Widget
                 ->get()
                 ->map(fn ($d) => [
                     'invoice_number' => $d->invoice->number ?? '—',
-                    'points' => $d->items->sum('points_value'),
+                    'points' => $d->items->sum(fn ($item) => $item->netPoints()),
                     'date' => $d->confirmed_at?->format('d/m'),
                     'status' => $d->status,
                 ]);
@@ -91,20 +92,15 @@ class QuickAccessWidget extends Widget
                     : 0,
             ];
         } elseif ($user?->role === 'retail_trader') {
-            $received = (int) InvoiceDistribution::where('to_user_id', $user->id)
-                ->where('tier', 2)->whereIn('status', ['confirmed', 'points_awarded'])
-                ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
-                ->sum('idi.points_value');
-            $sentToPlumbers = (int) InvoiceDistribution::where('from_user_id', $user->id)
-                ->where('tier', 3)->whereIn('status', ['confirmed', 'points_awarded'])
-                ->join('invoice_distribution_items as idi', 'idi.distribution_id', '=', 'invoice_distributions.id')
-                ->sum('idi.points_value');
+            $summary = app(RetailTraderNetworkService::class)->getSummary($user);
+            $received = (int) ($summary['received_points'] ?? 0);
+            $sentToPlumbers = (int) ($summary['distributed_points'] ?? 0);
             $pointsBanner = [
                 'type' => 'trader',
                 'received' => $received,
                 'sent_to_plumbers' => $sentToPlumbers,
-                'remaining' => max(0, $received - $sentToPlumbers),
-                'percent' => $received > 0 ? round(($sentToPlumbers / $received) * 100) : 0,
+                'remaining' => (int) ($summary['remaining_points'] ?? 0),
+                'percent' => $received > 0 ? (int) round(($sentToPlumbers / $received) * 100) : 0,
             ];
         }
 

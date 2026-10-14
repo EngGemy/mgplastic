@@ -13,11 +13,14 @@ class MobileDashboardService
     {
         $wallet = $user->wallet('LYD');
 
+        $receivedPoints = app(WholesalerNetworkService::class)->netPoints($user->id, 3, 'to_user_id');
+
         return [
             'role' => 'plumber',
             'wallet' => [
                 'balance_cents' => $wallet->balance_cents,
                 'balance_points' => (int) $wallet->balance_points,
+                'received_points' => $receivedPoints,
             ],
             'pending_withdrawals' => WithdrawalRequest::query()
                 ->where('plumber_id', $user->id)
@@ -37,12 +40,14 @@ class MobileDashboardService
     /** @return array<string, mixed> */
     public static function forRetailTrader(User $user): array
     {
-        $wallet = app(NetworkInventoryService::class)->walletBalance($user);
+        $summary = app(RetailTraderNetworkService::class)->getSummary($user);
         $stock = app(NetworkInventoryService::class)->stockForRetailTrader($user);
 
         return [
             'role' => 'retail_trader',
-            'wallet' => $wallet,
+            'wallet' => (int) ($summary['remaining_points'] ?? 0),
+            'received_points' => (int) ($summary['received_points'] ?? 0),
+            'distributed_points' => (int) ($summary['distributed_points'] ?? 0),
             'stock_products' => $stock->count(),
             'total_available_qty' => (int) $stock->sum('available_qty'),
             'total_available_points' => (int) $stock->sum('available_points'),
@@ -61,12 +66,14 @@ class MobileDashboardService
     /** @return array<string, mixed> */
     public static function forWholesaler(User $user): array
     {
-        $wallet = app(NetworkInventoryService::class)->walletBalance($user);
+        $summary = app(WholesalerNetworkService::class)->getSummary($user);
         $stock = app(NetworkInventoryService::class)->stockForWholesaler($user);
 
         return [
             'role' => 'wholesale_distributor',
-            'wallet' => $wallet,
+            'wallet' => (int) ($summary['remaining_points'] ?? 0),
+            'factory_points' => (int) ($summary['factory_points'] ?? 0),
+            'distributed_points' => (int) ($summary['distributed_points'] ?? 0),
             'stock_products' => $stock->count(),
             'total_available_qty' => (int) $stock->sum('available_qty'),
             'total_available_points' => (int) $stock->sum('available_points'),

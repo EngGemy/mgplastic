@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Models\InvoiceDistributionItem;
 use App\Services\InvoiceAdjustmentService;
+use App\Services\WholesaleInvoiceStatsService;
 use App\Services\WholesalerNetworkService;
 use App\Support\StorePermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -75,6 +76,18 @@ class InvoiceAdjustmentPermissionTest extends TestCase
             $summary['factory_points'],
             $summary['remaining_points'] + $summary['distributed_points']
         );
+
+        $stats = WholesaleInvoiceStatsService::forDistributor($wholesaler->id);
+        $this->assertSame($summary['factory_points'], $stats['total_points']);
+        $this->assertSame(20, $stats['distributed']);
+        $this->assertSame(30, $stats['remaining']);
+        $this->assertSame(40, $stats['percent']);
+        $this->assertLessThanOrEqual(100, $stats['percent']);
+
+        $loaded = Invoice::query()->withDistributionStats()->findOrFail($invoice->id);
+        $this->assertSame(20, $loaded->distributedPointsSum());
+        $this->assertSame(40, $loaded->distributionPercent());
+        $this->assertSame(30, $loaded->remainingPointsSum());
     }
 
     public function test_view_only_permission_hides_edit_and_delete(): void

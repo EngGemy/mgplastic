@@ -268,13 +268,11 @@ class RetailTraderResource extends Resource
             ->schema([
                 Infolists\Components\Grid::make(3)->schema([
                     Infolists\Components\TextEntry::make('wallet_points')
-                        ->label('الرصيد الحالي')
+                        ->label('المتبقي للتوزيع')
                         ->getStateUsing(function ($record) {
-                            $wallet = \App\Models\WalletAccount::where('owner_id', $record->id)
-                                ->where('currency', 'LYD')
-                                ->first();
+                            $summary = app(\App\Services\RetailTraderNetworkService::class)->getSummary($record);
 
-                            return number_format($wallet?->balance_points ?? 0).' نقطة';
+                            return number_format((int) ($summary['remaining_points'] ?? 0)).' نقطة';
                         })
                         ->size(\Filament\Infolists\Components\TextEntry\TextEntrySize::Large)
                         ->weight(\Filament\Support\Enums\FontWeight::Bold)
@@ -284,12 +282,9 @@ class RetailTraderResource extends Resource
                     Infolists\Components\TextEntry::make('total_points_received')
                         ->label('إجمالي ما استُلم')
                         ->getStateUsing(function ($record) {
-                            $total = \App\Models\WalletTransaction::query()
-                                ->whereHas('wallet', fn ($q) => $q->where('owner_id', $record->id))
-                                ->where('type', 'credit')
-                                ->sum('points_delta');
+                            $summary = app(\App\Services\RetailTraderNetworkService::class)->getSummary($record);
 
-                            return number_format((int) $total).' نقطة';
+                            return number_format((int) ($summary['received_points'] ?? 0)).' نقطة';
                         })
                         ->icon('heroicon-o-arrow-trending-up')
                         ->color('primary'),

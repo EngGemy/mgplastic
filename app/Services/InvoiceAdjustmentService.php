@@ -11,9 +11,17 @@ class InvoiceAdjustmentService
 {
     public function committedQuantity(InvoiceItem $item): int
     {
-        return (int) $item->distributionItems()
-            ->whereHas('distribution', fn ($q) => $q->whereIn('status', ['draft', 'confirmed', 'points_awarded']))
-            ->sum(DB::raw('quantity - COALESCE(returned_quantity, 0)'));
+        $sumTier = function (int $tier) use ($item): int {
+            return (int) $item->distributionItems()
+                ->whereHas('distribution', fn ($q) => $q
+                    ->where('tier', $tier)
+                    ->whereIn('status', ['draft', 'confirmed', 'points_awarded']))
+                ->sum(DB::raw('quantity - COALESCE(returned_quantity, 0)'));
+        };
+
+        $sentToRetail = $sumTier(2);
+
+        return $sentToRetail > 0 ? $sentToRetail : $sumTier(3);
     }
 
     public function updateQuantity(InvoiceItem $item, int $quantity): InvoiceItem

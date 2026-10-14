@@ -4,8 +4,14 @@
     $record = $getRecord();
     $trader = $record;
 
+    $summary = app(\App\Services\RetailTraderNetworkService::class)->getSummary($trader);
+    $receivedPoints = (int) ($summary['received_points'] ?? 0);
+    $distributedPoints = (int) ($summary['distributed_points'] ?? 0);
+    $remainingPoints = (int) ($summary['remaining_points'] ?? 0);
+
     $distributions = InvoiceDistribution::query()
         ->where('to_user_id', $trader->id)
+        ->where('tier', 2)
         ->whereIn('status', ['confirmed', 'points_awarded'])
         ->with([
             'invoice:id,number,serial_number',
@@ -14,8 +20,6 @@
         ])
         ->latest('confirmed_at')
         ->get();
-
-    $totalPoints = $distributions->sum(fn ($d) => $d->items->sum('points_value'));
 @endphp
 
 @if($distributions->isEmpty())
@@ -29,7 +33,7 @@
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1.5rem;">
         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;text-align:center;">
-            <div style="font-size:1.6rem;font-weight:900;color:#059669;">{{ number_format($totalPoints) }}</div>
+            <div style="font-size:1.6rem;font-weight:900;color:#059669;">{{ number_format($receivedPoints) }}</div>
             <div style="font-size:0.8rem;color:#065f46;font-weight:600;margin-top:2px;">إجمالي النقاط المستلمة</div>
         </div>
         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;text-align:center;">
@@ -37,8 +41,8 @@
             <div style="font-size:0.8rem;color:#1e40af;font-weight:600;margin-top:2px;">توزيعات مستلمة</div>
         </div>
         <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;text-align:center;">
-            <div style="font-size:1.6rem;font-weight:900;color:#d97706;">{{ $distributions->pluck('invoice_id')->unique()->count() }}</div>
-            <div style="font-size:0.8rem;color:#92400e;font-weight:600;margin-top:2px;">فواتير مختلفة</div>
+            <div style="font-size:1.6rem;font-weight:900;color:#d97706;">{{ number_format($remainingPoints) }}</div>
+            <div style="font-size:0.8rem;color:#92400e;font-weight:600;margin-top:2px;">متبقي · موزّع {{ number_format($distributedPoints) }}</div>
         </div>
     </div>
 
@@ -64,7 +68,7 @@
                     {{ $dist->status === 'points_awarded' ? '✓ نقاط ممنوحة' : 'مؤكد' }}
                 </span>
                 <span style="background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;padding:3px 12px;border-radius:999px;">
-                    {{ number_format($dist->items->sum('points_value')) }} نقطة
+                    {{ number_format($dist->items->sum(fn ($item) => $item->netPoints())) }} نقطة
                 </span>
             </div>
         </div>
@@ -101,7 +105,7 @@
                     </td>
                     <td style="padding:10px 16px;text-align:center;">
                         <span style="background:#d1fae5;color:#065f46;font-weight:700;padding:2px 10px;border-radius:999px;font-size:12px;">
-                            {{ number_format($item->points_value) }}
+                            {{ number_format($item->netPoints()) }}
                         </span>
                     </td>
                 </tr>

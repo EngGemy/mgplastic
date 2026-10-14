@@ -30,4 +30,25 @@ class InvoiceDistributionItem extends Model
     {
         return $this->belongsTo(InvoiceItem::class);
     }
+
+    public function netQuantity(): int
+    {
+        return max(0, (int) $this->quantity - (int) $this->returned_quantity);
+    }
+
+    public function netPoints(): int
+    {
+        return self::pointsFor((int) $this->quantity, (int) $this->returned_quantity, (int) $this->points_value);
+    }
+
+    public static function pointsFor(int $quantity, int $returned, int $points): int
+    {
+        $net = max(0, $quantity - $returned);
+
+        if ($quantity <= 0 || $net <= 0) {
+            return 0;
+        }
+
+        return (int) floor($points * $net / $quantity);
+    }
 }

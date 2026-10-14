@@ -64,6 +64,11 @@ class PlumberFinanceSummaryService
                 ->get();
         }
 
+        $earnedPoints = max(
+            $earnedPoints,
+            app(WholesalerNetworkService::class)->netPoints($plumber->id, 3, 'to_user_id'),
+        );
+
         $withdrawals = collect();
         $paidCents = 0;
         $pendingCents = 0;
