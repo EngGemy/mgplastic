@@ -516,6 +516,16 @@
 .pos-issue-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .pos-issue-btn:not(:disabled):hover { filter: brightness(1.05); }
 .pos-hint { font-size: 0.7rem; color: #9ca3af; text-align: center; margin-top: 0.5rem; }
+.pos-sheet-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.pos-sheet-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid #bfdbfe;
+    background: #eff6ff; color: #1d4ed8; font-family: inherit; font-weight: 700;
+    font-size: 0.82rem; cursor: pointer;
+}
+.pos-sheet-btn--upload { background: #ecfdf5; border-color: #a7f3d0; color: #047857; position: relative; overflow: hidden; }
+.pos-sheet-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pos-sheet-error { color: #b91c1c; font-size: 0.72rem; font-weight: 700; margin: 0.25rem 0 0; }
 .pos-review-backdrop {
     position: fixed; inset: 0; z-index: 80; background: rgba(15, 23, 42, 0.55);
     display: flex; align-items: center; justify-content: center; padding: 1.25rem;

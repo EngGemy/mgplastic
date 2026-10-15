@@ -7,17 +7,22 @@ use App\Filament\Resources\InvoiceResource;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Services\InvoiceCartSheetService;
 use App\Services\InvoiceNumberService;
 use App\Services\WholesaleInvoiceService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Illuminate\Support\Collection;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Livewire\WithFileUploads;
 
 class CreateWholesaleInvoice extends Page
 {
     use SetsCartQuantity {
         setQuantity as applyCartQuantity;
     }
+
+    use WithFileUploads;
 
     protected static string $resource = InvoiceResource::class;
 
@@ -43,6 +48,8 @@ class CreateWholesaleInvoice extends Page
     public array $cart = [];
 
     public bool $reviewing = false;
+
+    public $invoiceSheet = null;
 
     public static function getNavigationGroup(): ?string
     {
@@ -265,6 +272,65 @@ class CreateWholesaleInvoice extends Page
         }
 
         return $issues;
+    }
+
+    public function downloadInvoiceTemplate()
+    {
+        $path = app(InvoiceCartSheetService::class)->templatePath();
+
+        return response()->download($path, 'invoice-lines-template.xlsx')->deleteFileAfterSend(true);
+    }
+
+    public function updatedInvoiceSheet(): void
+    {
+        if (! $this->invoiceSheet instanceof TemporaryUploadedFile) {
+            return;
+        }
+
+        $this->validate([
+            'invoiceSheet' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
+        ]);
+
+        try {
+            $result = app(InvoiceCartSheetService::class)->import($this->invoiceSheet->getRealPath());
+        } catch (\RuntimeException $e) {
+            Notification::make()->danger()->title('تعذّر قراءة الشيت')->body($e->getMessage())->send();
+            $this->invoiceSheet = null;
+
+            return;
+        }
+
+        $this->invoiceSheet = null;
+
+        if ($result['lines'] === []) {
+            Notification::make()
+                ->danger()
+                ->title('لم تُضف بنود')
+                ->body(implode("\n", array_slice($result['errors'], 0, 8)) ?: 'الشيت لا يحتوي كميات.')
+                ->send();
+
+            return;
+        }
+
+        $this->cart = [];
+        $this->reviewing = false;
+        foreach ($result['lines'] as $line) {
+            $this->cart[(string) $line['product_id']] = $line;
+        }
+
+        $loaded = count($result['lines']);
+        $notice = Notification::make()
+            ->success()
+            ->title("تم تحميل {$loaded} منتج من الشيت")
+            ->body('راجع الكميات ثم احفظ. الكمية في الشيت تعني عدد الصناديق إذا كان للمنتج صندوق، وإلا عدد القطع.');
+
+        if ($result['errors'] !== []) {
+            $notice->warning()
+                ->title("تم تحميل {$loaded} منتج، وبعض الصفوف لم تُقبل")
+                ->body(implode("\n", array_slice($result['errors'], 0, 8)));
+        }
+
+        $notice->send();
     }
 
     public function openReview(): void

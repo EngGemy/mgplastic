@@ -28,6 +28,21 @@
                 <label class="pos-label">بحث منتج</label>
                 <input type="text" wire:model.live.debounce.300ms="search" class="pos-input" placeholder="ابحث بالاسم...">
             </div>
+            <div class="pos-header-field pos-sheet-field">
+                <label class="pos-label">شيت المنتجات والكميات</label>
+                <div class="pos-sheet-actions">
+                    <button type="button" wire:click="downloadInvoiceTemplate" class="pos-sheet-btn">تنزيل النموذج</button>
+                    <label class="pos-sheet-btn pos-sheet-btn--upload">
+                        رفع الشيت
+                        <input type="file" wire:model="invoiceSheet" accept=".xlsx,.xls,.csv">
+                    </label>
+                </div>
+                <p class="pos-invoice-no-hint" wire:loading.remove wire:target="invoiceSheet">الكمية = عدد الصناديق لو المنتج له صندوق، وإلا عدد القطع. بعد الرفع راجع الفاتورة قبل الحفظ.</p>
+                <p class="pos-invoice-no-hint" wire:loading wire:target="invoiceSheet">جاري قراءة الشيت...</p>
+                @error('invoiceSheet')
+                    <p class="pos-sheet-error">{{ $message }}</p>
+                @enderror
+            </div>
         </div>
 
         <div class="pos-body">
