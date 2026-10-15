@@ -40,6 +40,14 @@ Route::get('/withdrawals/{withdrawal}/receipt', [\App\Http\Controllers\Withdrawa
     ->middleware('signed')
     ->name('withdrawals.receipt');
 
+Route::get('/orders/{order}/share', [\App\Http\Controllers\Web\OrderShareController::class, 'show'])
+    ->middleware('signed')
+    ->name('orders.share');
+
+Route::get('/invoices/{invoice}/share', [\App\Http\Controllers\Web\InvoiceShareController::class, 'show'])
+    ->middleware('signed')
+    ->name('invoices.share');
+
 if (AdminPanelPath::hidesLegacyAdminUrl()) {
     Route::any('admin/{path?}', fn () => abort(404))
         ->where('path', '.*')

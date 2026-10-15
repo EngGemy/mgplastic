@@ -286,6 +286,7 @@
             $hasReturns = $summary && ($summary['returns_count'] ?? 0) > 0;
             $dist = $invoice->sourceDistribution;
             $showNetLines = $invoice->isOutgoing() && $dist && $dist->items->isNotEmpty();
+            $showPointsPerUnit = \App\Support\PointsVisibility::canSeePerUnit();
         @endphp
 
         @if($hasReturns)
@@ -308,7 +309,9 @@
                         <th>نقاط صافية</th>
                     @else
                         <th>الكمية</th>
-                        <th>نقاط/وحدة</th>
+                        @if($showPointsPerUnit)
+                            <th>نقاط/وحدة</th>
+                        @endif
                         <th>إجمالي النقاط</th>
                     @endif
                 </tr>
@@ -341,12 +344,14 @@
                                     <div style="font-size:0.75rem;color:#64748b;font-weight:600">{{ $item->box_count }} صندوق × {{ $item->pieces_per_box }}</div>
                                 @endif
                             </td>
-                            <td>{{ number_format($item->points_per_unit, 2) }}</td>
+                            @if($showPointsPerUnit)
+                                <td>{{ number_format($item->points_per_unit, 2) }}</td>
+                            @endif
                             <td class="col-points">{{ number_format($item->total_points) }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="4">لا توجد بنود</td>
+                            <td colspan="{{ $showPointsPerUnit ? 4 : 3 }}">لا توجد بنود</td>
                         </tr>
                     @endforelse
                 @endif

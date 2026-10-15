@@ -57,7 +57,8 @@ class OrderResource extends JsonResource
                 'product_id' => (int) $item->product_id,
                 'name' => $item->name_snapshot,
                 'quantity' => (int) $item->quantity,
-                'points_per_unit' => (float) $item->points_per_unit,
+                // Per-unit rate is admin-only; apps show line/order totals.
+                'points_per_unit' => null,
                 'line_points' => (int) $item->line_points,
             ])->values()),
 

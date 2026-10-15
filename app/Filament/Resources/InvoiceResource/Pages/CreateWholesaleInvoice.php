@@ -7,12 +7,14 @@ use App\Filament\Resources\InvoiceResource;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Services\CustomerWhatsAppNotifier;
 use App\Services\InvoiceCartSheetService;
 use App\Services\InvoiceNumberService;
 use App\Services\WholesaleInvoiceService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Js;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
@@ -410,6 +412,13 @@ class CreateWholesaleInvoice extends Page
                 ->title('تم إصدار الفاتورة')
                 ->body("رقم {$invoice->number} — إجمالي {$this->totalPoints} نقطة")
                 ->send();
+
+            if ((string) config('services.whatsapp.driver', 'log') === 'log') {
+                $chatUrl = app(CustomerWhatsAppNotifier::class)->invoiceChatUrl($invoice);
+                if ($chatUrl) {
+                    $this->js('window.open('.Js::from($chatUrl).', "_blank", "noopener")');
+                }
+            }
 
             $this->reviewing = false;
             $this->redirect(route('admin.invoices.print', $invoice).'?auto=1');

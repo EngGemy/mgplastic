@@ -68,7 +68,7 @@ GET /api/v1/mobile/plumber/products?retail_trader_id=92&page=1&per_page=20
 
 ### Success
 
-Same wrapper as today. Each item keeps the old fields and adds `available_quantity` (integer). Category stays flat: `category_id` and `category_name`. There is no nested `category` object.
+Same wrapper as today. Each item keeps the old fields and adds `available_quantity` (integer). Category stays flat: `category_id` and `category_name`. There is no nested `category` object. `points_per_unit` is always `null` for network apps (plumber / trader) — show order/invoice totals only; the per-unit rate is admin-only.
 
 ```json
 {
@@ -82,7 +82,7 @@ Same wrapper as today. Each item keeps the old fields and adds `available_quanti
         "description": "",
         "image": "products/pipe.jpg",
         "image_url": "https://mg-plastic.com/storage/products/pipe.jpg",
-        "points_per_unit": 230.3,
+        "points_per_unit": null,
         "has_points": true,
         "category_id": 3,
         "category_name": "مواسير الذهبي",

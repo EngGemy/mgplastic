@@ -75,7 +75,7 @@ class WalletApiController extends Controller
             'ends_at' => $rule->ends_at?->toIso8601String(),
             'mode' => 'per_product',
             'how_it_works' => [
-                'earn' => 'النقاط تُكتسب من الفاتورة: نقاط البند = الكمية × points_per_unit للمنتج',
+                'earn' => 'النقاط تُكتسب من التوريد والفواتير — يظهر لك إجمالي النقاط فقط',
                 'convert' => 'كل منتج له تحويله الخاص (point_value_fixed أو percent). التحويل يستهلك النقاط FIFO من فواتير المنتجات ثم يطبّق سعر كل منتج',
                 'fallback' => 'لو المنتج بدون إعداد تحويل → يُستخدم السعر العام points_per_currency_unit',
                 'withdraw' => 'السحب من balance_cents بعد التحويل (مش مباشرة من النقاط)',

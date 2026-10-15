@@ -26,8 +26,8 @@ class DistributionService
         }
         $this->validateQuantities($invoice, $items, $tier, $parentId);
 
-        return DB::transaction(function () use ($invoice, $fromUser, $toUser, $tier, $items, $parentId) {
-            $distribution = InvoiceDistribution::create([
+        $distribution = DB::transaction(function () use ($invoice, $fromUser, $toUser, $tier, $items, $parentId) {
+            $created = InvoiceDistribution::create([
                 'invoice_id' => $invoice->id,
                 'from_user_id' => $fromUser->id,
                 'to_user_id' => $toUser->id,
@@ -41,21 +41,42 @@ class DistributionService
                 $pointsValue = (int) floor($itemData['quantity'] * $invoiceItem->points_per_unit);
 
                 InvoiceDistributionItem::create([
-                    'distribution_id' => $distribution->id,
+                    'distribution_id' => $created->id,
                     'invoice_item_id' => $itemData['invoice_item_id'],
                     'quantity' => $itemData['quantity'],
                     'points_value' => $pointsValue,
                 ]);
             }
 
-            $distribution = $distribution->load('items.invoiceItem.product');
+            $created = $created->load('items.invoiceItem.product');
 
             if ($tier === 2) {
-                app(OutgoingInvoiceService::class)->createFromDistribution($distribution);
+                app(OutgoingInvoiceService::class)->createFromDistribution($created);
             }
 
-            return $distribution;
+            return $created;
         });
+
+        if ((int) $distribution->tier === 2) {
+            $outgoing = Invoice::query()
+                ->where('source_distribution_id', $distribution->id)
+                ->first();
+
+            if ($outgoing) {
+                try {
+                    app(CustomerWhatsAppNotifier::class)->notifyInvoiceIssued(
+                        $outgoing->fresh(['counterparty', 'wholesaleDistributor']),
+                    );
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('[WhatsApp] outgoing invoice notify skipped', [
+                        'invoice_id' => $outgoing->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        return $distribution;
     }
 
     private function validateTierRoles(int $tier, User $from, User $to): void

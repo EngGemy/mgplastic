@@ -83,6 +83,7 @@ class ProductCatalogController extends Controller
             ?? null;
         $points = (float) ($product->points_per_unit ?? 0);
 
+        // Network apps see totals on orders only — not the per-unit rate (decimal UX).
         $item = [
             'id' => (int) $product->id,
             'name' => localized_name($product, 'name', 'منتج #'.$product->id),
@@ -90,7 +91,7 @@ class ProductCatalogController extends Controller
             'image' => $image,
             'image_url' => $product->display_image_url
                 ?? ($image ? asset('storage/'.ltrim($image, '/')) : null),
-            'points_per_unit' => $points,
+            'points_per_unit' => null,
             'has_points' => $points > 0,
             'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
             'category_name' => $product->category

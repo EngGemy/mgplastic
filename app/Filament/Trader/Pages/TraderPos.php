@@ -474,6 +474,18 @@ class TraderPos extends Page
                 ->body("{$totalPoints} نقطة وصلت لـ {$plumber->name}")
                 ->send();
 
+            if ((string) config('services.whatsapp.driver', 'log') === 'log') {
+                $chatUrl = app(\App\Services\CustomerWhatsAppNotifier::class)->plumberSaleChatUrl(
+                    $plumber,
+                    $trader,
+                    (int) $totalPoints,
+                    max(1, count($lines)),
+                );
+                if ($chatUrl) {
+                    $this->js('window.open('.\Illuminate\Support\Js::from($chatUrl).', "_blank", "noopener")');
+                }
+            }
+
             $this->cart = [];
             $this->plumberId = null;
             $this->plumberSearch = '';

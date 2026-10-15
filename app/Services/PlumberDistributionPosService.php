@@ -51,8 +51,8 @@ class PlumberDistributionPosService
         // Plumber wallet is credited on confirm (tier 3); seller wallet is not debited.
         $groups = $this->inventory->allocateFromStock($stock, $requested);
 
-        return DB::transaction(function () use ($groups, $retailTrader, $plumber) {
-            $distributions = [];
+        $distributions = DB::transaction(function () use ($groups, $retailTrader, $plumber) {
+            $created = [];
 
             foreach ($groups as $group) {
                 $invoice = Invoice::query()->findOrFail($group['invoice_id']);
@@ -67,10 +67,33 @@ class PlumberDistributionPosService
                 );
 
                 $this->distributions->confirmDistribution($distribution->fresh(['items']));
-                $distributions[] = $distribution->fresh(['items', 'invoice']);
+                $created[] = $distribution->fresh(['items', 'invoice']);
             }
 
-            return $distributions;
+            return $created;
         });
+
+        $totalPoints = (int) collect($distributions)->sum(
+            fn ($distribution) => (int) $distribution->items->sum('points_value')
+        );
+        $lineCount = (int) collect($distributions)->sum(
+            fn ($distribution) => $distribution->items->count()
+        );
+
+        try {
+            app(CustomerWhatsAppNotifier::class)->notifyPlumberSale(
+                $plumber,
+                $retailTrader,
+                $totalPoints,
+                max(1, $lineCount),
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[WhatsApp] plumber sale notify skipped', [
+                'plumber_id' => $plumber->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $distributions;
     }
 }

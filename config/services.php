@@ -47,6 +47,26 @@ return [
         'use_otp_api' => true,
     ],
 
+    /*
+    | WhatsApp customer alerts (orders + invoices).
+    | driver=log → builds message/link only (staff can open wa.me).
+    | driver=libyasms → https://docs.libyasms.com WhatsApp text API.
+    | driver=http → POST JSON {to,message} to WHATSAPP_API_URL with Bearer token.
+    */
+    'whatsapp' => [
+        'driver' => env('WHATSAPP_DRIVER', 'log'),
+        'share_days' => (int) env('WHATSAPP_SHARE_DAYS', 30),
+        'libyasms' => [
+            'base_url' => env('WHATSAPP_LIBYASMS_URL', 'https://whatsapp.libyasms.com'),
+            'token' => env('WHATSAPP_LIBYASMS_TOKEN'),
+            'instance_id' => env('WHATSAPP_LIBYASMS_INSTANCE_ID'),
+        ],
+        'http' => [
+            'url' => env('WHATSAPP_API_URL'),
+            'token' => env('WHATSAPP_API_TOKEN'),
+        ],
+    ],
+
     'ffmpeg' => [
         'ffmpeg_binaries' => env('FFMPEG_BINARIES', PHP_OS_FAMILY === 'Windows' ? 'ffmpeg.exe' : 'ffmpeg'),
         'ffprobe_binaries' => env('FFPROBE_BINARIES', PHP_OS_FAMILY === 'Windows' ? 'ffprobe.exe' : 'ffprobe'),

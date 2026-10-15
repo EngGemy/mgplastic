@@ -369,11 +369,10 @@
                                     <div>
                                         <p class="pos-row-name">{{ $row['name'] }}</p>
                                         <div class="pos-row-meta">
-                                            <span class="pos-pill pos-pill-pts">⭐ {{ number_format((float)$row['points_per_unit'], 2) }} / وحدة</span>
                                             @if($can)
                                                 <span class="pos-pill pos-pill-ok">متاح {{ number_format($row['available_qty']) }}</span>
                                             @else
-                                                <span class="pos-pill pos-pill-warn">لا نقاط — اطلب من الجملة</span>
+                                                <span class="pos-pill pos-pill-warn">غير متاح — اطلب من الجملة</span>
                                             @endif
                                         </div>
                                     </div>

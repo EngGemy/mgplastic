@@ -27,7 +27,7 @@ class ReceivedDistributionResource extends JsonResource
                     ] : null,
                     'invoice_item' => $item->invoiceItem ? [
                         'id' => $item->invoiceItem->id,
-                        'points_per_unit' => (float) ($item->invoiceItem->points_per_unit ?? 0),
+                        'points_per_unit' => null,
                     ] : null,
                 ];
             })->values();

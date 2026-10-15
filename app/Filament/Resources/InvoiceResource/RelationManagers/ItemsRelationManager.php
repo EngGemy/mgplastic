@@ -80,7 +80,8 @@ class ItemsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('points_per_unit')
                     ->label('النقاط/وحدة')
                     ->badge()
-                    ->color('warning'),
+                    ->color('warning')
+                    ->visible(fn () => \App\Support\PointsVisibility::canSeePerUnit()),
 
                 Tables\Columns\TextColumn::make('total_points')
                     ->label('إجمالي النقاط')

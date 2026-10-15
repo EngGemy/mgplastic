@@ -50,7 +50,8 @@ class ViewInvoiceDistribution extends ViewRecord
                             Infolists\Components\TextEntry::make('invoiceItem.points_per_unit')
                                 ->label('نقطة/وحدة')
                                 ->badge()
-                                ->color('warning'),
+                                ->color('warning')
+                                ->visible(fn () => \App\Support\PointsVisibility::canSeePerUnit()),
 
                             Infolists\Components\TextEntry::make('points_value')
                                 ->label('إجمالي النقاط')

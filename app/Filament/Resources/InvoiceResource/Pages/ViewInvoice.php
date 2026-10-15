@@ -6,12 +6,14 @@ use App\Filament\Resources\InvoiceDistributionResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Models\InvoiceDistribution;
 use App\Models\User;
+use App\Services\CustomerWhatsAppNotifier;
 use App\Services\DistributionService;
 use App\Services\InvoiceAdjustmentService;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Support\Js;
 
 class ViewInvoice extends ViewRecord
 {
@@ -113,6 +115,45 @@ class ViewInvoice extends ViewRecord
                 }),
 
             $this->deleteInvoiceAction(),
+
+            Actions\Action::make('whatsapp_customer')
+                ->label('واتساب للعميل')
+                ->icon('heroicon-o-chat-bubble-left-right')
+                ->color('success')
+                ->action(function () {
+                    $invoice = $this->record->fresh([
+                        'wholesaleDistributor',
+                        'counterparty',
+                        'plumber',
+                    ]);
+                    $notifier = app(CustomerWhatsAppNotifier::class);
+                    $result = $notifier->notifyInvoiceIssued($invoice);
+
+                    if ($result['sent']) {
+                        Notification::make()->success()->title('تم إرسال واتساب للعميل')->send();
+
+                        return;
+                    }
+
+                    $chatUrl = $result['chat_url'] ?? $notifier->invoiceChatUrl($invoice);
+                    if ($chatUrl === null) {
+                        Notification::make()
+                            ->warning()
+                            ->title('أضف هاتف المستلم لإرسال واتساب')
+                            ->body($result['error'])
+                            ->send();
+
+                        return;
+                    }
+
+                    Notification::make()
+                        ->success()
+                        ->title('فتح واتساب لإرسال الرسالة')
+                        ->body('اضغط إرسال في واتساب بعد فتح المحادثة.')
+                        ->send();
+
+                    $this->js('window.open('.Js::from($chatUrl).', "_blank", "noopener")');
+                }),
 
             Actions\Action::make('print_invoice')
                 ->label('طباعة الفاتورة')

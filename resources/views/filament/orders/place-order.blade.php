@@ -101,7 +101,6 @@
                             <div class="ord-init {{ $row['color_class'] }}">{{ $row['initials'] }}</div>
                         @endif
                         <div class="ord-name">{{ $row['name'] }}</div>
-                        <div class="ord-pts">{{ rtrim(rtrim(number_format($row['points_per_unit'], 2), '0'), '.') }} نقطة / وحدة</div>
                     </div>
                 @endforeach
             </div>

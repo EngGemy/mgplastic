@@ -71,7 +71,8 @@ class PlumberShopProductsTest extends TestCase
 
         $hose = collect($filtered->json('data.items'))->firstWhere('id', $inStock->id);
         $this->assertSame(40, $hose['available_quantity']);
-        $this->assertSame(230.3, $hose['points_per_unit']);
+        $this->assertNull($hose['points_per_unit']);
+        $this->assertTrue($hose['has_points']);
 
         $this->actingAs($plumber, 'sanctum')
             ->getJson('/api/v1/mobile/plumber/products?retail_trader_id='.$shop->id.'&tag=ذهبي')

@@ -104,7 +104,12 @@
                 @endif
                 <div style="flex:1;min-width:0">
                     <div class="mg-ord-iname">{{ $name }}</div>
-                    <div class="mg-ord-isub">{{ rtrim(rtrim(number_format((float)$item->points_per_unit, 2), '0'), '.') }} نقطة / وحدة · إجمالي {{ number_format($item->line_points) }} نقطة</div>
+                    <div class="mg-ord-isub">
+                        @if(\App\Support\PointsVisibility::canSeePerUnit())
+                            {{ rtrim(rtrim(number_format((float)$item->points_per_unit, 2), '0'), '.') }} نقطة / وحدة ·
+                        @endif
+                        إجمالي {{ number_format($item->line_points) }} نقطة
+                    </div>
                     @if($stock)
                         <div class="{{ $stock['is_available'] ? 'mg-ord-stock-ok' : 'mg-ord-stock-bad' }}">
                             @if($stock['is_available'])

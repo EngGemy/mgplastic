@@ -101,6 +101,17 @@ class WholesaleInvoiceService
 
             return $invoice->load(['items.product.translations', 'wholesaleDistributor']);
         });
+
+        try {
+            app(CustomerWhatsAppNotifier::class)->notifyInvoiceIssued($invoice);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[WhatsApp] invoice notify skipped', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $invoice;
     }
 
     protected function ensureTierOneReceipt(Invoice $invoice, User $wholesaler, User $issuedBy): void

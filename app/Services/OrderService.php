@@ -75,7 +75,9 @@ class OrderService
             return $order;
         });
 
-        $this->notifyPlaced($order->fresh(['requester', 'supplier']));
+        $fresh = $order->fresh(['requester', 'supplier']);
+        $this->notifyPlaced($fresh);
+        $this->notifyCustomerWhatsApp($fresh);
 
         return $order->load('items');
     }
@@ -98,6 +100,10 @@ class OrderService
             "طلب رقم {$order->order_number} تم تأكيده ويجري تجهيزه.",
             'success',
         );
+        $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
+            $order->fresh(['requester']),
+            'تم تأكيد طلبك ✓ ويجري تجهيزه.',
+        ));
 
         return $order;
     }
@@ -136,6 +142,10 @@ class OrderService
             "طلب رقم {$order->order_number} تم شحنه وهو في طريقه إليك{$tracking}.",
             'info',
         );
+        $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
+            $order->fresh(['requester']),
+            "طلبك في الطريق 🚚{$tracking}",
+        ));
 
         return $order;
     }
@@ -193,6 +203,11 @@ class OrderService
                 'success',
             );
 
+            $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
+                $order->fresh(['requester']),
+                'تم استلام طلبك ✓'.$pointsNote,
+            ));
+
             return $order;
         });
     }
@@ -241,6 +256,10 @@ class OrderService
             "طلب رقم {$order->order_number} تم رفضه".($reason ? " — السبب: {$reason}" : '').'.',
             'danger',
         );
+        $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
+            $order->fresh(['requester']),
+            'تم رفض الطلب'.($reason ? " — السبب: {$reason}" : ''),
+        ));
 
         return $order;
     }
@@ -820,6 +839,22 @@ class OrderService
 
         if ($order->supplier) {
             AdminNotificationService::send($order->supplier, $title, $body, 'info');
+        }
+    }
+
+    protected function notifyCustomerWhatsApp(Order $order): void
+    {
+        $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderPlaced($order));
+    }
+
+    protected function safeWhatsApp(callable $callback): void
+    {
+        try {
+            $callback();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[WhatsApp] order notify skipped', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

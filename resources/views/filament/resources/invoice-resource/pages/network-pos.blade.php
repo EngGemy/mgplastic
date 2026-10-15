@@ -130,7 +130,9 @@
                             @endif
                             <span class="pos-product-name">{{ $row['name'] }}</span>
                             <span class="pos-stock-badge">متوفر: {{ number_format($row['available_qty']) }}</span>
-                            <span class="pos-product-points">{{ number_format($row['points_per_unit'], 2) }} نقطة/وحدة</span>
+                            @if(\App\Support\PointsVisibility::canSeePerUnit())
+                                <span class="pos-product-points">{{ number_format($row['points_per_unit'], 2) }} نقطة/وحدة</span>
+                            @endif
                         </button>
                     @empty
                         <p class="pos-empty">لا يوجد مخزون متاح — استلم فواتير وارد أولاً</p>

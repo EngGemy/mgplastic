@@ -381,7 +381,8 @@ class InvoiceResource extends Resource
                                 ->label('نقطة/وحدة')
                                 ->badge()
                                 ->color('warning')
-                                ->visible(fn ($record) => (float) ($record->points_per_unit ?? 0) > 0),
+                                ->visible(fn ($record) => \App\Support\PointsVisibility::canSeePerUnit()
+                                    && (float) ($record->points_per_unit ?? 0) > 0),
 
                             Infolists\Components\TextEntry::make('total_points')
                                 ->label('إجمالي النقاط')
