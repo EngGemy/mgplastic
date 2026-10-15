@@ -127,6 +127,10 @@ class ProductSheetImportTest extends TestCase
                 'point_value_type' => 'ثابت',
                 'point_value_fixed' => 0.1,
                 'pieces_per_box' => 12,
+                'piece_price_lyd' => 1.5,
+                'piece_price_aed' => 4,
+                'box_price_lyd' => 18,
+                'box_price_aed' => 48,
             ],
         ]);
 
@@ -135,6 +139,10 @@ class ProductSheetImportTest extends TestCase
         $this->assertSame([], $result['errors'], implode(' | ', $result['errors']));
         $product = Product::query()->first();
         $this->assertSame(12, $product->pieces_per_box);
+        $this->assertEquals(1.5, (float) $product->piece_price_lyd);
+        $this->assertEquals(4, (float) $product->piece_price_aed);
+        $this->assertEquals(18, (float) $product->box_price_lyd);
+        $this->assertEquals(48, (float) $product->box_price_aed);
 
         $export = app(ProductSheetService::class)->exportPath(Product::query()->whereKey($product->id));
         $sheet = IOFactory::load($export)->getSheetByName(ProductSheetService::PRODUCTS_SHEET);
@@ -143,6 +151,9 @@ class ProductSheetImportTest extends TestCase
 
         $this->assertNotFalse($column);
         $this->assertSame(12, (int) $sheet->getCell([$column + 1, 2])->getValue());
+        $priceColumn = array_search('سعر الصندوق (دينار)', $headers, true);
+        $this->assertNotFalse($priceColumn);
+        $this->assertEquals(18, (float) $sheet->getCell([$priceColumn + 1, 2])->getValue());
 
         @unlink($path);
         @unlink($export);

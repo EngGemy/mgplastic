@@ -48,6 +48,10 @@ class ProductSheetService
         'thickness_mm' => ['السمك (مم)', 'thickness_mm'],
         'volume_ml' => ['الحجم (مل)', 'volume_ml'],
         'pieces_per_box' => ['عدد الوحدات في الصندوق', 'pieces_per_box', 'عبوة الصندوق'],
+        'piece_price_lyd' => ['سعر القطعة (دينار)', 'piece_price_lyd'],
+        'piece_price_aed' => ['سعر القطعة (درهم)', 'piece_price_aed'],
+        'box_price_lyd' => ['سعر الصندوق (دينار)', 'box_price_lyd'],
+        'box_price_aed' => ['سعر الصندوق (درهم)', 'box_price_aed'],
         'points_per_unit' => ['النقاط لكل وحدة', 'points_per_unit'],
         'point_value_type' => ['نوع التحويل', 'point_value_type'],
         'point_value_percent' => ['نسبة النقاط', 'point_value_percent'],
@@ -227,7 +231,7 @@ class ProductSheetService
         $sheet->freezePane('A2');
         $sheet->setAutoFilter("A1:{$lastCol}1");
 
-        $widths = [14, 16, 28, 28, 28, 28, 24, 24, 36, 36, 16, 12, 12, 12, 22, 16, 14, 14, 14, 18, 28, 32];
+        $widths = [14, 16, 28, 28, 28, 28, 24, 24, 36, 36, 16, 12, 12, 12, 22, 18, 18, 18, 18, 16, 14, 14, 14, 18, 28, 32];
         foreach ($widths as $index => $width) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($index + 1))->setWidth($width);
         }
@@ -252,6 +256,10 @@ class ProductSheetService
             'thickness_mm' => $product->thickness_mm,
             'volume_ml' => $product->volume_ml,
             'pieces_per_box' => $product->pieces_per_box,
+            'piece_price_lyd' => $product->piece_price_lyd,
+            'piece_price_aed' => $product->piece_price_aed,
+            'box_price_lyd' => $product->box_price_lyd,
+            'box_price_aed' => $product->box_price_aed,
             'points_per_unit' => $product->points_per_unit,
             'point_value_type' => match ($product->point_value_type) {
                 'percent' => 'نسبة',
@@ -364,7 +372,7 @@ class ProductSheetService
             '6. عمود الصورة: مسار ملف موجود على السيرفر مثل products/main/pipe.jpg. ارفع الصور إلى مجلد المنتجات أولاً، أو اترك الخانة فارغة.',
             '7. «اسم التصنيف (للعرض)» للمعرفة فقط ولا يُستورد. الاعتماد على رقم التصنيف.',
             '8. عمود الوسوم: افصل الوسوم بفاصلة. الاقتراحات نفسها محفوظة على الفئة والتصنيف الفرعي.',
-            '9. «عدد الوحدات في الصندوق» للملحقات: كم قطعة داخل الصندوق. اتركه فارغاً للمواسير لأنها تُباع بالوحدة. اكتب - لمسحه من منتج موجود.',
+            '9. للملحقات املأ «عدد الوحدات في الصندوق» ثم أسعار القطعة والصندوق بالدينار والدرهم. المواسير تُباع بالوحدة فاترك الصندوق فارغاً. اكتب - لمسح قيمة من منتج موجود. هذه الأسعار للقائمة والشيت فقط ولا تظهر في التطبيق.',
             '10. بعد التعبئة ارفع الملف من صفحة المنتجات → شيت المنتجات → رفع الشيت.',
         ];
 
@@ -465,6 +473,10 @@ class ProductSheetService
         $this->applyOptionalNumber($payload, 'thickness_mm', $values['thickness_mm'] ?? '', $errors, 'السمك');
         $this->applyOptionalNumber($payload, 'volume_ml', $values['volume_ml'] ?? '', $errors, 'الحجم');
         $this->applyPiecesPerBox($payload, (string) ($values['pieces_per_box'] ?? ''), $errors);
+        $this->applyOptionalNumber($payload, 'piece_price_lyd', (string) ($values['piece_price_lyd'] ?? ''), $errors, 'سعر القطعة (دينار)');
+        $this->applyOptionalNumber($payload, 'piece_price_aed', (string) ($values['piece_price_aed'] ?? ''), $errors, 'سعر القطعة (درهم)');
+        $this->applyOptionalNumber($payload, 'box_price_lyd', (string) ($values['box_price_lyd'] ?? ''), $errors, 'سعر الصندوق (دينار)');
+        $this->applyOptionalNumber($payload, 'box_price_aed', (string) ($values['box_price_aed'] ?? ''), $errors, 'سعر الصندوق (درهم)');
 
         $points = $this->optionalNumber($values['points_per_unit'] ?? '', $errors, 'النقاط لكل وحدة');
         $type = $this->pointType($values['point_value_type'] ?? '', $errors);

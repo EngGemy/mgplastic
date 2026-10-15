@@ -42,7 +42,7 @@ class ListProducts extends ListRecords
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('success')
                     ->modalHeading('رفع شيت المنتجات')
-                    ->modalDescription('ارفع ملف النموذج بعد تعبئته. الصف الذي فيه رقم منتج يتحدّث، والصف بدون رقم يُضيف منتجاً جديداً.')
+                    ->modalDescription('ارفع ملف النموذج بعد تعبئته. الصف الذي فيه رقم منتج يتحدّث، والصف بدون رقم يُضيف منتجاً جديداً. عمود «عدد الوحدات في الصندوق» وأسعار القطعة والصندوق تتحدث من نفس الشيت.')
                     ->modalSubmitActionLabel('استيراد')
                     ->form([
                         Forms\Components\FileUpload::make('file')
