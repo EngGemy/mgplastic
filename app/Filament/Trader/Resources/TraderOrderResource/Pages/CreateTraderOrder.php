@@ -17,6 +17,7 @@ class CreateTraderOrder extends Page
 
     public function mount(): void
     {
+        $this->prefillWholesaleSupplier();
         $this->prefillFromRequest();
     }
 

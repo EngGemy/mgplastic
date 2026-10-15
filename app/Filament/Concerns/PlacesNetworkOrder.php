@@ -4,7 +4,9 @@ namespace App\Filament\Concerns;
 
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\User;
 use App\Services\OrderService;
+use App\Support\OrderStatus;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Collection;
 
@@ -17,6 +19,9 @@ trait PlacesNetworkOrder
     public ?int $selectedCategoryId = null;
 
     public string $note = '';
+
+    /** Wholesale distributor chosen by the retail trader before submit. */
+    public ?int $supplierId = null;
 
     /** @var array<string, array{product_id:int, name:string, quantity:int, points_per_unit:float, image:?string, initials:string, color_class:string}> */
     public array $cart = [];
@@ -91,6 +96,66 @@ trait PlacesNetworkOrder
     public function getCartQuantityProperty(): int
     {
         return (int) collect($this->cart)->sum('quantity');
+    }
+
+    public function needsWholesaleSupplier(): bool
+    {
+        return $this->orderChannel() === OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL;
+    }
+
+    /**
+     * Approved wholesale shops the retail trader can order from.
+     *
+     * @return Collection<int, array{id:int, label:string}>
+     */
+    public function getWholesaleSuppliersProperty(): Collection
+    {
+        if (! $this->needsWholesaleSupplier()) {
+            return collect();
+        }
+
+        return User::query()
+            ->where('role', 'wholesale_distributor')
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->orderBy('brand_name')
+            ->orderBy('name')
+            ->get(['id', 'name', 'brand_name', 'network_code'])
+            ->map(function (User $user) {
+                $title = trim((string) ($user->brand_name ?: $user->name));
+                $code = $user->network_code ? " — {$user->network_code}" : '';
+
+                return [
+                    'id' => (int) $user->id,
+                    'label' => $title.$code,
+                ];
+            })
+            ->values();
+    }
+
+    protected function prefillWholesaleSupplier(): void
+    {
+        if (! $this->needsWholesaleSupplier() || $this->supplierId) {
+            return;
+        }
+
+        $user = auth()->user();
+        if (! $user) {
+            return;
+        }
+
+        $preferred = (int) ($user->parent_distributor_id ?? 0);
+        $options = $this->wholesaleSuppliers->pluck('id')->all();
+
+        if ($preferred > 0 && in_array($preferred, $options, true)) {
+            $this->supplierId = $preferred;
+
+            return;
+        }
+
+        if (count($options) === 1) {
+            $this->supplierId = (int) $options[0];
+        }
     }
 
     protected function catalogRows(): Collection
@@ -202,6 +267,16 @@ trait PlacesNetworkOrder
             return;
         }
 
+        if ($this->needsWholesaleSupplier() && ! $this->supplierId) {
+            Notification::make()
+                ->danger()
+                ->title('اختر موزّع الجملة')
+                ->body('حدد محل الجملة الذي تريد إرسال الطلب إليه قبل الإرسال.')
+                ->send();
+
+            return;
+        }
+
         $lines = array_values(collect($this->cart)->map(fn ($line) => [
             'product_id' => (int) $line['product_id'],
             'quantity' => (int) $line['quantity'],
@@ -212,7 +287,11 @@ trait PlacesNetworkOrder
                 requester: auth()->user(),
                 channel: $this->orderChannel(),
                 lines: $lines,
-                meta: ['note' => $this->note ?: null],
+                meta: [
+                    'note' => $this->note ?: null,
+                    'supplier_id' => $this->supplierId,
+                    'wholesale_distributor_id' => $this->supplierId,
+                ],
             );
 
             Notification::make()

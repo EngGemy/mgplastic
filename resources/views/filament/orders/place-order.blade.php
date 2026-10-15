@@ -51,7 +51,31 @@
 .ord-submit{width:100%;padding:12px;background:linear-gradient(135deg,#0f3d91,#1a56db);color:#fff;border:none;border-radius:11px;font-family:'Cairo',sans-serif;font-size:14px;font-weight:800;cursor:pointer;margin-top:8px}
 .ord-submit:disabled{background:#94a3b8;cursor:not-allowed}
 .ord-clear{width:100%;padding:8px;background:#fff;color:#dc2626;border:1.5px solid #fca5a5;border-radius:9px;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;margin-top:6px}
+.ord-supplier{margin-bottom:14px;background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:14px 16px}
+.ord-supplier-label{font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px}
+.ord-supplier-hint{font-size:12px;color:#64748b;margin-bottom:8px}
+.ord-select{width:100%;padding:10px 12px;border:1.5px solid #cbd5e1;border-radius:10px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;background:#f8fafc;color:#0f172a}
+.ord-select:focus{outline:none;border-color:#1a56db;background:#fff}
+.ord-select.missing{border-color:#f87171;background:#fef2f2}
 </style>
+
+@if($this->needsWholesaleSupplier())
+    @php $suppliers = $this->wholesaleSuppliers; @endphp
+    <div class="ord-supplier">
+        <div class="ord-supplier-label">موزّع الجملة</div>
+        <div class="ord-supplier-hint">اختر المحل اللي هتبعت له الطلب من قائمة محلات الجملة المعتمدة.</div>
+        @if($suppliers->isEmpty())
+            <div style="color:#b91c1c;font-size:13px;font-weight:700">لا يوجد موزّع جملة معتمد حالياً — تواصل مع الإدارة.</div>
+        @else
+            <select wire:model.live="supplierId" class="ord-select {{ $this->supplierId ? '' : 'missing' }}">
+                <option value="">— اختر موزّع الجملة —</option>
+                @foreach($suppliers as $supplier)
+                    <option value="{{ $supplier['id'] }}">{{ $supplier['label'] }}</option>
+                @endforeach
+            </select>
+        @endif
+    </div>
+@endif
 
 <div class="ord-banner">
     <div class="ord-banner-stat">
@@ -141,7 +165,9 @@
         <div class="ord-foot">
             <div class="ord-total"><span>الكمية</span><strong>{{ number_format($cartQty) }}</strong></div>
             <div class="ord-total"><span>النقاط</span><span class="ord-total-pts">{{ number_format($cartPts) }}</span></div>
-            <button type="button" class="ord-submit" wire:click="submitOrder" @disabled(empty($this->cart)) wire:loading.attr="disabled">
+            <button type="button" class="ord-submit" wire:click="submitOrder"
+                @disabled(empty($this->cart) || ($this->needsWholesaleSupplier() && ! $this->supplierId))
+                wire:loading.attr="disabled">
                 إرسال الطلب
             </button>
             @if(! empty($this->cart))
