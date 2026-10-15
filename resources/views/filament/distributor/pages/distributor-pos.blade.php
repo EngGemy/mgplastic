@@ -188,7 +188,6 @@
 
                 <div style="flex:1;min-width:0;">
                     <div class="pos-ci-name">{{ $line['name'] }}</div>
-                    <div class="pos-ci-pts">{{ number_format(floor($line['quantity'] * $line['points_per_unit'])) }} نقطة</div>
                 </div>
 
                 <div class="pos-qty-ctrl">

@@ -164,11 +164,13 @@
                                     </div>
                                     <span class="pos-stock-badge pos-stock-badge--sm">حد أقصى {{ $line['max_qty'] }}</span>
                                 </div>
-                                <div class="pos-cart-line-bot">
-                                    <span class="pos-line-points">
-                                        ⭐ {{ (int) floor($line['quantity'] * $line['points_per_unit']) }} نقطة
-                                    </span>
-                                </div>
+                                @if(\App\Support\PointsVisibility::canSeePerUnit())
+                                    <div class="pos-cart-line-bot">
+                                        <span class="pos-line-points">
+                                            ⭐ {{ (int) floor($line['quantity'] * $line['points_per_unit']) }} نقطة
+                                        </span>
+                                    </div>
+                                @endif
                             </div>
                         @endforeach
                     </div>

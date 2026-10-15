@@ -122,7 +122,6 @@
                     @endif
                     <div style="flex:1;min-width:0">
                         <div class="ord-ci-name">{{ $line['name'] }}</div>
-                        <div class="ord-ci-pts">{{ (int) floor($line['quantity'] * $line['points_per_unit']) }} نقطة</div>
                     </div>
                     <div class="ord-qty">
                         <button type="button" class="ord-qty-btn" wire:click="decrement('{{ $key }}')">−</button>
