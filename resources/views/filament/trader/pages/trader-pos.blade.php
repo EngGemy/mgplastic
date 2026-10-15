@@ -229,40 +229,77 @@
         <div class="pos-main">
             <div class="pos-topbar">
                 <div class="pos-field">
-                    <label>السباك</label>
-                    <div class="pos-plumber-box" x-data="{ open: false }" @click.outside="open = false">
-                        @if($this->selectedPlumber)
-                            <div class="pos-plumber-selected">
-                                <div>
-                                    <div class="pos-plumber-selected-name">{{ $this->selectedPlumber->name }}</div>
-                                    <div class="pos-plumber-selected-meta">
-                                        @if($this->selectedPlumber->phone){{ $this->selectedPlumber->phone }}@endif
-                                        @if($this->selectedPlumber->network_code) · {{ $this->selectedPlumber->network_code }}@endif
+                    @if($this->isWholesaleOrderMode())
+                        <label>تاجر الجملة</label>
+                        <div class="pos-plumber-box" x-data="{ open: false }" @click.outside="open = false">
+                            @if($this->selectedWholesaler)
+                                <div class="pos-plumber-selected">
+                                    <div>
+                                        <div class="pos-plumber-selected-name">{{ $this->selectedWholesaler->brand_name ?: $this->selectedWholesaler->name }}</div>
+                                        <div class="pos-plumber-selected-meta">
+                                            @if($this->selectedWholesaler->phone){{ $this->selectedWholesaler->phone }}@endif
+                                            @if($this->selectedWholesaler->network_code) · {{ $this->selectedWholesaler->network_code }}@endif
+                                        </div>
                                     </div>
+                                    <button type="button" class="pos-plumber-clear" wire:click="clearWholesaler">✕</button>
                                 </div>
-                                <button type="button" class="pos-plumber-clear" wire:click="clearPlumber">✕</button>
-                            </div>
-                        @else
-                            <input type="text" class="pos-input"
-                                wire:model.live.debounce.200ms="plumberSearch"
-                                @focus="open = true" @input="open = true"
-                                placeholder="سباك من شبكتك — اسم / هاتف / رقم...">
-                            <div class="pos-plumber-dropdown" x-show="open" x-cloak>
-                                @forelse($plumbers as $p)
-                                    <button type="button" class="pos-plumber-option"
-                                        wire:click="selectPlumber({{ $p->id }})" @click="open = false">
-                                        <span class="pos-plumber-option-name">{{ $p->name }}</span>
-                                        <span class="pos-plumber-option-meta">
-                                            @if($p->phone){{ $p->phone }}@endif
-                                            @if($p->network_code) · {{ $p->network_code }}@endif
-                                        </span>
-                                    </button>
-                                @empty
-                                    <div class="pos-plumber-empty">لا يوجد في شبكتك. أضفه من صفحة السباكون، أو ينضم عند أول طلب.</div>
-                                @endforelse
-                            </div>
-                        @endif
-                    </div>
+                            @else
+                                <input type="text" class="pos-input"
+                                    wire:model.live.debounce.200ms="supplierSearch"
+                                    @focus="open = true" @input="open = true"
+                                    placeholder="موزّع جملة — اسم / هاتف / رقم الشبكة...">
+                                <div class="pos-plumber-dropdown" x-show="open" x-cloak>
+                                    @forelse($this->wholesalers as $w)
+                                        <button type="button" class="pos-plumber-option"
+                                            wire:click="selectWholesaler({{ $w->id }})" @click="open = false">
+                                            <span class="pos-plumber-option-name">{{ $w->brand_name ?: $w->name }}</span>
+                                            <span class="pos-plumber-option-meta">
+                                                @if($w->phone){{ $w->phone }}@endif
+                                                @if($w->network_code) · {{ $w->network_code }}@endif
+                                            </span>
+                                        </button>
+                                    @empty
+                                        <div class="pos-plumber-empty">لا يوجد موزّع جملة معتمد حالياً.</div>
+                                    @endforelse
+                                </div>
+                            @endif
+                        </div>
+                    @else
+                        <label>السباك</label>
+                        <div class="pos-plumber-box" x-data="{ open: false }" @click.outside="open = false">
+                            @if($this->selectedPlumber)
+                                <div class="pos-plumber-selected">
+                                    <div>
+                                        <div class="pos-plumber-selected-name">{{ $this->selectedPlumber->name }}</div>
+                                        <div class="pos-plumber-selected-meta">
+                                            @if($this->selectedPlumber->phone){{ $this->selectedPlumber->phone }}@endif
+                                            @if($this->selectedPlumber->network_code) · {{ $this->selectedPlumber->network_code }}@endif
+                                        </div>
+                                    </div>
+                                    <button type="button" class="pos-plumber-clear" wire:click="clearPlumber">✕</button>
+                                </div>
+                            @else
+                                <input type="text" class="pos-input"
+                                    wire:model.live.debounce.200ms="plumberSearch"
+                                    @focus="open = true" @input="open = true"
+                                    placeholder="سباك من شبكتك — اسم / هاتف / رقم...">
+                                <div class="pos-plumber-dropdown" x-show="open" x-cloak>
+                                    @forelse($plumbers as $p)
+                                        <button type="button" class="pos-plumber-option"
+                                            wire:click="selectPlumber({{ $p->id }})" @click="open = false">
+                                            <span class="pos-plumber-option-name">{{ $p->name }}</span>
+                                            <span class="pos-plumber-option-meta">
+                                                @if($p->phone){{ $p->phone }}@endif
+                                                @if($p->network_code) · {{ $p->network_code }}@endif
+                                            </span>
+                                        </button>
+                                    @empty
+                                        <div class="pos-plumber-empty">لا يوجد في شبكتك. أضفه من صفحة السباكون، أو ينضم عند أول طلب.</div>
+                                    @endforelse
+                                </div>
+                            @endif
+                        </div>
+                    @endif
                 </div>
                 <div class="pos-field">
                     <label>بحث منتج</label>
@@ -290,7 +327,7 @@
                 <div class="pos-chips-row">
                     @if($stockFilter !== 'all')
                         <span class="pos-chip">
-                            {{ $stockFilter === 'available' ? 'متاح للتوزيع' : 'بدون نقاط' }}
+                            {{ $stockFilter === 'available' ? 'متاح للتوزيع' : ($stockFilter === 'order' ? 'طلب من الجملة' : 'بدون نقاط') }}
                             <button type="button" wire:click="setStockFilter('all')" title="إزالة">×</button>
                         </span>
                     @endif
@@ -348,10 +385,11 @@
                         <div class="pos-list">
                             @foreach($stock as $row)
                                 @php
+                                    $orderMode = $this->isWholesaleOrderMode();
                                     $can = (bool) ($row['can_distribute'] ?? false);
                                     $inCart = isset($this->cart[(string)$row['product_id']]);
                                 @endphp
-                                <div class="pos-row {{ $can ? '' : 'is-order' }}"
+                                <div class="pos-row {{ ($can || $orderMode) ? '' : 'is-order' }}"
                                      wire:click="handleProductClick({{ $row['product_id'] }})"
                                      wire:key="p-{{ $row['product_id'] }}">
                                     <div class="pos-row-media">
@@ -369,15 +407,17 @@
                                     <div>
                                         <p class="pos-row-name">{{ $row['name'] }}</p>
                                         <div class="pos-row-meta">
-                                            @if($can)
+                                            @if($orderMode)
+                                                <span class="pos-pill pos-pill-warn">يُطلب من الجملة</span>
+                                            @elseif($can)
                                                 <span class="pos-pill pos-pill-ok">متاح {{ number_format($row['available_qty']) }}</span>
                                             @else
                                                 <span class="pos-pill pos-pill-warn">غير متاح — اطلب من الجملة</span>
                                             @endif
                                         </div>
                                     </div>
-                                    <button type="button" class="pos-row-action {{ $can ? 'add' : 'order' }}" tabindex="-1">
-                                        {{ $can ? 'إضافة + كمية' : 'طلب جملة' }}
+                                    <button type="button" class="pos-row-action {{ ($can || $orderMode) ? 'add' : 'order' }}" tabindex="-1">
+                                        {{ $orderMode ? 'إضافة للطلب' : ($can ? 'إضافة + كمية' : 'طلب جملة') }}
                                     </button>
                                 </div>
                             @endforeach
@@ -388,10 +428,14 @@
         </div>
 
         <aside class="pos-cart">
-            <div class="pos-cart-hdr">السلة ({{ count($this->cart) }} صنف)</div>
-
+            <div class="pos-cart-hdr">
+                {{ $this->isWholesaleOrderMode() ? 'طلب من الجملة' : 'السلة' }}
+                ({{ count($this->cart) }} صنف)
+            </div>
             @if(empty($this->cart))
-                <div class="pos-cart-empty">اختر منتجاً متاحاً ثم أدخل الكمية</div>
+                <div class="pos-cart-empty">
+                    {{ $this->isWholesaleOrderMode() ? 'اختر موزّع الجملة ثم أضف المنتجات للطلب' : 'اختر منتجاً متاحاً ثم أدخل الكمية' }}
+                </div>
             @else
                 @foreach($this->cart as $key => $line)
                     <div class="pos-cart-item" wire:key="cart-{{ $key }}">
@@ -405,10 +449,12 @@
                         </div>
                         <div class="pos-qty-ctrl">
                             <button type="button" class="pos-qty-btn" wire:click="decrement('{{ $key }}')">−</button>
-                            <input type="number" min="1" max="{{ $line['available_qty'] ?? '' }}" class="pos-qty-input"
+                            <input type="number" min="1"
+                                max="{{ $this->isWholesaleOrderMode() ? '' : ($line['available_qty'] ?? '') }}"
+                                class="pos-qty-input"
                                 value="{{ $line['quantity'] }}"
                                 wire:change="setQuantity('{{ $key }}', $event.target.value)">
-                            @php $atMax = $line['quantity'] >= ($line['available_qty'] ?? 0); @endphp
+                            @php $atMax = ! $this->isWholesaleOrderMode() && $line['quantity'] >= ($line['available_qty'] ?? 0); @endphp
                             <button type="button" class="pos-qty-btn {{ $atMax ? 'maxed' : '' }}"
                                 wire:click="increment('{{ $key }}')">+</button>
                         </div>
@@ -422,12 +468,19 @@
                         <span class="pos-total-pts">{{ number_format($cartPts) }}</span>
                     </div>
                     <div class="pos-total-row" style="font-size:11px;color:#94a3b8">
-                        <span>السباك</span>
-                        <span>{{ $this->selectedPlumber?->name ?? '—' }}</span>
+                        @if($this->isWholesaleOrderMode())
+                            <span>تاجر الجملة</span>
+                            <span>{{ $this->selectedWholesaler?->brand_name ?: ($this->selectedWholesaler?->name ?? '—') }}</span>
+                        @else
+                            <span>السباك</span>
+                            <span>{{ $this->selectedPlumber?->name ?? '—' }}</span>
+                        @endif
                     </div>
                     <button type="button" class="pos-btn-checkout" wire:click="checkout" wire:loading.attr="disabled"
-                        @disabled(empty($this->cart) || !$plumberId)>
-                        <span wire:loading.remove wire:target="checkout">تأكيد التوزيع</span>
+                        @disabled(empty($this->cart) || ($this->isWholesaleOrderMode() ? ! $supplierId : ! $plumberId))>
+                        <span wire:loading.remove wire:target="checkout">
+                            {{ $this->isWholesaleOrderMode() ? 'إرسال الطلب للجملة' : 'تأكيد التوزيع' }}
+                        </span>
                         <span wire:loading wire:target="checkout">جارٍ المعالجة...</span>
                     </button>
                     <button type="button" class="pos-btn-clear" wire:click="clearCart">مسح السلة</button>
@@ -441,9 +494,17 @@
 <div class="pos-modal-backdrop" wire:click.self="closeQtyModal">
     <div class="pos-modal">
         <h3>{{ $modalProduct['name'] }}</h3>
-        <p>أدخل الكمية (الحد الأقصى {{ number_format($modalProduct['available_qty']) }})</p>
+        <p>
+            @if($this->isWholesaleOrderMode())
+                أدخل الكمية المطلوبة من الجملة
+            @else
+                أدخل الكمية (الحد الأقصى {{ number_format($modalProduct['available_qty']) }})
+            @endif
+        </p>
         <label style="display:block;font-size:12px;font-weight:800;color:#475569;margin-bottom:6px">الكمية</label>
-        <input type="number" min="1" max="{{ $modalProduct['available_qty'] }}" class="pos-qty-input"
+        <input type="number" min="1"
+            max="{{ $this->isWholesaleOrderMode() ? '' : $modalProduct['available_qty'] }}"
+            class="pos-qty-input"
             style="width:100%;height:44px;font-size:16px" wire:model="qtyModalAmount"
             wire:keydown.enter="confirmQtyModal">
         <div class="pos-modal-actions">

@@ -4,14 +4,14 @@ namespace App\Filament\Trader\Pages;
 
 use App\Filament\Concerns\NotifiesPosStockLimit;
 use App\Filament\Concerns\SetsCartQuantity;
-use App\Filament\Trader\Resources\TraderOrderResource;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
+use App\Services\OrderService;
 use App\Services\PlumberDistributionPosService;
+use App\Support\OrderStatus;
 use App\Support\StorePermissions;
-use Filament\Notifications\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Collection;
@@ -44,6 +44,9 @@ class TraderPos extends Page
 
     public ?int $plumberId = null;
 
+    /** Wholesale distributor when ordering from الجملة. */
+    public ?int $supplierId = null;
+
     public ?int $selectedCategoryId = null;
 
     /** all | available | order */
@@ -52,6 +55,8 @@ class TraderPos extends Page
     public string $search = '';
 
     public string $plumberSearch = '';
+
+    public string $supplierSearch = '';
 
     public string $categorySearch = '';
 
@@ -132,6 +137,73 @@ class TraderPos extends Page
         $this->plumberSearch = '';
     }
 
+    public function isWholesaleOrderMode(): bool
+    {
+        return $this->stockFilter === 'order';
+    }
+
+    public function getWholesalersProperty(): Collection
+    {
+        $query = User::query()
+            ->where('role', 'wholesale_distributor')
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->orderBy('brand_name')
+            ->orderBy('name');
+
+        $term = trim($this->supplierSearch);
+        if ($term !== '') {
+            $like = '%'.$term.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('name', 'like', $like)
+                    ->orWhere('brand_name', 'like', $like)
+                    ->orWhere('phone', 'like', $like)
+                    ->orWhere('network_code', 'like', $like);
+            });
+        }
+
+        return $query->get(['id', 'name', 'brand_name', 'phone', 'network_code']);
+    }
+
+    public function getSelectedWholesalerProperty(): ?User
+    {
+        if (! $this->supplierId) {
+            return null;
+        }
+
+        return User::query()
+            ->where('role', 'wholesale_distributor')
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->whereKey($this->supplierId)
+            ->first(['id', 'name', 'brand_name', 'phone', 'network_code']);
+    }
+
+    public function selectWholesaler(int $id): void
+    {
+        $exists = User::query()
+            ->where('role', 'wholesale_distributor')
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->whereKey($id)
+            ->exists();
+
+        if (! $exists) {
+            Notification::make()->danger()->title('موزّع جملة غير صحيح')->send();
+
+            return;
+        }
+
+        $this->supplierId = $id;
+        $this->supplierSearch = '';
+    }
+
+    public function clearWholesaler(): void
+    {
+        $this->supplierId = null;
+        $this->supplierSearch = '';
+    }
+
     public function getCategoriesProperty(): Collection
     {
         $rows = $this->catalogRows();
@@ -192,12 +264,62 @@ class TraderPos extends Page
             return;
         }
 
+        $wasOrder = $this->isWholesaleOrderMode();
         $this->stockFilter = $filter;
+        $nowOrder = $this->isWholesaleOrderMode();
+
+        if ($wasOrder !== $nowOrder) {
+            $this->cart = [];
+            $this->closeQtyModal();
+        }
+
+        if ($nowOrder) {
+            $this->plumberId = null;
+            $this->plumberSearch = '';
+            $this->prefillWholesalerIfNeeded();
+        } else {
+            $this->supplierId = null;
+            $this->supplierSearch = '';
+        }
+    }
+
+    protected function prefillWholesalerIfNeeded(): void
+    {
+        if ($this->supplierId) {
+            return;
+        }
+
+        $user = auth()->user();
+        $preferred = (int) ($user?->parent_distributor_id ?? 0);
+        if ($preferred > 0) {
+            $ok = User::query()
+                ->where('role', 'wholesale_distributor')
+                ->where('is_approved', true)
+                ->where('is_active', true)
+                ->whereKey($preferred)
+                ->exists();
+            if ($ok) {
+                $this->supplierId = $preferred;
+
+                return;
+            }
+        }
+
+        $only = User::query()
+            ->where('role', 'wholesale_distributor')
+            ->where('is_approved', true)
+            ->where('is_active', true)
+            ->limit(2)
+            ->pluck('id');
+
+        if ($only->count() === 1) {
+            $this->supplierId = (int) $only->first();
+        }
     }
 
     public function clearFilters(): void
     {
-        $this->stockFilter = 'all';
+        $this->setStockFilter('all');
         $this->selectedCategoryId = null;
         $this->search = '';
         $this->categorySearch = '';
@@ -315,8 +437,22 @@ class TraderPos extends Page
             return;
         }
 
+        if ($this->isWholesaleOrderMode()) {
+            $this->qtyModalProductId = $productId;
+            $this->qtyModalAmount = 1;
+
+            return;
+        }
+
         if (! ($row['can_distribute'] ?? false)) {
-            $this->offerOrderInstead($productId, (string) $row['name']);
+            $this->setStockFilter('order');
+            $this->qtyModalProductId = $productId;
+            $this->qtyModalAmount = 1;
+            Notification::make()
+                ->info()
+                ->title('وضع طلب من الجملة')
+                ->body('اختر موزّع الجملة من الأعلى ثم أكّد الكمية لإضافتها لطلب التوريد.')
+                ->send();
 
             return;
         }
@@ -339,23 +475,32 @@ class TraderPos extends Page
         }
 
         $row = $this->catalogRows()->firstWhere('product_id', $productId);
-        if (! $row || ! ($row['can_distribute'] ?? false)) {
+        if (! $row) {
             $this->closeQtyModal();
 
             return;
         }
 
-        $maxQty = (int) $row['available_qty'];
+        $wholesaleMode = $this->isWholesaleOrderMode();
+        if (! $wholesaleMode && ! ($row['can_distribute'] ?? false)) {
+            $this->closeQtyModal();
+
+            return;
+        }
+
+        $maxQty = $wholesaleMode ? 99999 : (int) $row['available_qty'];
         $qty = max(1, (int) $this->qtyModalAmount);
 
-        if ($qty > $maxQty) {
+        if (! $wholesaleMode && $qty > $maxQty) {
             $this->notifyStockLimit($row['name'], $maxQty);
             $qty = $maxQty;
         }
 
         $key = (string) $productId;
         if (isset($this->cart[$key])) {
-            $newQty = min($maxQty, (int) $this->cart[$key]['quantity'] + $qty);
+            $newQty = $wholesaleMode
+                ? (int) $this->cart[$key]['quantity'] + $qty
+                : min($maxQty, (int) $this->cart[$key]['quantity'] + $qty);
             $this->cart[$key]['quantity'] = $newQty;
             $this->cart[$key]['available_qty'] = $maxQty;
         } else {
@@ -374,24 +519,6 @@ class TraderPos extends Page
         $this->closeQtyModal();
     }
 
-    protected function offerOrderInstead(int $productId, string $name): void
-    {
-        $url = TraderOrderResource::getUrl('create').'?product='.$productId;
-
-        Notification::make()
-            ->warning()
-            ->title('لا توجد نقاط متاحة لهذا المنتج')
-            ->body("«{$name}» غير متوفر في مخزون النقاط لديك. يمكنك طلبه من موزّع الجملة.")
-            ->persistent()
-            ->actions([
-                NotificationAction::make('order')
-                    ->label('إضافة للطلبيات')
-                    ->button()
-                    ->url($url),
-            ])
-            ->send();
-    }
-
     public function addToCart(int $productId): void
     {
         $this->handleProductClick($productId);
@@ -400,6 +527,12 @@ class TraderPos extends Page
     public function increment(string $key): void
     {
         if (! isset($this->cart[$key])) {
+            return;
+        }
+
+        if ($this->isWholesaleOrderMode()) {
+            $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
+
             return;
         }
 
@@ -434,6 +567,12 @@ class TraderPos extends Page
     {
         if (empty($this->cart)) {
             Notification::make()->warning()->title('السلة فارغة')->send();
+
+            return;
+        }
+
+        if ($this->isWholesaleOrderMode()) {
+            $this->checkoutWholesaleOrder();
 
             return;
         }
@@ -493,6 +632,43 @@ class TraderPos extends Page
 
         } catch (\DomainException $e) {
             Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();
+        }
+    }
+
+    protected function checkoutWholesaleOrder(): void
+    {
+        if (! $this->supplierId) {
+            Notification::make()->danger()->title('اختر موزّع الجملة أولاً')->send();
+
+            return;
+        }
+
+        $lines = collect($this->cart)->map(fn ($line) => [
+            'product_id' => (int) $line['product_id'],
+            'quantity' => (int) $line['quantity'],
+        ])->values()->all();
+
+        try {
+            $order = app(OrderService::class)->place(
+                requester: auth()->user(),
+                channel: OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL,
+                lines: $lines,
+                meta: [
+                    'supplier_id' => $this->supplierId,
+                    'wholesale_distributor_id' => $this->supplierId,
+                ],
+            );
+
+            Notification::make()
+                ->success()
+                ->title('تم إرسال الطلب للجملة ✓')
+                ->body("رقم الطلب {$order->order_number} — {$order->total_quantity} وحدة لـ ".($this->selectedWholesaler?->brand_name ?: $this->selectedWholesaler?->name ?: 'الموزّع'))
+                ->send();
+
+            $this->cart = [];
+            $this->catalogCache = null;
+        } catch (\DomainException $e) {
+            Notification::make()->danger()->title('تعذّر إنشاء الطلب')->body($e->getMessage())->send();
         }
     }
 }
