@@ -78,6 +78,21 @@ class OrderResource extends Resource
         return $user !== null && (int) $user->id === (int) $record->requester_id;
     }
 
+    /** Wholesaler / factory supplier can mark non-plumber orders as delivered. */
+    public static function canMarkDeliveredAsSupplier(Order $record): bool
+    {
+        return static::isSupplierSide($record)
+            && ! $record->isPlumberChannel()
+            && in_array($record->status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true);
+    }
+
+    /** Buyer confirms receipt (also allowed while shipping/confirmed). */
+    public static function canMarkReceivedAsBuyer(Order $record): bool
+    {
+        return static::isBuyerSide($record)
+            && in_array($record->status, [OrderStatus::SHIPPING, OrderStatus::CONFIRMED], true);
+    }
+
     /** Shared product options for placing an order. */
     public static function productOptions(?string $search = null): array
     {
@@ -211,13 +226,14 @@ class OrderResource extends Resource
                     ->options(OrderStatus::channelOptions()),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()->label('عرض'),
-
                 Tables\Actions\Action::make('confirm')
-                    ->label('تأكيد الطلب')
+                    ->label('تأكيد')
                     ->icon('heroicon-o-check-circle')
                     ->color('info')
-                    ->visible(fn (Order $record) => static::isSupplierSide($record) && $record->status === OrderStatus::PLACED)
+                    ->button()
+                    ->visible(fn (Order $record) => static::isSupplierSide($record)
+                        && $record->status === OrderStatus::PLACED
+                        && ! $record->isPlumberChannel())
                     ->form([
                         Forms\Components\Textarea::make('note')
                             ->label('ملاحظة (اختياري)')
@@ -229,10 +245,12 @@ class OrderResource extends Resource
                     )),
 
                 Tables\Actions\Action::make('ship')
-                    ->label('شحن الطلب')
+                    ->label('شحن')
                     ->icon('heroicon-o-truck')
                     ->color('primary')
+                    ->button()
                     ->visible(fn (Order $record) => static::isSupplierSide($record)
+                        && ! $record->isPlumberChannel()
                         && in_array($record->status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true))
                     ->form([
                         Forms\Components\TextInput::make('carrier_name')
@@ -250,12 +268,46 @@ class OrderResource extends Resource
                         'تم شحن الطلب',
                     )),
 
-                Tables\Actions\Action::make('receive')
-                    ->label('تأكيد الاستلام')
+                Tables\Actions\Action::make('deliver_supplier')
+                    ->label('تم التسليم')
                     ->icon('heroicon-o-check-badge')
                     ->color('success')
-                    ->visible(fn (Order $record) => static::isBuyerSide($record)
-                        && in_array($record->status, [OrderStatus::SHIPPING, OrderStatus::CONFIRMED], true))
+                    ->button()
+                    ->visible(fn (Order $record) => static::canMarkDeliveredAsSupplier($record))
+                    ->requiresConfirmation()
+                    ->modalHeading('تأكيد تسليم الطلب')
+                    ->modalDescription('سيتم خصم الكميات من مخزونك وإضافتها لمخزون المشتري.')
+                    ->action(fn (Order $record) => static::runTransition(
+                        fn () => app(OrderService::class)->deliver($record, auth()->user()),
+                        'تم تسليم الطلب ✓',
+                    )),
+
+                Tables\Actions\Action::make('fulfill')
+                    ->label('تنفيذ')
+                    ->icon('heroicon-o-document-check')
+                    ->color('success')
+                    ->button()
+                    ->visible(fn (Order $record) => static::isSupplierSide($record)
+                        && $record->isPlumberChannel()
+                        && in_array($record->status, [
+                            OrderStatus::PLACED,
+                            OrderStatus::CONFIRMED,
+                            OrderStatus::SHIPPING,
+                        ], true))
+                    ->requiresConfirmation()
+                    ->modalHeading('تنفيذ الطلب كفاتورة')
+                    ->modalDescription('سيتم خصم المخزون ومنح النقاط وتغيير الحالة إلى «تم التسليم».')
+                    ->action(fn (Order $record) => static::runTransition(
+                        fn () => app(OrderService::class)->fulfillAsInvoice($record, auth()->user()),
+                        'تم التنفيذ ✓',
+                    )),
+
+                Tables\Actions\Action::make('receive')
+                    ->label('استلام')
+                    ->icon('heroicon-o-hand-thumb-up')
+                    ->color('success')
+                    ->button()
+                    ->visible(fn (Order $record) => static::canMarkReceivedAsBuyer($record))
                     ->requiresConfirmation()
                     ->modalHeading('تأكيد استلام الطلب')
                     ->modalDescription('عند التأكيد ستُضاف الكميات المطلوبة إلى مخزونك. هل استلمت الطلب بالكامل؟')
@@ -296,6 +348,11 @@ class OrderResource extends Resource
                         fn () => app(OrderService::class)->cancel($record, auth()->user(), $data['reason'] ?? null),
                         'تم إلغاء الطلب',
                     )),
+
+                Tables\Actions\ViewAction::make()
+                    ->label('عرض')
+                    ->icon('heroicon-o-eye')
+                    ->color('gray'),
             ])
             ->defaultSort('created_at', 'desc');
     }

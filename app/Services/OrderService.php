@@ -152,8 +152,8 @@ class OrderService
     }
 
     /**
-     * Buyer confirms receipt — this is where stock is added to the buyer via the
-     * existing distribution pipeline.
+     * Mark order delivered — callable by buyer (receipt) or supplier (hand-over).
+     * Stock moves to the buyer via the distribution pipeline.
      *
      * @throws \DomainException
      */
@@ -162,7 +162,7 @@ class OrderService
         $this->assertStatus(
             $order,
             [OrderStatus::SHIPPING, OrderStatus::CONFIRMED],
-            'لا يمكن تأكيد الاستلام قبل شحن الطلب',
+            'لا يمكن تأكيد التسليم قبل تأكيد أو شحن الطلب',
         );
 
         return DB::transaction(function () use ($order, $actor) {
@@ -183,6 +183,9 @@ class OrderService
                 'delivered_reference' => $reference['reference'] ?? null,
             ]);
 
+            $bySupplier = (int) $actor->id === (int) $order->supplier_id
+                || ($order->isFactoryChannel() && in_array($actor->role, ['super_admin', 'admin'], true));
+
             $points = (int) $order->total_points;
             $pointsNote = $points > 0
                 ? ($order->isPlumberChannel()
@@ -192,7 +195,7 @@ class OrderService
 
             $this->notifyRequester(
                 $order,
-                'تم استلام طلبك ✓',
+                $bySupplier ? 'تم تسليم طلبك ✓' : 'تم استلام طلبك ✓',
                 "طلب رقم {$order->order_number} تم تسليمه{$pointsNote}",
                 'success',
             );
@@ -200,7 +203,9 @@ class OrderService
             $this->notifySupplierAndAdmins(
                 $order,
                 'تم تسليم الطلب ✓',
-                "طلب رقم {$order->order_number} تم استلامه وتأكيده من {$order->requester?->name}.",
+                $bySupplier
+                    ? "طلب رقم {$order->order_number} تم تسليمه للمشتري {$order->requester?->name}."
+                    : "طلب رقم {$order->order_number} تم استلامه وتأكيده من {$order->requester?->name}.",
                 'success',
             );
 
@@ -282,6 +287,13 @@ class OrderService
             "طلب رقم {$order->order_number} أُلغي من قبل {$order->requester?->name}.",
             'warning',
         );
+
+        if ($order->supplier) {
+            $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifySupplierStatus(
+                $order->fresh(['requester', 'supplier']),
+                'أُلغي الطلب من قبل المشتري'.($reason ? " — السبب: {$reason}" : ''),
+            ));
+        }
 
         return $order;
     }
@@ -470,8 +482,10 @@ class OrderService
             throw new \DomainException('تعذّر تحديد أطراف الطلب');
         }
 
-        if (! app(RetailNetworkLinkService::class)->isLinked($wholesaler, $retailTrader)) {
-            throw new \DomainException('هذا التاجر القطاعي غير تابع لموزّع الجملة');
+        $links = app(RetailNetworkLinkService::class);
+        if (! $links->isLinked($wholesaler, $retailTrader)) {
+            // Order was already accepted into the network flow — attach on deliver.
+            $links->attach($wholesaler, $retailTrader, $actor);
         }
 
         $stock = $this->inventory->stockForWholesaler($wholesaler);
@@ -839,16 +853,17 @@ class OrderService
     {
         $title = 'طلب جديد 🛎️';
         $body = "طلب رقم {$order->order_number} من {$order->requester?->name} — {$order->total_quantity} وحدة.";
+        $meta = $this->orderNotificationMeta($order);
 
         if ($order->isFactoryChannel()) {
-            AdminNotificationService::sendToRole('super_admin', $title, $body, 'info');
-            AdminNotificationService::sendToRole('admin', $title, $body, 'info');
+            AdminNotificationService::sendToRole('super_admin', $title, $body, 'info', null, null, $meta);
+            AdminNotificationService::sendToRole('admin', $title, $body, 'info', null, null, $meta);
 
             return;
         }
 
         if ($order->supplier) {
-            AdminNotificationService::send($order->supplier, $title, $body, 'info');
+            AdminNotificationService::send($order->supplier, $title, $body, 'info', null, null, $meta);
         }
     }
 
@@ -871,21 +886,43 @@ class OrderService
     protected function notifyRequester(Order $order, string $title, string $body, string $status): void
     {
         if ($order->requester) {
-            AdminNotificationService::send($order->requester, $title, $body, $status);
+            AdminNotificationService::send(
+                $order->requester,
+                $title,
+                $body,
+                $status,
+                null,
+                null,
+                $this->orderNotificationMeta($order),
+            );
         }
     }
 
     protected function notifySupplierAndAdmins(Order $order, string $title, string $body, string $status): void
     {
+        $meta = $this->orderNotificationMeta($order);
+
         if ($order->isFactoryChannel()) {
-            AdminNotificationService::sendToRole('super_admin', $title, $body, $status);
-            AdminNotificationService::sendToRole('admin', $title, $body, $status);
+            AdminNotificationService::sendToRole('super_admin', $title, $body, $status, null, null, $meta);
+            AdminNotificationService::sendToRole('admin', $title, $body, $status, null, null, $meta);
 
             return;
         }
 
         if ($order->supplier) {
-            AdminNotificationService::send($order->supplier, $title, $body, $status);
+            AdminNotificationService::send($order->supplier, $title, $body, $status, null, null, $meta);
         }
+    }
+
+    /** @return array<string, mixed> */
+    protected function orderNotificationMeta(Order $order): array
+    {
+        return [
+            'entity_type' => 'order',
+            'order_id' => (int) $order->id,
+            'order_number' => $order->order_number,
+            'channel' => $order->channel,
+            'order_status' => $order->status,
+        ];
     }
 }

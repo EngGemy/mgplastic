@@ -10,6 +10,9 @@ use Illuminate\Support\Collection;
 
 class AdminNotificationService
 {
+    /**
+     * @param  array<string, mixed>  $meta  Extra keys merged into the DB notification payload (e.g. order_id).
+     */
     public static function send(
         User $user,
         string $title,
@@ -17,6 +20,7 @@ class AdminNotificationService
         string $status = 'info',
         ?string $url = null,
         ?string $actionLabel = null,
+        array $meta = [],
     ): void {
         $notification = Notification::make()
             ->title($title)
@@ -38,11 +42,17 @@ class AdminNotificationService
             ]);
         }
 
-        $user->notify(new SyncFilamentDatabaseNotification($notification->getDatabaseMessage()));
+        $data = $notification->getDatabaseMessage();
+        if ($meta !== []) {
+            $data = array_merge($data, $meta);
+        }
+
+        $user->notify(new SyncFilamentDatabaseNotification($data));
     }
 
     /**
      * @param  Collection<int, User>|iterable<User>  $users
+     * @param  array<string, mixed>  $meta
      */
     public static function sendToMany(
         iterable $users,
@@ -51,17 +61,21 @@ class AdminNotificationService
         string $status = 'info',
         ?string $url = null,
         ?string $actionLabel = null,
+        array $meta = [],
     ): int {
         $count = 0;
 
         foreach ($users as $user) {
-            self::send($user, $title, $body, $status, $url, $actionLabel);
+            self::send($user, $title, $body, $status, $url, $actionLabel, $meta);
             $count++;
         }
 
         return $count;
     }
 
+    /**
+     * @param  array<string, mixed>  $meta
+     */
     public static function sendToRole(
         string $role,
         string $title,
@@ -69,6 +83,7 @@ class AdminNotificationService
         string $status = 'info',
         ?string $url = null,
         ?string $actionLabel = null,
+        array $meta = [],
     ): int {
         return self::sendToMany(
             User::query()->where('role', $role)->get(),
@@ -77,15 +92,20 @@ class AdminNotificationService
             $status,
             $url,
             $actionLabel,
+            $meta,
         );
     }
 
+    /**
+     * @param  array<string, mixed>  $meta
+     */
     public static function sendToAll(
         string $title,
         ?string $body = null,
         string $status = 'info',
         ?string $url = null,
         ?string $actionLabel = null,
+        array $meta = [],
     ): int {
         return self::sendToMany(
             User::query()->get(),
@@ -94,6 +114,7 @@ class AdminNotificationService
             $status,
             $url,
             $actionLabel,
+            $meta,
         );
     }
 }

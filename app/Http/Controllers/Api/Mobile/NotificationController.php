@@ -35,6 +35,14 @@ class NotificationController extends Controller
             $query->where('data->status', $status);
         }
 
+        if ($request->filled('order_id')) {
+            $query->where('data->order_id', (int) $request->integer('order_id'));
+        }
+
+        if ($request->filled('entity_type')) {
+            $query->where('data->entity_type', $request->string('entity_type')->toString());
+        }
+
         if ($request->filled('q') || $request->filled('search')) {
             $term = trim((string) ($request->query('q') ?? $request->query('search')));
             if ($term !== '') {

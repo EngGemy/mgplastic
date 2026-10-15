@@ -28,13 +28,23 @@ class OrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        $scope = $request->string('scope')->toString();
 
         $orders = Order::query()
             ->forNetworkUser($user)
-            ->with(['items', 'requester:id,name,brand_name', 'supplier:id,name,brand_name'])
-            ->when($request->string('scope')->toString() === 'placed', fn ($q) => $q->placedBy($user))
-            ->when($request->string('scope')->toString() === 'incoming', fn ($q) => $q->incomingFor($user))
+            ->with(['items', 'requester:id,name,brand_name,role', 'supplier:id,name,brand_name,role'])
+            ->when($scope === 'placed' || $scope === 'to_factory', fn ($q) => $q
+                ->placedBy($user)
+                ->where('channel', OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE))
+            ->when($scope === 'incoming' || $scope === 'from_retail', fn ($q) => $q
+                ->incomingFor($user)
+                ->where('channel', OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL))
+            ->when($scope === 'needs_action', fn ($q) => $q
+                ->incomingFor($user)
+                ->where('channel', OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL)
+                ->whereIn('status', [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING]))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('channel'), fn ($q) => $q->where('channel', $request->string('channel')))
             ->latest()
             ->get();
 
@@ -83,7 +93,10 @@ class OrderController extends Controller
             return $this->error('يمكن للمورّد فقط تأكيد الطلب', 403);
         }
 
-        return $this->transition(fn () => $this->orders->confirm($order, $request->user(), $request->input('note')), 'تم تأكيد الطلب');
+        return $this->transition(
+            fn () => $this->orders->confirm($order, $request->user(), $request->input('note')),
+            'تم تأكيد الطلب',
+        );
     }
 
     public function ship(Request $request, Order $order): JsonResponse
@@ -108,13 +121,32 @@ class OrderController extends Controller
         );
     }
 
+    public function deliver(Request $request, Order $order): JsonResponse
+    {
+        if (! $this->isSupplier($order, $request->user()) || $order->isPlumberChannel()) {
+            return $this->error('يمكن لموزّع الجملة فقط تسليم طلبات القطاعي', 403);
+        }
+
+        if (! in_array($order->status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
+            return $this->error('لا يمكن التسليم قبل تأكيد أو شحن الطلب', 422);
+        }
+
+        return $this->transition(
+            fn () => $this->orders->deliver($order, $request->user()),
+            'تم تسليم الطلب وإضافة الكميات لمخزون المشتري',
+        );
+    }
+
     public function reject(Request $request, Order $order): JsonResponse
     {
         if (! $this->isSupplier($order, $request->user())) {
             return $this->error('يمكن للمورّد فقط رفض الطلب', 403);
         }
 
-        return $this->transition(fn () => $this->orders->reject($order, $request->user(), $request->input('reason')), 'تم رفض الطلب');
+        return $this->transition(
+            fn () => $this->orders->reject($order, $request->user(), $request->input('reason')),
+            'تم رفض الطلب',
+        );
     }
 
     public function receive(Request $request, Order $order): JsonResponse
@@ -123,7 +155,10 @@ class OrderController extends Controller
             return $this->error('يمكن لصاحب الطلب فقط تأكيد الاستلام', 403);
         }
 
-        return $this->transition(fn () => $this->orders->deliver($order, $request->user()), 'تم تأكيد الاستلام وإضافة الكميات لمخزونك');
+        return $this->transition(
+            fn () => $this->orders->deliver($order, $request->user()),
+            'تم تأكيد الاستلام وإضافة الكميات لمخزونك',
+        );
     }
 
     public function cancel(Request $request, Order $order): JsonResponse
@@ -132,7 +167,10 @@ class OrderController extends Controller
             return $this->error('يمكن لصاحب الطلب فقط الإلغاء', 403);
         }
 
-        return $this->transition(fn () => $this->orders->cancel($order, $request->user(), $request->input('reason')), 'تم إلغاء الطلب');
+        return $this->transition(
+            fn () => $this->orders->cancel($order, $request->user(), $request->input('reason')),
+            'تم إلغاء الطلب',
+        );
     }
 
     protected function transition(callable $fn, string $message): JsonResponse

@@ -173,6 +173,36 @@ class CustomerWhatsAppNotifier
         );
     }
 
+    /**
+     * Status update to the supplier (e.g. buyer cancelled).
+     *
+     * @return array{sent: bool, phone: ?string, chat_url: ?string, driver: string, error: ?string}
+     */
+    public function notifySupplierStatus(Order $order, string $headline): array
+    {
+        $order->loadMissing(['requester', 'supplier']);
+        $supplier = $order->supplier;
+        if (! $supplier) {
+            return $this->empty('لا يوجد مورّد للطلب');
+        }
+
+        $lines = [
+            $this->welcomeLine($supplier),
+            '',
+            $headline,
+            'رقم الطلب: '.($order->order_number ?: '#'.$order->id),
+            'من: '.($order->requester?->name ?: 'المشتري'),
+            'الحالة: '.OrderStatus::label($order->status),
+        ];
+
+        return $this->deliver(
+            $supplier->phone,
+            implode("\n", $lines),
+            'order.supplier_status',
+            $order->id,
+        );
+    }
+
     public function supplierOrderChatUrl(Order $order): ?string
     {
         $order->loadMissing(['requester', 'supplier']);

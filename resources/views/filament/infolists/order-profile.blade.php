@@ -1,6 +1,7 @@
 @php
     use App\Support\OrderStatus;
     use App\Services\OrderService;
+    use App\Filament\Resources\OrderResource;
 
     $order = $getRecord();
     $order->loadMissing(['items.product', 'requester', 'supplier']);
@@ -11,8 +12,22 @@
         $currentIdx = OrderStatus::isFinal($current) ? count($timeline) : -1;
     }
 
+    $isSupplier = OrderResource::isSupplierSide($order);
+    $isBuyer = OrderResource::isBuyerSide($order);
+    $isPlumber = $order->isPlumberChannel();
+    $canSupplierDeliver = OrderResource::canMarkDeliveredAsSupplier($order);
+    $canBuyerReceive = OrderResource::canMarkReceivedAsBuyer($order);
+    $canConfirm = $isSupplier && $current === OrderStatus::PLACED && ! $isPlumber;
+    $canShip = $isSupplier && ! $isPlumber
+        && in_array($current, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true);
+    $canFulfill = $isSupplier && $isPlumber
+        && in_array($current, [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true);
+    $canReject = $isSupplier && in_array($current, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true);
+    $canCancel = $isBuyer && in_array($current, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true);
+    $showCtas = $canConfirm || $canShip || $canSupplierDeliver || $canBuyerReceive || $canFulfill || $canReject || $canCancel;
+
     $stockMap = collect();
-    $showStock = $order->isPlumberChannel()
+    $showStock = $isPlumber
         && auth()->check()
         && (int) auth()->id() === (int) $order->supplier_id
         && ! OrderStatus::isFinal($order->status);
@@ -20,6 +35,15 @@
     if ($showStock) {
         $stockMap = collect(app(OrderService::class)->stockAvailability($order))->keyBy('product_id');
     }
+
+    $nextHint = match (true) {
+        $canFulfill => 'نفّذ الطلب الآن لتحويله لفاتورة وتسليمه للسباك',
+        $canConfirm => 'أكّد الطلب ثم يمكنك الشحن أو التسليم مباشرة',
+        $canSupplierDeliver => 'سلّم الطلب للمشتري لإضافة الكميات لمخزونه',
+        $canShip => 'سجّل بيانات الشحن إذا كان الطلب في الطريق',
+        $canBuyerReceive => 'أكّد الاستلام لإضافة الكميات إلى مخزونك',
+        default => null,
+    };
 @endphp
 
 <div class="mg-ord" dir="rtl">
@@ -30,14 +54,26 @@
 .mg-ord-meta{font-size:12px;opacity:.85;margin-top:4px}
 .mg-ord-badge{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,.18);font-weight:700;font-size:13px}
 .mg-ord-steps{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
-.mg-ord-step{flex:1;min-width:120px;background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;text-align:center}
+.mg-ord-step{flex:1;min-width:120px;background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;text-align:center;transition:border-color .15s,background .15s}
 .mg-ord-step.done{border-color:#059669;background:#ecfdf5}
 .mg-ord-step.current{border-color:#1a56db;background:#eff6ff;box-shadow:0 0 0 3px rgba(26,86,219,.12)}
 .mg-ord-step.muted{opacity:.55}
 .mg-ord-step-lbl{font-size:12px;font-weight:700}
 .mg-ord-step-sub{font-size:10px;color:#64748b;margin-top:3px}
+.mg-ord-cta-bar{background:#fff;border:1.5px solid #e2e8f0;border-radius:16px;padding:16px 18px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.mg-ord-cta-hint{font-size:13px;font-weight:700;color:#334155;flex:1;min-width:180px}
+.mg-ord-cta-hint span{display:block;font-size:11px;font-weight:500;color:#64748b;margin-top:3px}
+.mg-ord-ctas{display:flex;flex-wrap:wrap;gap:8px}
+.mg-ord-btn{appearance:none;border:0;cursor:pointer;font-family:inherit;font-weight:800;font-size:13px;padding:11px 18px;border-radius:12px;display:inline-flex;align-items:center;gap:7px;transition:transform .12s,box-shadow .12s,opacity .12s}
+.mg-ord-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(15,23,42,.12)}
+.mg-ord-btn:active{transform:none}
+.mg-ord-btn-success{background:#059669;color:#fff}
+.mg-ord-btn-info{background:#0284c7;color:#fff}
+.mg-ord-btn-primary{background:#1a56db;color:#fff}
+.mg-ord-btn-danger{background:#fff;color:#dc2626;border:1.5px solid #fecaca}
+.mg-ord-btn-gray{background:#f1f5f9;color:#475569}
 .mg-ord-grid{display:grid;grid-template-columns:1.4fr .9fr;gap:16px}
-@media(max-width:900px){.mg-ord-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.mg-ord-grid{grid-template-columns:1fr}.mg-ord-cta-bar{flex-direction:column;align-items:stretch}.mg-ord-ctas{width:100%}.mg-ord-btn{flex:1;justify-content:center}}
 .mg-ord-card{background:#fff;border:1.5px solid #e2e8f0;border-radius:16px;padding:16px}
 .mg-ord-card h3{font-size:14px;font-weight:800;margin:0 0 14px;display:flex;align-items:center;gap:8px}
 .mg-ord-item{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9}
@@ -53,6 +89,7 @@
 .mg-ord-stock-ok{color:#059669;font-weight:700;font-size:11px}
 .mg-ord-stock-bad{color:#dc2626;font-weight:700;font-size:11px}
 .mg-ord-tip{background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#92400e;line-height:1.6}
+.mg-ord-done{background:#ecfdf5;border:1.5px solid #a7f3d0;border-radius:16px;padding:14px 18px;margin-bottom:18px;color:#065f46;font-weight:700;font-size:13px}
 </style>
 
 <div class="mg-ord-hero">
@@ -67,6 +104,42 @@
 <div class="mg-ord-tip">
     السباك يطلب أي منتج حتى لو مش عندك — للتنفيذ لازم الأصناف تكون متوفرة في مخزونك.
     استخدم «تطبيق المتوفر فقط» أو «تعديل الأصناف»، ثم «تنفيذ وتحويل لفاتورة».
+</div>
+@endif
+
+@if($current === OrderStatus::DELIVERED)
+<div class="mg-ord-done">✓ تم تسليم هذا الطلب بنجاح{{ $order->delivered_at ? ' · '.optional($order->delivered_at)->format('Y/m/d H:i') : '' }}</div>
+@endif
+
+@if($showCtas)
+<div class="mg-ord-cta-bar">
+    <div class="mg-ord-cta-hint">
+        الخطوة التالية
+        @if($nextHint)<span>{{ $nextHint }}</span>@endif
+    </div>
+    <div class="mg-ord-ctas">
+        @if($canFulfill)
+            <button type="button" class="mg-ord-btn mg-ord-btn-success" wire:click="mountAction('fulfill_invoice')">تنفيذ وتسليم</button>
+        @endif
+        @if($canConfirm)
+            <button type="button" class="mg-ord-btn mg-ord-btn-info" wire:click="mountAction('confirm')">تأكيد الطلب</button>
+        @endif
+        @if($canShip)
+            <button type="button" class="mg-ord-btn mg-ord-btn-primary" wire:click="mountAction('ship')">شحن الطلب</button>
+        @endif
+        @if($canSupplierDeliver)
+            <button type="button" class="mg-ord-btn mg-ord-btn-success" wire:click="mountAction('deliver_supplier')">تم التسليم</button>
+        @endif
+        @if($canBuyerReceive)
+            <button type="button" class="mg-ord-btn mg-ord-btn-success" wire:click="mountAction('receive')">تأكيد الاستلام</button>
+        @endif
+        @if($canReject)
+            <button type="button" class="mg-ord-btn mg-ord-btn-danger" wire:click="mountAction('reject')">رفض</button>
+        @endif
+        @if($canCancel)
+            <button type="button" class="mg-ord-btn mg-ord-btn-gray" wire:click="mountAction('cancel')">إلغاء</button>
+        @endif
+    </div>
 </div>
 @endif
 

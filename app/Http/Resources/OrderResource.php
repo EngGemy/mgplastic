@@ -24,6 +24,7 @@ class OrderResource extends JsonResource
             'status_color' => OrderStatus::color($this->status),
             'is_open' => OrderStatus::isOpen($this->status),
             'timeline' => $this->buildTimeline(),
+            'available_actions' => $this->availableActions($request),
 
             'requester' => $this->when($this->relationLoaded('requester') && $this->requester, fn () => [
                 'id' => $this->requester->id,
@@ -80,5 +81,64 @@ class OrderResource extends JsonResource
             'reached' => $index <= $reachedUpTo && ! OrderStatus::isFinal($this->status) || $step === $this->status,
             'current' => $step === $this->status,
         ])->all();
+    }
+
+    /**
+     * Actions the authenticated user can call next (for mobile CTA buttons).
+     *
+     * @return list<string>
+     */
+    protected function availableActions(Request $request): array
+    {
+        $user = $request->user();
+        if (! $user) {
+            return [];
+        }
+
+        $isBuyer = (int) $this->requester_id === (int) $user->id;
+        $isSupplier = $this->supplier_id !== null && (int) $this->supplier_id === (int) $user->id;
+        $status = $this->status;
+        $actions = [];
+
+        if ($isSupplier && $this->isPlumberChannel()) {
+            if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
+                $actions[] = 'update_items';
+                $actions[] = 'apply_stock';
+            }
+            if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
+                $actions[] = 'fulfill';
+            }
+            if ($status === OrderStatus::PLACED) {
+                $actions[] = 'confirm';
+            }
+            if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
+                $actions[] = 'ship';
+                $actions[] = 'reject';
+            }
+        }
+
+        if ($isSupplier && ! $this->isPlumberChannel()) {
+            if ($status === OrderStatus::PLACED) {
+                $actions[] = 'confirm';
+            }
+            if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
+                $actions[] = 'ship';
+                $actions[] = 'reject';
+            }
+            if (in_array($status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
+                $actions[] = 'deliver';
+            }
+        }
+
+        if ($isBuyer) {
+            if (in_array($status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
+                $actions[] = 'receive';
+            }
+            if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
+                $actions[] = 'cancel';
+            }
+        }
+
+        return array_values(array_unique($actions));
     }
 }

@@ -168,12 +168,32 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('pos/stock', [DistributorPosController::class, 'stock']);
         Route::post('pos/checkout', [DistributorPosController::class, 'checkout']);
 
+        // Notifications inbox (same shared controller)
+        Route::prefix('notifications')->group(function () {
+            Route::get('/', [NotificationController::class, 'index']);
+            Route::get('summary', [NotificationController::class, 'summary']);
+            Route::get('unread-count', [NotificationController::class, 'unreadCount']);
+            Route::post('read-all', [NotificationController::class, 'markAllRead']);
+            Route::post('read-many', [NotificationController::class, 'markManyRead']);
+            Route::delete('read', [NotificationController::class, 'destroyRead']);
+            Route::delete('/', [NotificationController::class, 'destroyAll']);
+            Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('{id}', [NotificationController::class, 'show']);
+            Route::post('{id}/read', [NotificationController::class, 'markRead']);
+            Route::post('{id}/unread', [NotificationController::class, 'markUnread']);
+            Route::delete('{id}', [NotificationController::class, 'destroy']);
+        });
+
+        // Catalog — pick products when placing factory order
+        Route::get('products', [TraderProductCatalogController::class, 'index']);
+
         // Orders — place to factory + fulfil retail-trader orders
         Route::get('orders', [DistributorOrderController::class, 'index']);
         Route::post('orders', [DistributorOrderController::class, 'store']);
         Route::get('orders/{order}', [DistributorOrderController::class, 'show']);
         Route::post('orders/{order}/confirm', [DistributorOrderController::class, 'confirm']);
         Route::post('orders/{order}/ship', [DistributorOrderController::class, 'ship']);
+        Route::post('orders/{order}/deliver', [DistributorOrderController::class, 'deliver']);
         Route::post('orders/{order}/reject', [DistributorOrderController::class, 'reject']);
         Route::post('orders/{order}/receive', [DistributorOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [DistributorOrderController::class, 'cancel']);

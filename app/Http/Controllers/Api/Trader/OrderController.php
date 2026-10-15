@@ -201,7 +201,10 @@ class OrderController extends Controller
             return $this->error('يمكن لصاحب الطلب فقط تأكيد الاستلام', 403);
         }
 
-        return $this->transition(fn () => $this->orders->deliver($order, $request->user()), 'تم تأكيد الاستلام وإضافة الكميات لمخزونك');
+        return $this->transition(
+            fn () => $this->orders->deliver($order, $request->user()),
+            'تم تأكيد الاستلام وإضافة الكميات لمخزونك',
+        );
     }
 
     public function cancel(Request $request, Order $order): JsonResponse
@@ -210,7 +213,10 @@ class OrderController extends Controller
             return $this->error('يمكن لصاحب الطلب فقط الإلغاء', 403);
         }
 
-        return $this->transition(fn () => $this->orders->cancel($order, $request->user(), $request->input('reason')), 'تم إلغاء الطلب');
+        return $this->transition(
+            fn () => $this->orders->cancel($order, $request->user(), $request->input('reason')),
+            'تم إلغاء الطلب',
+        );
     }
 
     protected function transition(callable $fn, string $message): JsonResponse

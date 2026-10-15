@@ -52,6 +52,17 @@ class ListTraderOrders extends ListRecords
                 ->modifyQueryUsing(fn (Builder $q) => $q
                     ->where('channel', OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL)
                     ->where('requester_id', $userId)),
+
+            'needs_action' => Tab::make('تحتاج إجراء')
+                ->icon('heroicon-o-bell-alert')
+                ->modifyQueryUsing(fn (Builder $q) => $q
+                    ->where('supplier_id', $userId)
+                    ->whereIn('status', [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING]))
+                ->badge(fn () => TraderOrderResource::getEloquentQuery()
+                    ->where('supplier_id', $userId)
+                    ->whereIn('status', [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING])
+                    ->count())
+                ->badgeColor('danger'),
         ];
     }
 }
