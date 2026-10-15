@@ -500,6 +500,7 @@ class UserResource extends Resource
                     ),
 
                 \App\Filament\Support\UserNotificationActions::tableAction(),
+                \App\Filament\Support\CustomerWhatsAppActions::welcomeTableAction(),
 
                 Tables\Actions\EditAction::make()->label('تعديل'),
                 Tables\Actions\DeleteAction::make()->label('حذف'),

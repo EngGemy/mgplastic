@@ -437,6 +437,8 @@ class RetailTraderResource extends Resource
                         Notification::make()->success()->title('تم إيقاف النشاط')->send();
                     }),
 
+                \App\Filament\Support\CustomerWhatsAppActions::welcomeTableAction(),
+
                 Tables\Actions\ViewAction::make()->label('عرض'),
                 Tables\Actions\EditAction::make()->label('تعديل'),
             ])

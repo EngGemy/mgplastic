@@ -90,6 +90,7 @@ class PlumbersRelationManager extends RelationManager
                     }),
             ])
             ->actions([
+                \App\Filament\Support\CustomerWhatsAppActions::welcomeTableAction(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ]);

@@ -78,6 +78,7 @@ class OrderService
         $fresh = $order->fresh(['requester', 'supplier']);
         $this->notifyPlaced($fresh);
         $this->notifyCustomerWhatsApp($fresh);
+        $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifySupplierOrderArrived($fresh));
 
         return $order->load('items');
     }

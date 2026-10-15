@@ -127,6 +127,116 @@ class CustomerWhatsAppNotifier
         );
     }
 
+    /**
+     * Free welcome message for any network customer (opens wa.me for staff to send).
+     */
+    public function welcomeChatUrl(User $customer): ?string
+    {
+        if (! filled(trim((string) $customer->phone))) {
+            return null;
+        }
+
+        return PriceListWhatsApp::url($customer->phone, $this->welcomeMessage($customer));
+    }
+
+    /**
+     * @return array{sent: bool, phone: ?string, chat_url: ?string, driver: string, error: ?string}
+     */
+    public function notifyWelcome(User $customer): array
+    {
+        return $this->deliver(
+            $customer->phone,
+            $this->welcomeMessage($customer),
+            'customer.welcome',
+            $customer->id,
+        );
+    }
+
+    /**
+     * Remind the supplier (trader / wholesaler) that a new order arrived.
+     *
+     * @return array{sent: bool, phone: ?string, chat_url: ?string, driver: string, error: ?string}
+     */
+    public function notifySupplierOrderArrived(Order $order): array
+    {
+        $order->loadMissing(['requester', 'supplier']);
+        $supplier = $order->supplier;
+        if (! $supplier) {
+            return $this->empty('لا يوجد مورّد للطلب');
+        }
+
+        return $this->deliver(
+            $supplier->phone,
+            $this->supplierOrderArrivedMessage($order, $supplier),
+            'order.supplier',
+            $order->id,
+        );
+    }
+
+    public function supplierOrderChatUrl(Order $order): ?string
+    {
+        $order->loadMissing(['requester', 'supplier']);
+        $supplier = $order->supplier;
+        if (! $supplier?->phone) {
+            return null;
+        }
+
+        return PriceListWhatsApp::url(
+            $supplier->phone,
+            $this->supplierOrderArrivedMessage($order, $supplier),
+        );
+    }
+
+    protected function welcomeMessage(User $customer): string
+    {
+        $site = WebsiteSetting::instance()->site_name ?: 'MG Plastic';
+        $role = match ($customer->role) {
+            'wholesale_distributor' => 'موزّع جملة معتمد',
+            'retail_trader' => 'تاجر قطاعي معتمد',
+            'plumber' => 'سباك مسجّل',
+            default => 'عميل',
+        };
+
+        $lines = [
+            $this->welcomeLine($customer),
+            '',
+            "سعداء بانضمامك معنا كـ{$role}.",
+        ];
+
+        if (filled($customer->network_code)) {
+            $lines[] = 'رقم شبكتك: '.$customer->network_code;
+        }
+
+        $lines[] = '';
+        $lines[] = "من تطبيق {$site} تقدر تتابع طلباتك وفواتيرك ونقاطك في أي وقت.";
+        $this->appendSupport($lines);
+
+        return implode("\n", $lines);
+    }
+
+    protected function supplierOrderArrivedMessage(Order $order, User $supplier): string
+    {
+        $lines = [
+            $this->welcomeLine($supplier),
+            '',
+            'وصلك طلب جديد 🛎️',
+            'رقم الطلب: '.($order->order_number ?: '#'.$order->id),
+            'من: '.($order->requester?->name ?: 'عميل'),
+            'الكمية: '.(int) $order->total_quantity.' وحدة',
+            'النقاط: '.(int) $order->total_points,
+        ];
+
+        if ($share = $this->orderShareUrl($order)) {
+            $lines[] = '';
+            $lines[] = 'راجع الطلب من الرابط:';
+            $lines[] = $share;
+        }
+
+        $this->appendSupport($lines);
+
+        return implode("\n", $lines);
+    }
+
     public function orderShareUrl(Order $order): ?string
     {
         try {

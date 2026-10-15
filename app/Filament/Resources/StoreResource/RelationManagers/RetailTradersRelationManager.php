@@ -108,6 +108,8 @@ class RetailTradersRelationManager extends RelationManager
                     ->color('warning')
                     ->url(fn (User $record) => \App\Filament\Resources\RetailTraderResource::getUrl('view', ['record' => $record])),
 
+                \App\Filament\Support\CustomerWhatsAppActions::welcomeTableAction(),
+
                 Tables\Actions\EditAction::make()->label('تعديل'),
                 Tables\Actions\DeleteAction::make()->label('حذف'),
             ])

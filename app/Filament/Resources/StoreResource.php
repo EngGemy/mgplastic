@@ -239,6 +239,8 @@ class StoreResource extends Resource
                     ->visible(fn (User $record) => (bool) $record->is_approved && (bool) $record->is_active)
                     ->url(fn (User $record) => \App\Filament\Resources\RetailTraderResource::getUrl('create').'?store='.$record->id),
 
+                \App\Filament\Support\CustomerWhatsAppActions::welcomeTableAction(),
+
                 Tables\Actions\ViewAction::make()->label('عرض'),
                 Tables\Actions\EditAction::make()->label('تعديل'),
             ])

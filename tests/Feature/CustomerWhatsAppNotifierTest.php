@@ -110,6 +110,57 @@ class CustomerWhatsAppNotifierTest extends TestCase
         $this->assertStringContainsString('/orders/'.$order->id.'/share', $decoded);
     }
 
+    public function test_welcome_chat_url_is_ready_for_free_send(): void
+    {
+        $trader = User::factory()->create([
+            'role' => 'retail_trader',
+            'phone' => '0916126065',
+            'name' => 'تاجر تجريبي',
+            'network_code' => 'MG-R-000099',
+        ]);
+
+        $url = app(CustomerWhatsAppNotifier::class)->welcomeChatUrl($trader);
+
+        $this->assertNotNull($url);
+        $this->assertStringContainsString('wa.me/218916126065', $url);
+        $decoded = urldecode($url);
+        $this->assertStringContainsString('أهلاً تاجر تجريبي', $decoded);
+        $this->assertStringContainsString('سعداء بانضمامك معنا', $decoded);
+        $this->assertStringContainsString('MG-R-000099', $decoded);
+    }
+
+    public function test_supplier_order_arrived_message_targets_trader(): void
+    {
+        $requester = User::factory()->create(['role' => 'plumber', 'name' => 'سباك', 'phone' => '0910000001']);
+        $supplier = User::factory()->create([
+            'role' => 'retail_trader',
+            'name' => 'محل قطاعي',
+            'phone' => '0910000002',
+        ]);
+
+        $order = Order::query()->create([
+            'order_number' => 'ORD-2026-000200',
+            'channel' => OrderStatus::CHANNEL_RETAIL_TO_PLUMBER,
+            'requester_id' => $requester->id,
+            'supplier_id' => $supplier->id,
+            'status' => OrderStatus::PLACED,
+            'total_quantity' => 2,
+            'total_points' => 10,
+            'placed_at' => now(),
+            'created_by' => $requester->id,
+        ]);
+
+        $url = app(CustomerWhatsAppNotifier::class)->supplierOrderChatUrl(
+            $order->fresh(['requester', 'supplier']),
+        );
+
+        $this->assertNotNull($url);
+        $decoded = urldecode($url);
+        $this->assertStringContainsString('wa.me/218910000002', $url);
+        $this->assertStringContainsString('وصلك طلب جديد', $decoded);
+        $this->assertStringContainsString('ORD-2026-000200', $decoded);
+    }
+
     public function test_libyasms_driver_sends_invoice_message(): void
     {
         Config::set('services.whatsapp.driver', 'libyasms');

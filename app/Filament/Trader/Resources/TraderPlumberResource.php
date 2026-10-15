@@ -120,6 +120,7 @@ class TraderPlumberResource extends Resource
                     }),
             ])
             ->actions([
+                \App\Filament\Support\CustomerWhatsAppActions::welcomeTableAction(),
                 Tables\Actions\EditAction::make(),
             ])
             ->emptyStateHeading('لا يوجد سباكون في شبكتك')
