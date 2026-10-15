@@ -203,4 +203,34 @@ class CustomerWhatsAppNotifierTest extends TestCase
         });
     }
 
+    public function test_evolution_baileys_driver_sends_text(): void
+    {
+        Config::set('services.whatsapp.driver', 'evolution');
+        Config::set('services.whatsapp.evolution.base_url', 'https://evolution.test');
+        Config::set('services.whatsapp.evolution.api_key', 'evo-key');
+        Config::set('services.whatsapp.evolution.instance', 'mg-plastic');
+        Config::set('services.whatsapp.evolution.version', 'v2');
+
+        Http::fake([
+            'evolution.test/*' => Http::response(['key' => ['id' => 'BAE1']], 201),
+        ]);
+
+        $trader = User::factory()->create([
+            'role' => 'retail_trader',
+            'phone' => '0916126065',
+            'name' => 'تاجر',
+        ]);
+
+        $result = app(CustomerWhatsAppNotifier::class)->notifyWelcome($trader);
+
+        $this->assertTrue($result['sent']);
+        Http::assertSent(function ($request) {
+            $data = $request->data();
+
+            return $request->url() === 'https://evolution.test/message/sendText/mg-plastic'
+                && $request->hasHeader('apikey', 'evo-key')
+                && ($data['number'] ?? null) === '218916126065'
+                && str_contains((string) ($data['text'] ?? ''), 'سعداء بانضمامك معنا');
+        });
+    }
 }

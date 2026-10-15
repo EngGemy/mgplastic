@@ -306,9 +306,14 @@ class OrderService
                 throw new \DomainException('الطلب من الجملة متاح لتجّار القطاعي فقط');
             }
 
+            $supplierId = (int) ($meta['wholesale_distributor_id'] ?? $meta['supplier_id'] ?? 0);
             $supplier = null;
 
-            if ($requester->parent_distributor_id) {
+            if ($supplierId > 0) {
+                $supplier = User::find($supplierId);
+            }
+
+            if ((! $supplier || ! $supplier->isWholesaleDistributor()) && $requester->parent_distributor_id) {
                 $supplier = User::find($requester->parent_distributor_id);
             }
 
@@ -321,7 +326,11 @@ class OrderService
             }
 
             if (! $supplier || ! $supplier->isWholesaleDistributor()) {
-                throw new \DomainException('لست مرتبطاً بموزّع جملة — تواصل مع موزّعك ليربط حسابك عبر الرقم الموحّد');
+                throw new \DomainException('اختر موزّع الجملة (supplier_id) لإرسال الطلب إليه');
+            }
+
+            if (! $supplier->is_active || ! $supplier->is_approved) {
+                throw new \DomainException('هذا الموزّع غير مفعّل حالياً');
             }
 
             return $supplier;

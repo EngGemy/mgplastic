@@ -31,6 +31,7 @@ class WhatsAppSender
 
         try {
             $sent = match ($driver) {
+                'evolution' => $this->sendViaEvolution($digits, $message),
                 'libyasms' => $this->sendViaLibyaSms($digits, $message),
                 'http' => $this->sendViaHttp($digits, $message),
                 default => false,
@@ -66,6 +67,54 @@ class WhatsAppSender
             'driver' => $driver,
             'error' => $sent || $driver === 'log' ? null : 'فشل إرسال واتساب',
         ];
+    }
+
+    /**
+     * Evolution API (Baileys): POST /message/sendText/{instance}
+     *
+     * @see https://doc.evolution-api.com
+     */
+    protected function sendViaEvolution(string $digits, string $message): bool
+    {
+        $base = rtrim((string) config('services.whatsapp.evolution.base_url'), '/');
+        $apiKey = trim((string) config('services.whatsapp.evolution.api_key'));
+        $instance = trim((string) config('services.whatsapp.evolution.instance', 'mg-plastic'));
+        $version = strtolower((string) config('services.whatsapp.evolution.version', 'v2'));
+
+        if ($base === '' || $apiKey === '' || $instance === '') {
+            throw new \RuntimeException('اضبط WHATSAPP_EVOLUTION_URL و WHATSAPP_EVOLUTION_API_KEY و WHATSAPP_EVOLUTION_INSTANCE');
+        }
+
+        $payload = $version === 'v1'
+            ? [
+                'number' => $digits,
+                'textMessage' => ['text' => $message],
+                'options' => [
+                    'delay' => 1200,
+                    'presence' => 'composing',
+                    'linkPreview' => true,
+                ],
+            ]
+            : [
+                'number' => $digits,
+                'text' => $message,
+                'delay' => 1200,
+                'linkPreview' => true,
+            ];
+
+        $response = Http::withHeaders([
+            'apikey' => $apiKey,
+        ])
+            ->acceptJson()
+            ->asJson()
+            ->timeout(30)
+            ->post($base.'/message/sendText/'.rawurlencode($instance), $payload);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('Evolution WhatsApp HTTP '.$response->status().': '.$response->body());
+        }
+
+        return true;
     }
 
     protected function sendViaLibyaSms(string $digits, string $message): bool

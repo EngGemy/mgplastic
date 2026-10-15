@@ -110,16 +110,20 @@ class NetworkStoreController extends Controller
      * GET /api/v1/network-stores
      * GET /api/v1/vendors  (alias)
      *
-     * Public directory for plumbers: approved + active retail traders only.
-     * Plumbers order from retail traders — wholesale distributors are never listed here.
+     * Directory depends on the logged-in role (send Bearer token):
+     *  - plumber (or guest) → approved + active retail traders (order from shops)
+     *  - retail_trader → approved + active wholesale distributors (order from wholesale)
+     *
      * Query: city_id, country_id, q/search, per_page, page
      */
     public function publicIndex(Request $request): JsonResponse
     {
+        $viewer = $this->optionalApiUser($request);
+        $role = $this->directoryRoleFor($viewer);
         $perPage = max(1, min((int) $request->input('per_page', 15), 50));
 
         $query = User::query()
-            ->where('role', 'retail_trader')
+            ->where('role', $role)
             ->where('is_approved', true)
             ->where('is_active', true)
             ->with(['city', 'country', 'storeMedia', 'socialLinks']);
@@ -148,24 +152,29 @@ class NetworkStoreController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'قائمة متاجر القطاعي',
+            'message' => $role === 'wholesale_distributor'
+                ? 'قائمة محلات الجملة'
+                : 'قائمة محلات القطاعي',
             'data' => NetworkStoreResource::collection($stores->items()),
             'meta' => [
                 'current_page' => $stores->currentPage(),
                 'per_page' => $stores->perPage(),
                 'total' => $stores->total(),
                 'last_page' => $stores->lastPage(),
+                'listed_role' => $role,
+                'viewer_role' => $viewer?->role,
             ],
         ]);
     }
 
     /**
      * GET /api/v1/network-stores/{store}
-     * {store} = user id (e.g. 92) or network_code (e.g. MG-W-000092)
+     * {store} = user id (e.g. 92) or network_code (e.g. MG-W-000092 / MG-R-…)
      */
-    public function publicShow(string $store): JsonResponse
+    public function publicShow(Request $request, string $store): JsonResponse
     {
-        $user = $this->resolvePublicNetworkStore($store);
+        $viewer = $this->optionalApiUser($request);
+        $user = $this->resolvePublicNetworkStore($store, $viewer);
 
         if (! $user) {
             return response()->json(['status' => false, 'message' => 'المتجر غير موجود'], 404);
@@ -183,7 +192,37 @@ class NetworkStoreController extends Controller
         ]);
     }
 
-    protected function resolvePublicNetworkStore(string $store): ?User
+    /**
+     * Plumber → retail shops. Retail trader → wholesale shops.
+     */
+    protected function directoryRoleFor(?User $viewer): string
+    {
+        if ($viewer?->isRetailTrader()) {
+            return 'wholesale_distributor';
+        }
+
+        return 'retail_trader';
+    }
+
+    protected function optionalApiUser(Request $request): ?User
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+        if ($user instanceof User) {
+            return $user;
+        }
+
+        $bearer = $request->bearerToken();
+        if (! $bearer) {
+            return null;
+        }
+
+        $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($bearer);
+        $tokenable = $accessToken?->tokenable;
+
+        return $tokenable instanceof User ? $tokenable : null;
+    }
+
+    protected function resolvePublicNetworkStore(string $store, ?User $viewer = null): ?User
     {
         $key = trim($store);
 
@@ -191,8 +230,8 @@ class NetworkStoreController extends Controller
             return null;
         }
 
-        // Public vendor/store detail for plumbers: retail traders only.
-        $query = User::query()->where('role', 'retail_trader');
+        $role = $this->directoryRoleFor($viewer);
+        $query = User::query()->where('role', $role);
 
         if (ctype_digit($key)) {
             return (clone $query)->whereKey((int) $key)->first();

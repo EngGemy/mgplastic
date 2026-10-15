@@ -30,7 +30,8 @@ Role must be `plumber`. Any other role gets **403** and:
 
 ## App flow
 
-1. Plumber picks a shop from `GET /api/v1/network-stores`. Use that store’s `id` as `retail_trader_id`.
+1. Plumber (with Bearer token) picks a shop from `GET /api/v1/network-stores` — lists **retail** shops. Use that store’s `id` as `retail_trader_id`.
+   Retail trader calling the same endpoint gets **wholesale** shops instead; send the chosen id as `supplier_id` on `POST /api/v1/mobile/trader/orders`.
 2. Load products with that id:
 
 ```http

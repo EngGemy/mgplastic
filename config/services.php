@@ -50,6 +50,7 @@ return [
     /*
     | WhatsApp customer alerts (orders + invoices).
     | driver=log → builds message/link only (staff can open wa.me).
+    | driver=evolution → Evolution API (Baileys) self-hosted sendText.
     | driver=libyasms → https://docs.libyasms.com WhatsApp text API.
     | driver=http → POST JSON {to,message} to WHATSAPP_API_URL with Bearer token.
     */
@@ -60,6 +61,13 @@ return [
             'base_url' => env('WHATSAPP_LIBYASMS_URL', 'https://whatsapp.libyasms.com'),
             'token' => env('WHATSAPP_LIBYASMS_TOKEN'),
             'instance_id' => env('WHATSAPP_LIBYASMS_INSTANCE_ID'),
+        ],
+        'evolution' => [
+            'base_url' => env('WHATSAPP_EVOLUTION_URL'),
+            'api_key' => env('WHATSAPP_EVOLUTION_API_KEY'),
+            'instance' => env('WHATSAPP_EVOLUTION_INSTANCE', 'mg-plastic'),
+            // v2 → {number,text} | v1 → {number,textMessage:{text}}
+            'version' => env('WHATSAPP_EVOLUTION_VERSION', 'v2'),
         ],
         'http' => [
             'url' => env('WHATSAPP_API_URL'),

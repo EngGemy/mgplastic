@@ -48,6 +48,8 @@ class OrderController extends Controller
     public function store(Request $request): JsonResponse
     {
         $v = Validator::make($request->all(), [
+            'supplier_id' => ['nullable', 'integer', 'exists:users,id'],
+            'wholesale_distributor_id' => ['nullable', 'integer', 'exists:users,id'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'lines.*.quantity' => ['required', 'integer', 'min:1'],
@@ -63,7 +65,11 @@ class OrderController extends Controller
                 requester: $request->user(),
                 channel: OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL,
                 lines: $request->input('lines'),
-                meta: ['note' => $request->input('note')],
+                meta: [
+                    'note' => $request->input('note'),
+                    'supplier_id' => $request->input('supplier_id') ?? $request->input('wholesale_distributor_id'),
+                    'wholesale_distributor_id' => $request->input('wholesale_distributor_id') ?? $request->input('supplier_id'),
+                ],
             );
 
             return $this->created(new OrderApiResource($this->loadedOrder($order)), 'تم إرسال الطلب لموزّع الجملة');
