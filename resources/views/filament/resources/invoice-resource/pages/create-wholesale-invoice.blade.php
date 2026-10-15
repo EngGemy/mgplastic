@@ -95,13 +95,24 @@
                                 <div class="pos-cart-line-mid">
                                     <div class="pos-qty">
                                         <button type="button" wire:click="decrementQty('{{ $key }}')">−</button>
-                                        <input type="number" min="1"
-                                            value="{{ $line['quantity'] }}"
-                                            wire:change="setQuantity('{{ $key }}', $event.target.value)">
+                                        @if(!empty($line['pieces_per_box']))
+                                            <input type="number" min="1"
+                                                value="{{ $line['boxes'] }}"
+                                                wire:change="setBoxes('{{ $key }}', $event.target.value)">
+                                        @else
+                                            <input type="number" min="1"
+                                                value="{{ $line['quantity'] }}"
+                                                wire:change="setQuantity('{{ $key }}', $event.target.value)">
+                                        @endif
                                         <button type="button" wire:click="incrementQty('{{ $key }}')">+</button>
                                     </div>
                                 </div>
                                 <div class="pos-cart-line-bot">
+                                    @if(!empty($line['pieces_per_box']))
+                                        <span>{{ $line['boxes'] }} صندوق × {{ $line['pieces_per_box'] }} = {{ number_format($line['quantity']) }} قطعة</span>
+                                    @else
+                                        <span>{{ number_format($line['quantity']) }} وحدة</span>
+                                    @endif
                                     <span class="pos-line-points">
                                         ⭐ {{ (int) floor($line['quantity'] * $line['points_per_unit']) }} نقطة
                                     </span>
@@ -119,16 +130,119 @@
                 </div>
 
                 <button type="button"
-                    wire:click="issueInvoice"
-                    wire:loading.attr="disabled"
+                    wire:click="openReview"
                     class="pos-issue-btn"
-                    @disabled(empty($cart) || ! $wholesaleDistributorId)>
-                    <span wire:loading.remove wire:target="issueInvoice">✓ إصدار الفاتورة — {{ $this->nextInvoiceNumber }}</span>
-                    <span wire:loading wire:target="issueInvoice">جاري الإصدار...</span>
+                    @disabled(empty($cart))>
+                    مراجعة الفاتورة قبل الحفظ
                 </button>
 
-                <p class="pos-hint">بعد الإصدار تُربط الفاتورة بنظام توزيع النقاط (مصنع → جملة → قطاعي → سباك)</p>
+                <p class="pos-hint">الحفظ يتم بعد مراجعة الكميات والنقاط وموزع الجملة</p>
             </aside>
         </div>
     </div>
+
+    @if($reviewing)
+        <div class="pos-review-backdrop" dir="rtl">
+            <div class="pos-review" role="dialog" aria-modal="true" aria-labelledby="pos-review-title">
+                <header class="pos-review-head">
+                    <div>
+                        <p class="pos-review-kicker">مراجعة قبل الحفظ</p>
+                        <h2 id="pos-review-title">فاتورة {{ $this->nextInvoiceNumber }}</h2>
+                    </div>
+                    <button type="button" wire:click="closeReview" class="pos-review-close">رجوع</button>
+                </header>
+
+                <div class="pos-review-meta">
+                    <div>
+                        <span>موزع الجملة</span>
+                        <strong>{{ $this->selectedWholesalerName ?: 'لم يُختر' }}</strong>
+                    </div>
+                    <div>
+                        <span>الأصناف</span>
+                        <strong>{{ count($cart) }}</strong>
+                    </div>
+                    <div>
+                        <span>الوحدات</span>
+                        <strong>{{ number_format($this->totalUnits) }}</strong>
+                    </div>
+                    <div>
+                        <span>إجمالي النقاط</span>
+                        <strong>{{ number_format($this->totalPoints) }}</strong>
+                    </div>
+                </div>
+
+                @if($this->reviewIssues !== [])
+                    <ul class="pos-review-issues">
+                        @foreach($this->reviewIssues as $issue)
+                            <li>{{ $issue }}</li>
+                        @endforeach
+                    </ul>
+                @endif
+
+                <div class="pos-review-table-wrap">
+                    <table class="pos-review-table">
+                        <thead>
+                            <tr>
+                                <th>المنتج</th>
+                                <th>العدد</th>
+                                <th>العبوة</th>
+                                <th>الكمية</th>
+                                <th>نقطة / وحدة</th>
+                                <th>النقاط</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($cart as $key => $line)
+                                <tr wire:key="review-{{ $key }}" @class(['pos-review-row--warn' => (float) $line['points_per_unit'] <= 0 || (int) $line['quantity'] < 1])>
+                                    <td>
+                                        <div class="pos-review-product">
+                                            <span>{{ $line['name'] }}</span>
+                                            <button type="button" wire:click="removeLine('{{ $key }}')" class="pos-remove">×</button>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="pos-qty">
+                                            <button type="button" wire:click="decrementQty('{{ $key }}')">−</button>
+                                            @if(!empty($line['pieces_per_box']))
+                                                <input type="number" min="1"
+                                                    value="{{ $line['boxes'] }}"
+                                                    wire:change="setBoxes('{{ $key }}', $event.target.value)">
+                                            @else
+                                                <input type="number" min="1"
+                                                    value="{{ $line['quantity'] }}"
+                                                    wire:change="setQuantity('{{ $key }}', $event.target.value)">
+                                            @endif
+                                            <button type="button" wire:click="incrementQty('{{ $key }}')">+</button>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @if(!empty($line['pieces_per_box']))
+                                            {{ $line['boxes'] }} صندوق × {{ $line['pieces_per_box'] }}
+                                        @else
+                                            بالوحدة
+                                        @endif
+                                    </td>
+                                    <td>{{ number_format($line['quantity']) }}</td>
+                                    <td>{{ number_format((float) $line['points_per_unit'], 2) }}</td>
+                                    <td>{{ number_format((int) floor($line['quantity'] * $line['points_per_unit'])) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                <footer class="pos-review-actions">
+                    <button type="button" wire:click="closeReview" class="pos-review-back">رجوع للتعديل</button>
+                    <button type="button"
+                        wire:click="confirmIssue"
+                        wire:loading.attr="disabled"
+                        class="pos-issue-btn"
+                        @disabled($this->reviewIssues !== [])>
+                        <span wire:loading.remove wire:target="confirmIssue">تأكيد وحفظ الفاتورة</span>
+                        <span wire:loading wire:target="confirmIssue">جاري الحفظ...</span>
+                    </button>
+                </footer>
+            </div>
+        </div>
+    @endif
 </x-filament-panels::page>

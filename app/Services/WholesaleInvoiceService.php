@@ -38,9 +38,21 @@ class WholesaleInvoiceService
                 $pointsPerUnit = (float) ($line['points_per_unit'] ?? $product->points_per_unit ?? 0);
                 $linePoints = (int) floor($qty * $pointsPerUnit);
 
+                $piecesPerBox = (int) ($line['pieces_per_box'] ?? 0);
+                $boxes = (int) ($line['boxes'] ?? 0);
+                if ($piecesPerBox > 0 && $boxes > 0) {
+                    $qty = $boxes * $piecesPerBox;
+                    $linePoints = (int) floor($qty * $pointsPerUnit);
+                } else {
+                    $piecesPerBox = 0;
+                    $boxes = 0;
+                }
+
                 $preparedLines[] = [
                     'product_id' => $product->id,
                     'quantity' => $qty,
+                    'box_count' => $piecesPerBox > 0 ? $boxes : null,
+                    'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
                     'unit_price_cents' => 0,
                     'points_per_unit' => $pointsPerUnit,
                     'total_points' => $linePoints,
@@ -73,7 +85,13 @@ class WholesaleInvoiceService
             foreach ($preparedLines as $row) {
                 InvoiceItem::create([
                     'invoice_id' => $invoice->id,
-                    ...$row,
+                    'product_id' => $row['product_id'],
+                    'quantity' => $row['quantity'],
+                    'box_count' => $row['box_count'],
+                    'pieces_per_box' => $row['pieces_per_box'],
+                    'unit_price_cents' => $row['unit_price_cents'],
+                    'points_per_unit' => $row['points_per_unit'],
+                    'total_points' => $row['total_points'],
                 ]);
             }
 

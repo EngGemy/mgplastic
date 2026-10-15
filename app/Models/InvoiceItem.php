@@ -15,12 +15,16 @@ class InvoiceItem extends Model
         'invoice_id',
         'product_id',
         'quantity',
+        'box_count',
+        'pieces_per_box',
         'unit_price_cents',
         'points_per_unit',
         'total_points',
     ];
 
     protected $casts = [
+        'box_count' => 'integer',
+        'pieces_per_box' => 'integer',
         'points_per_unit' => 'decimal:4',
         'unit_price_cents' => 'decimal:2',
     ];

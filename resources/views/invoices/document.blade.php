@@ -335,7 +335,12 @@
                     @forelse($invoice->items as $item)
                         <tr>
                             <td class="col-product">{{ localized_name($item->product, 'name') }}</td>
-                            <td><strong>{{ number_format($item->quantity) }}</strong></td>
+                            <td>
+                                <strong>{{ number_format($item->quantity) }}</strong>
+                                @if((int) $item->box_count > 0 && (int) $item->pieces_per_box > 0)
+                                    <div style="font-size:0.75rem;color:#64748b;font-weight:600">{{ $item->box_count }} صندوق × {{ $item->pieces_per_box }}</div>
+                                @endif
+                            </td>
                             <td>{{ number_format($item->points_per_unit, 2) }}</td>
                             <td class="col-points">{{ number_format($item->total_points) }}</td>
                         </tr>

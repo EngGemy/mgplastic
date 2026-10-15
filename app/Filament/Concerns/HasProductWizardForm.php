@@ -229,6 +229,15 @@ trait HasProductWizardForm
             ])
                 ->hidden(fn (Get $get) => static::isAccessoriesCategory($get('product_category_id'))),
 
+            Forms\Components\TextInput::make('pieces_per_box')
+                ->label('عدد الوحدات في الصندوق')
+                ->numeric()
+                ->integer()
+                ->minValue(1)
+                ->suffix('قطعة')
+                ->placeholder('فارغ = يُباع بالوحدة')
+                ->helperText('للملحقات: كم قطعة داخل الصندوق. الفاتورة تضرب عدد الصناديق في هذا الرقم وتعطي الكمية كلها. المواسير تُباع بالوحدة فاتركه فارغاً. نفس الرقم يظهر في الشيت وعرض السعر.'),
+
             Forms\Components\Grid::make(2)->schema([
                 Forms\Components\TextInput::make('classification')
                     ->label('الدرجة')
@@ -362,12 +371,6 @@ trait HasProductWizardForm
             Forms\Components\Section::make('أسعار قائمة الأسعار')
                 ->description('تظهر في عرض السعر فقط. لا تُرسل للتطبيق ولا لكتالوج المنتجات ولا لنقاط البيع.')
                 ->schema([
-                    Forms\Components\TextInput::make('pieces_per_box')
-                        ->label('عبوة الصندوق')
-                        ->numeric()
-                        ->minValue(1)
-                        ->suffix('قطعة')
-                        ->helperText('مثال: 12 تُطبع 12-قطعة'),
                     $money('piece_price_lyd', 'سعر القطعة (دينار)', 'د.ل'),
                     $money('piece_price_aed', 'سعر القطعة (درهم)', 'د.إ'),
                     $money('box_price_lyd', 'سعر الصندوق (دينار)', 'د.ل'),

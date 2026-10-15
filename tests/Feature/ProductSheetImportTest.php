@@ -115,6 +115,39 @@ class ProductSheetImportTest extends TestCase
         @unlink($path);
     }
 
+    public function test_sheet_imports_and_exports_pieces_per_box(): void
+    {
+        $category = ProductCategory::factory()->create();
+        $path = $this->sheet([
+            [
+                'category_id' => $category->id,
+                'name_ar' => 'كوع',
+                'name_en' => 'Elbow',
+                'points_per_unit' => 2,
+                'point_value_type' => 'ثابت',
+                'point_value_fixed' => 0.1,
+                'pieces_per_box' => 12,
+            ],
+        ]);
+
+        $result = app(ProductSheetService::class)->import($path);
+
+        $this->assertSame([], $result['errors'], implode(' | ', $result['errors']));
+        $product = Product::query()->first();
+        $this->assertSame(12, $product->pieces_per_box);
+
+        $export = app(ProductSheetService::class)->exportPath(Product::query()->whereKey($product->id));
+        $sheet = IOFactory::load($export)->getSheetByName(ProductSheetService::PRODUCTS_SHEET);
+        $headers = $sheet->rangeToArray('A1:'.$sheet->getHighestDataColumn().'1')[0];
+        $column = array_search('عدد الوحدات في الصندوق', $headers, true);
+
+        $this->assertNotFalse($column);
+        $this->assertSame(12, (int) $sheet->getCell([$column + 1, 2])->getValue());
+
+        @unlink($path);
+        @unlink($export);
+    }
+
     public function test_export_round_trip_updates_the_same_product(): void
     {
         $category = ProductCategory::factory()->create();

@@ -47,6 +47,7 @@ class ProductSheetService
         'length_m' => ['الطول (م)', 'length_m'],
         'thickness_mm' => ['السمك (مم)', 'thickness_mm'],
         'volume_ml' => ['الحجم (مل)', 'volume_ml'],
+        'pieces_per_box' => ['عدد الوحدات في الصندوق', 'pieces_per_box', 'عبوة الصندوق'],
         'points_per_unit' => ['النقاط لكل وحدة', 'points_per_unit'],
         'point_value_type' => ['نوع التحويل', 'point_value_type'],
         'point_value_percent' => ['نسبة النقاط', 'point_value_percent'],
@@ -226,7 +227,7 @@ class ProductSheetService
         $sheet->freezePane('A2');
         $sheet->setAutoFilter("A1:{$lastCol}1");
 
-        $widths = [14, 16, 28, 28, 28, 28, 24, 24, 36, 36, 16, 12, 12, 12, 16, 14, 14, 14, 18, 28, 32];
+        $widths = [14, 16, 28, 28, 28, 28, 24, 24, 36, 36, 16, 12, 12, 12, 22, 16, 14, 14, 14, 18, 28, 32];
         foreach ($widths as $index => $width) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($index + 1))->setWidth($width);
         }
@@ -250,6 +251,7 @@ class ProductSheetService
             'length_m' => $product->length_m,
             'thickness_mm' => $product->thickness_mm,
             'volume_ml' => $product->volume_ml,
+            'pieces_per_box' => $product->pieces_per_box,
             'points_per_unit' => $product->points_per_unit,
             'point_value_type' => match ($product->point_value_type) {
                 'percent' => 'نسبة',
@@ -362,7 +364,8 @@ class ProductSheetService
             '6. عمود الصورة: مسار ملف موجود على السيرفر مثل products/main/pipe.jpg. ارفع الصور إلى مجلد المنتجات أولاً، أو اترك الخانة فارغة.',
             '7. «اسم التصنيف (للعرض)» للمعرفة فقط ولا يُستورد. الاعتماد على رقم التصنيف.',
             '8. عمود الوسوم: افصل الوسوم بفاصلة. الاقتراحات نفسها محفوظة على الفئة والتصنيف الفرعي.',
-            '9. بعد التعبئة ارفع الملف من صفحة المنتجات → شيت المنتجات → رفع الشيت.',
+            '9. «عدد الوحدات في الصندوق» للملحقات: كم قطعة داخل الصندوق. اتركه فارغاً للمواسير لأنها تُباع بالوحدة. اكتب - لمسحه من منتج موجود.',
+            '10. بعد التعبئة ارفع الملف من صفحة المنتجات → شيت المنتجات → رفع الشيت.',
         ];
 
         foreach ($lines as $index => $line) {
@@ -461,6 +464,7 @@ class ProductSheetService
         $this->applyOptionalNumber($payload, 'length_m', $values['length_m'] ?? '', $errors, 'الطول');
         $this->applyOptionalNumber($payload, 'thickness_mm', $values['thickness_mm'] ?? '', $errors, 'السمك');
         $this->applyOptionalNumber($payload, 'volume_ml', $values['volume_ml'] ?? '', $errors, 'الحجم');
+        $this->applyPiecesPerBox($payload, (string) ($values['pieces_per_box'] ?? ''), $errors);
 
         $points = $this->optionalNumber($values['points_per_unit'] ?? '', $errors, 'النقاط لكل وحدة');
         $type = $this->pointType($values['point_value_type'] ?? '', $errors);
@@ -612,6 +616,31 @@ class ProductSheetService
             return;
         }
         $payload[$column] = $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  list<string>  $errors
+     */
+    private function applyPiecesPerBox(array &$payload, string $raw, array &$errors): void
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return;
+        }
+        if ($raw === '-' || $raw === '—') {
+            $payload['pieces_per_box'] = null;
+
+            return;
+        }
+
+        if (! preg_match('/^\d+$/', $raw) || (int) $raw < 1) {
+            $errors[] = 'عدد الوحدات في الصندوق يجب أن يكون رقماً صحيحاً أكبر من صفر، أو فارغاً للبيع بالوحدة.';
+
+            return;
+        }
+
+        $payload['pieces_per_box'] = (int) $raw;
     }
 
     private function applyTranslation(Product $product, string $locale, string $attribute, string $raw): void

@@ -15,7 +15,9 @@ use Illuminate\Support\Collection;
 
 class CreateWholesaleInvoice extends Page
 {
-    use SetsCartQuantity;
+    use SetsCartQuantity {
+        setQuantity as applyCartQuantity;
+    }
 
     protected static string $resource = InvoiceResource::class;
 
@@ -39,6 +41,8 @@ class CreateWholesaleInvoice extends Page
 
     /** @var array<string, array{product_id:int, name:string, quantity:int, points_per_unit:float, image:?string}> */
     public array $cart = [];
+
+    public bool $reviewing = false;
 
     public static function getNavigationGroup(): ?string
     {
@@ -119,28 +123,86 @@ class CreateWholesaleInvoice extends Page
         $name = localized_name($product, 'name', "منتج #{$productId}");
 
         if (isset($this->cart[$key])) {
-            $this->cart[$key]['quantity']++;
+            if ($this->isBoxed($key)) {
+                $this->setBoxes($key, (int) $this->cart[$key]['boxes'] + 1);
+            } else {
+                $this->cart[$key]['quantity']++;
+            }
         } else {
+            $piecesPerBox = (int) ($product->pieces_per_box ?? 0);
+            $boxed = $piecesPerBox > 0;
+
             $this->cart[$key] = [
                 'product_id' => $productId,
                 'name' => $name,
-                'quantity' => 1,
+                'quantity' => $boxed ? $piecesPerBox : 1,
+                'boxes' => $boxed ? 1 : null,
+                'pieces_per_box' => $boxed ? $piecesPerBox : null,
                 'points_per_unit' => (float) ($product->points_per_unit ?? 0),
                 'image' => $product->main_image,
             ];
         }
     }
 
+    public function isBoxed(string $key): bool
+    {
+        return (int) ($this->cart[$key]['pieces_per_box'] ?? 0) > 0;
+    }
+
+    public function setBoxes(string $key, mixed $value): void
+    {
+        if (! isset($this->cart[$key]) || ! $this->isBoxed($key)) {
+            return;
+        }
+
+        $boxes = (int) $value;
+        if ($boxes < 1) {
+            unset($this->cart[$key]);
+            if ($this->cart === []) {
+                $this->reviewing = false;
+            }
+
+            return;
+        }
+
+        $pieces = (int) $this->cart[$key]['pieces_per_box'];
+        $this->cart[$key]['boxes'] = $boxes;
+        $this->cart[$key]['quantity'] = $boxes * $pieces;
+    }
+
+    public function setQuantity(string $key, mixed $value): void
+    {
+        $this->applyCartQuantity($key, $value);
+
+        if ($this->cart === []) {
+            $this->reviewing = false;
+        }
+    }
+
     public function incrementQty(string $key): void
     {
-        if (isset($this->cart[$key])) {
-            $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
+        if (! isset($this->cart[$key])) {
+            return;
         }
+
+        if ($this->isBoxed($key)) {
+            $this->setBoxes($key, (int) $this->cart[$key]['boxes'] + 1);
+
+            return;
+        }
+
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
     }
 
     public function decrementQty(string $key): void
     {
         if (! isset($this->cart[$key])) {
+            return;
+        }
+
+        if ($this->isBoxed($key)) {
+            $this->setBoxes($key, (int) $this->cart[$key]['boxes'] - 1);
+
             return;
         }
 
@@ -150,6 +212,10 @@ class CreateWholesaleInvoice extends Page
     public function removeLine(string $key): void
     {
         unset($this->cart[$key]);
+
+        if ($this->cart === []) {
+            $this->reviewing = false;
+        }
     }
 
     public function getTotalPointsProperty(): int
@@ -159,8 +225,93 @@ class CreateWholesaleInvoice extends Page
         );
     }
 
+    public function getTotalUnitsProperty(): int
+    {
+        return (int) collect($this->cart)->sum(fn ($line) => (int) $line['quantity']);
+    }
+
+    public function getSelectedWholesalerNameProperty(): string
+    {
+        if (! $this->wholesaleDistributorId) {
+            return '';
+        }
+
+        return (string) (User::query()->whereKey($this->wholesaleDistributorId)->value('name') ?? '');
+    }
+
+    /** @return array<int, string> */
+    public function getReviewIssuesProperty(): array
+    {
+        $issues = [];
+
+        if (! $this->wholesaleDistributorId) {
+            $issues[] = 'اختر موزع الجملة المستلم';
+        }
+
+        if ($this->cart === []) {
+            $issues[] = 'الفاتورة لا تحتوي على منتجات';
+        }
+
+        foreach ($this->cart as $line) {
+            $name = (string) ($line['name'] ?? 'منتج');
+
+            if ((int) ($line['quantity'] ?? 0) < 1) {
+                $issues[] = "كمية «{$name}» يجب أن تكون 1 على الأقل";
+            }
+
+            if ((float) ($line['points_per_unit'] ?? 0) <= 0) {
+                $issues[] = "«{$name}» بدون نقاط للوحدة — احذفه أو راجع نقاط المنتج";
+            }
+        }
+
+        return $issues;
+    }
+
+    public function openReview(): void
+    {
+        if ($this->cart === []) {
+            Notification::make()->danger()->title('أضف منتجات للفاتورة أولاً')->send();
+
+            return;
+        }
+
+        $this->reviewing = true;
+    }
+
+    public function closeReview(): void
+    {
+        $this->reviewing = false;
+    }
+
+    public function confirmIssue(): void
+    {
+        if (! $this->reviewing) {
+            $this->openReview();
+
+            return;
+        }
+
+        if ($this->reviewIssues !== []) {
+            Notification::make()
+                ->danger()
+                ->title('لا يمكن الحفظ قبل معالجة الملاحظات')
+                ->body(implode(' — ', $this->reviewIssues))
+                ->send();
+
+            return;
+        }
+
+        $this->issueInvoice();
+    }
+
     public function issueInvoice(): void
     {
+        if (! $this->reviewing || $this->reviewIssues !== []) {
+            $this->openReview();
+
+            return;
+        }
+
         $user = auth()->user();
 
         if ($user?->isWholesaleDistributor()) {
@@ -194,6 +345,7 @@ class CreateWholesaleInvoice extends Page
                 ->body("رقم {$invoice->number} — إجمالي {$this->totalPoints} نقطة")
                 ->send();
 
+            $this->reviewing = false;
             $this->redirect(route('admin.invoices.print', $invoice).'?auto=1');
         } catch (\DomainException $e) {
             Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();
