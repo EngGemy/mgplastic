@@ -14,9 +14,27 @@ class ViewUser extends ViewRecord
 {
     protected static string $resource = UserResource::class;
 
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+        $this->record->loadMissing(['country', 'city', 'parentDistributor', 'socialLinks']);
+    }
+
     public function getTitle(): string
     {
         return $this->record->name ?? 'عرض المستخدم';
+    }
+
+    public function getHeading(): string
+    {
+        return 'ملف المستخدم';
+    }
+
+    public function getSubheading(): ?string
+    {
+        return $this->record->phone
+            ? $this->record->phone.' · #'.$this->record->id
+            : '#'.$this->record->id;
     }
 
     public function infolist(Infolist $infolist): Infolist

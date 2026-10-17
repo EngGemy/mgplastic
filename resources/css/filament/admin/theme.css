@@ -1942,3 +1942,87 @@
 .dec-badge{display:inline-block;background:#eff6ff;color:#1d4ed8;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800}
 .dec-empty{text-align:center;color:#94a3b8;padding:18px !important}
 .dec-note{font-size:12px;color:#475569;line-height:1.6;margin:12px 0 0}
+
+/* ── User profile page ── */
+.fi-in-entry:has(.mg-user){padding:0!important}
+.fi-in-entry:has(.mg-user) .fi-in-entry-content{padding:0!important}
+.fi-in-entry:has(.mg-user) .fi-in-entry-label{display:none!important}
+.mg-user{font-family:Cairo,sans-serif;color:#0f172a;display:flex;flex-direction:column;gap:14px}
+.mg-user-hero{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center;background:linear-gradient(135deg,#0b1f3a 0%,#123a6b 55%,#1a56db 100%);color:#fff;border-radius:20px;padding:22px 24px}
+.mg-user--green .mg-user-hero{background:linear-gradient(135deg,#064e3b,#059669 60%,#14b8a6)}
+.mg-user--violet .mg-user-hero{background:linear-gradient(135deg,#1e1b4b,#4f46e5 55%,#6366f1)}
+.mg-user--slate .mg-user-hero{background:linear-gradient(135deg,#0f172a,#334155 60%,#64748b)}
+.mg-user-identity{display:flex;gap:16px;align-items:center;min-width:0}
+.mg-user-avatar{width:84px;height:84px;border-radius:20px;object-fit:cover;border:3px solid rgba(255,255,255,.45);background:#fff;flex-shrink:0}
+.mg-user-avatar--empty{display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:900;color:#1a56db}
+.mg-user-role{font-size:12px;font-weight:800;opacity:.85;margin-bottom:4px}
+.mg-user-name{margin:0;font-size:1.55rem;font-weight:900;line-height:1.2}
+.mg-user-brand{font-size:13px;font-weight:700;opacity:.9;margin-top:2px}
+.mg-user-meta{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:8px;font-size:12px;font-weight:600;opacity:.92}
+.mg-user-code{margin-top:10px}
+.mg-user-flags{display:flex;flex-wrap:wrap;gap:8px}
+.mg-user-flag{padding:7px 12px;border-radius:999px;font-size:12px;font-weight:800;background:rgba(255,255,255,.16)}
+.mg-user-flag.is-on{background:rgba(16,185,129,.92)}
+.mg-user-flag.is-off{background:rgba(239,68,68,.88)}
+.mg-user-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+@media(max-width:1100px){.mg-user-kpis{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:640px){.mg-user-kpis{grid-template-columns:repeat(2,1fr)}}
+.mg-user-kpi{background:#fff;border:1.5px solid #e2e8f0;border-radius:16px;padding:14px 12px}
+.mg-user-kpi-val{font-size:1.2rem;font-weight:900;line-height:1.15;color:#0f172a}
+.mg-user-kpi-lbl{font-size:11px;font-weight:700;color:#64748b;margin-top:4px}
+.mg-user-kpi--amber{background:#fffbeb;border-color:#fde68a}
+.mg-user-kpi--amber .mg-user-kpi-val{color:#b45309}
+.mg-user-kpi--green{background:#ecfdf5;border-color:#a7f3d0}
+.mg-user-kpi--green .mg-user-kpi-val{color:#047857}
+.mg-user-kpi--blue{background:#eff6ff;border-color:#bfdbfe}
+.mg-user-kpi--blue .mg-user-kpi-val{color:#1d4ed8}
+.mg-user-kpi--orange{background:#fff7ed;border-color:#fed7aa}
+.mg-user-kpi--orange .mg-user-kpi-val{color:#c2410c}
+.mg-user-kpi--violet{background:#eef2ff;border-color:#c7d2fe}
+.mg-user-kpi--violet .mg-user-kpi-val{color:#4338ca}
+.mg-user-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
+@media(max-width:900px){.mg-user-grid{grid-template-columns:1fr}}
+.mg-user-card{background:#fff;border:1.5px solid #e2e8f0;border-radius:18px;padding:16px 18px}
+.mg-user-card--wide{grid-column:1/-1}
+.mg-user-card h3{margin:0 0 14px;font-size:14px;font-weight:900;padding-bottom:10px;border-bottom:1px solid #f1f5f9}
+.mg-user-subh{margin:18px 0 10px;font-size:13px;font-weight:800;color:#334155}
+.mg-user-dl{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;margin:0}
+.mg-user-dl-full{grid-column:1/-1}
+@media(max-width:520px){.mg-user-dl{grid-template-columns:1fr}}
+.mg-user-dl dt{font-size:11px;font-weight:800;color:#94a3b8;margin:0 0 3px}
+.mg-user-dl dd{margin:0;font-size:13px;font-weight:700;color:#0f172a;word-break:break-word}
+.mg-user-dl a{color:#1a56db;font-weight:700}
+.mg-user-perms{margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9}
+.mg-user-perms-title{font-size:11px;font-weight:800;color:#94a3b8;margin-bottom:8px}
+.mg-user-perm-list{display:flex;flex-wrap:wrap;gap:6px}
+.mg-user-perm{display:inline-block;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+.mg-user-perm--full{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.mg-user-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.mg-user-links li{display:flex;flex-direction:column;gap:2px}
+.mg-user-links span{font-size:11px;font-weight:800;color:#94a3b8}
+.mg-user-links a{font-size:12px;font-weight:700;color:#1a56db;word-break:break-all}
+.mg-user-about{margin-bottom:12px}
+.mg-user-about:last-child{margin-bottom:0}
+.mg-user-about strong{display:block;font-size:11px;color:#94a3b8;margin-bottom:4px}
+.mg-user-about p{margin:0;font-size:13px;line-height:1.75;color:#334155;white-space:pre-line}
+.mg-user-finance-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px}
+@media(max-width:700px){.mg-user-finance-sum{grid-template-columns:repeat(2,1fr)}}
+.mg-user-finance-sum div{background:#f8fafc;border-radius:12px;padding:10px 12px}
+.mg-user-finance-sum span{display:block;font-size:11px;font-weight:700;color:#64748b}
+.mg-user-finance-sum strong{font-size:13px;font-weight:900}
+.mg-user-table-wrap{overflow:auto}
+.mg-user-table{width:100%;border-collapse:collapse;font-size:12px}
+.mg-user-table th{text-align:right;padding:8px 6px;background:#f8fafc;color:#64748b;font-weight:800;white-space:nowrap}
+.mg-user-table td{padding:9px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mg-user-badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800}
+.mg-user-badge--ok{background:#ecfdf5;color:#047857}
+.mg-user-badge--warn{background:#fffbeb;color:#b45309}
+.mg-user-badge--danger{background:#fef2f2;color:#b91c1c}
+.mg-user-badge--info{background:#eff6ff;color:#1d4ed8}
+.mg-user-badge--gray{background:#f1f5f9;color:#475569}
+.mg-user-muted{font-size:11px;color:#94a3b8;font-weight:600}
+.mg-user-empty{color:#94a3b8;font-size:13px;font-weight:700;text-align:center;padding:12px 0;margin:0}
+.mg-user-table .is-pos{color:#047857;font-weight:800}
+.mg-user-table .is-neg{color:#b91c1c;font-weight:800}
+.mg-user-video{border-radius:14px;overflow:hidden;background:#000;aspect-ratio:16/9}
+.mg-user-video video{width:100%;height:100%;display:block}
