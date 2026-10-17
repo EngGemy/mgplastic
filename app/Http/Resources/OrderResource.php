@@ -156,11 +156,7 @@ class OrderResource extends JsonResource
                 }
             }
             if ($status === OrderStatus::PLACED) {
-                if (! $needsStockGate || $resolveStock()) {
-                    $actions[] = 'confirm';
-                } else {
-                    $blocked[] = ['action' => 'confirm', 'reason' => $fulfillReason];
-                }
+                $actions[] = 'confirm';
             }
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
                 if (! $needsStockGate || $resolveStock()) {
@@ -176,12 +172,9 @@ class OrderResource extends JsonResource
         }
 
         if ($isSupplier && ! $this->isPlumberChannel()) {
+            // Confirm is always allowed — stock is gated on ship/deliver.
             if ($status === OrderStatus::PLACED) {
-                if (! $needsStockGate || $resolveStock()) {
-                    $actions[] = 'confirm';
-                } else {
-                    $blocked[] = ['action' => 'confirm', 'reason' => $fulfillReason];
-                }
+                $actions[] = 'confirm';
             }
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
                 if (! $needsStockGate || $resolveStock()) {

@@ -110,7 +110,7 @@ class WholesaleOrderSupplierDeliverTest extends TestCase
         $this->assertTrue(OrderResource::canMarkDeliveredAsSupplier($order->fresh()));
     }
 
-    public function test_confirm_fails_when_wholesaler_has_no_stock(): void
+    public function test_ship_fails_when_wholesaler_has_no_stock(): void
     {
         $wholesaler = User::factory()->create([
             'role' => 'wholesale_distributor',
@@ -128,8 +128,10 @@ class WholesaleOrderSupplierDeliverTest extends TestCase
             ['product_id' => $product->id, 'quantity' => 1],
         ], ['supplier_id' => $wholesaler->id]);
 
+        app(OrderService::class)->confirm($order, $wholesaler);
+
         $this->expectException(\DomainException::class);
         $this->expectExceptionMessage('مخزون موزّع الجملة');
-        app(OrderService::class)->confirm($order, $wholesaler);
+        app(OrderService::class)->ship($order->fresh(), $wholesaler);
     }
 }

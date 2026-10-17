@@ -83,13 +83,10 @@ class OrderService
         return $order->load('items');
     }
 
-    /** Supplier accepts the order. */
+    /** Supplier accepts the order. Stock is enforced on ship/deliver, not confirm. */
     public function confirm(Order $order, User $actor, ?string $note = null): Order
     {
         $this->assertStatus($order, [OrderStatus::PLACED], 'لا يمكن تأكيد هذا الطلب في حالته الحالية');
-
-        $order->loadMissing(['items', 'supplier', 'requester']);
-        $this->assertSupplierCanFulfill($order);
 
         $order->update([
             'status' => OrderStatus::CONFIRMED,

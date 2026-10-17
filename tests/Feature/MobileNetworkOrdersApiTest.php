@@ -24,6 +24,7 @@ class MobileNetworkOrdersApiTest extends TestCase
             'is_active' => true,
             'phone' => '0911111111',
         ]);
+        User::factory()->create(['role' => 'super_admin']);
         $retail = User::factory()->create([
             'role' => 'retail_trader',
             'is_approved' => true,
@@ -31,6 +32,30 @@ class MobileNetworkOrdersApiTest extends TestCase
             'phone' => '0922222222',
         ]);
         $product = Product::factory()->create(['points_per_unit' => 2]);
+
+        // Confirm/ship now require wholesaler stock — seed incoming inventory first.
+        $invoice = Invoice::factory()->create([
+            'status' => 'approved',
+            'invoice_type' => 'wholesale_pos',
+            'invoice_flow' => 'incoming',
+            'wholesale_distributor_id' => $wholesaler->id,
+        ]);
+        InvoiceItem::factory()->create([
+            'invoice_id' => $invoice->id,
+            'product_id' => $product->id,
+            'quantity' => 20,
+            'points_per_unit' => 2,
+            'total_points' => 40,
+        ]);
+        app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
+
+        $this->assertGreaterThan(
+            0,
+            (int) app(\App\Services\NetworkInventoryService::class)
+                ->stockForWholesaler($wholesaler->fresh())
+                ->sum('available_qty'),
+            'Wholesaler inventory must be seeded before confirm/ship'
+        );
 
         Sanctum::actingAs($retail);
 
@@ -59,12 +84,21 @@ class MobileNetworkOrdersApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.id', $orderId);
 
-        $this->postJson("/api/v1/mobile/distributor/orders/{$orderId}/confirm", [
+        $confirm = $this->postJson("/api/v1/mobile/distributor/orders/{$orderId}/confirm", [
             'note' => 'تم القبول',
-        ])
-            ->assertOk()
-            ->assertJsonPath('data.status', OrderStatus::CONFIRMED)
-            ->assertJsonPath('data.available_actions', fn ($actions) => in_array('deliver', $actions, true));
+        ]);
+
+        $confirm->assertOk()
+            ->assertJsonPath('data.status', OrderStatus::CONFIRMED);
+
+        $actions = $confirm->json('data.available_actions') ?? [];
+        $this->assertTrue(
+            in_array('deliver', $actions, true) || in_array('ship', $actions, true),
+            'Expected deliver or ship after confirm, got: '.json_encode([
+                'actions' => $actions,
+                'blocked' => $confirm->json('data.blocked_actions'),
+            ], JSON_UNESCAPED_UNICODE)
+        );
 
         Sanctum::actingAs($retail);
         $this->getJson('/api/v1/mobile/notifications?order_id='.$orderId)

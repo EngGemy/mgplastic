@@ -30,7 +30,7 @@ class OrderController extends Controller
         $orders = Order::query()
             ->placedBy($user)
             ->where('channel', OrderStatus::CHANNEL_RETAIL_TO_PLUMBER)
-            ->with(['items', 'requester:id,name,brand_name', 'supplier:id,name,brand_name'])
+            ->with(['items', 'requester:id,name,brand_name,role', 'supplier:id,name,brand_name,role'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->latest()
             ->get();

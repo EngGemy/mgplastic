@@ -9,10 +9,11 @@ trait InteractsWithOrders
 {
     protected function loadedOrder(Order $order): Order
     {
+        // Include role — stock/permission helpers call isWholesaleDistributor()/isRetailTrader().
         return $order->load([
             'items',
-            'requester:id,name,brand_name',
-            'supplier:id,name,brand_name',
+            'requester:id,name,brand_name,role',
+            'supplier:id,name,brand_name,role',
         ]);
     }
 
