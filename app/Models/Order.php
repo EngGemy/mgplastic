@@ -84,6 +84,11 @@ class Order extends Model
         return $this->channel === OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE;
     }
 
+    public function isWarehouseChannel(): bool
+    {
+        return $this->channel === OrderStatus::CHANNEL_WAREHOUSE_TO_WHOLESALE;
+    }
+
     public function isRetailChannel(): bool
     {
         return $this->channel === OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL;

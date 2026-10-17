@@ -4,7 +4,11 @@ namespace App\Filament\Resources\InvoiceResource\RelationManagers;
 
 use App\Filament\Concerns\HandlesInvoiceReturns;
 use App\Models\Invoice;
+use App\Models\InvoiceReturn;
+use App\Services\InvoiceReturnService;
+use App\Support\InvoiceReturnStatus;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -38,7 +42,6 @@ class ReturnsRelationManager extends RelationManager
         return $table
             ->modifyQueryUsing(fn ($query) => $query
                 ->with(['items.product.translations', 'fromUser', 'toUser', 'creator'])
-                ->where('status', 'confirmed')
                 ->latest('id'))
             ->columns([
                 Tables\Columns\TextColumn::make('return_number')
@@ -46,6 +49,12 @@ class ReturnsRelationManager extends RelationManager
                     ->weight('bold')
                     ->searchable()
                     ->color('danger'),
+
+                Tables\Columns\TextColumn::make('status')
+                    ->label('الحالة')
+                    ->formatStateUsing(fn ($state) => InvoiceReturnStatus::label(InvoiceReturnStatus::normalize($state)))
+                    ->badge()
+                    ->color(fn ($state) => InvoiceReturnStatus::color(InvoiceReturnStatus::normalize($state))),
 
                 Tables\Columns\TextColumn::make('total_quantity')
                     ->label('الكمية')
@@ -84,6 +93,34 @@ class ReturnsRelationManager extends RelationManager
                 $this->invoiceReturnTableAction(),
             ])
             ->actions([
+                Tables\Actions\Action::make('approve')
+                    ->label('قبول')
+                    ->icon('heroicon-o-check')
+                    ->color('success')
+                    ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status))
+                    ->requiresConfirmation()
+                    ->action(function (InvoiceReturn $record) {
+                        try {
+                            app(InvoiceReturnService::class)->approve($record, auth()->user());
+                            Notification::make()->success()->title('تم قبول المرتجع')->send();
+                        } catch (\DomainException $e) {
+                            Notification::make()->danger()->title('تعذّر القبول')->body($e->getMessage())->send();
+                        }
+                    }),
+                Tables\Actions\Action::make('reject')
+                    ->label('رفض')
+                    ->icon('heroicon-o-x-mark')
+                    ->color('danger')
+                    ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status))
+                    ->requiresConfirmation()
+                    ->action(function (InvoiceReturn $record) {
+                        try {
+                            app(InvoiceReturnService::class)->reject($record, auth()->user());
+                            Notification::make()->success()->title('تم رفض المرتجع')->send();
+                        } catch (\DomainException $e) {
+                            Notification::make()->danger()->title('تعذّر الرفض')->body($e->getMessage())->send();
+                        }
+                    }),
                 Tables\Actions\Action::make('details')
                     ->label('التفاصيل')
                     ->icon('heroicon-o-eye')
@@ -97,7 +134,7 @@ class ReturnsRelationManager extends RelationManager
             ])
             ->bulkActions([])
             ->emptyStateHeading('لا توجد مرتجعات')
-            ->emptyStateDescription('سجّل مرتجعاً لخصم الكميات والنقاط من صافي هذه الفاتورة')
+            ->emptyStateDescription('سجّل مرتجعاً — يبقى معلّقاً حتى قبول المستلم')
             ->emptyStateIcon('heroicon-o-arrow-uturn-left')
             ->heading(function () {
                 $summary = $this->getOwnerRecord()->returnSummary();

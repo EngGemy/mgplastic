@@ -79,18 +79,50 @@ class InvoiceReturnController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        $scope = $request->string('scope')->toString();
+        $status = $request->string('status')->toString();
 
         $returns = InvoiceReturn::query()
             ->where('tier', 3)
-            ->where(function ($q) use ($user) {
-                $q->where('from_user_id', $user->id)->orWhere('to_user_id', $user->id);
-            })
+            ->when($scope === 'incoming' || $scope === 'needs_action', fn ($q) => $q
+                ->where('to_user_id', $user->id)
+                ->when($scope === 'needs_action', fn ($qq) => $qq->where('status', 'pending')))
+            ->when($scope === 'outgoing' || $scope === 'placed', fn ($q) => $q->where('from_user_id', $user->id))
+            ->when(! in_array($scope, ['incoming', 'needs_action', 'outgoing', 'placed'], true), fn ($q) => $q
+                ->where(function ($qq) use ($user) {
+                    $qq->where('from_user_id', $user->id)->orWhere('to_user_id', $user->id);
+                }))
+            ->when($status !== '', fn ($q) => $q->where('status', $status))
             ->with(['items.product.translations', 'fromUser:id,name,brand_name', 'toUser:id,name,brand_name'])
             ->latest()
             ->limit(100)
             ->get();
 
         return $this->success(InvoiceReturnResource::collection($returns), 'قائمة المرتجعات');
+    }
+
+    public function approve(Request $request, InvoiceReturn $return): JsonResponse
+    {
+        if ($denied = $this->assertCanViewReturn($return, $request->user())) {
+            return $denied;
+        }
+
+        return $this->runReturnDecision(
+            fn () => $this->returns()->approve($return, $request->user(), $request->input('note')),
+            'تم قبول المرتجع',
+        );
+    }
+
+    public function reject(Request $request, InvoiceReturn $return): JsonResponse
+    {
+        if ($denied = $this->assertCanViewReturn($return, $request->user())) {
+            return $denied;
+        }
+
+        return $this->runReturnDecision(
+            fn () => $this->returns()->reject($return, $request->user(), $request->input('reason') ?? $request->input('note')),
+            'تم رفض المرتجع',
+        );
     }
 
     public function previewDistribution(Request $request, InvoiceDistribution $distribution): JsonResponse
@@ -132,7 +164,7 @@ class InvoiceReturnController extends Controller
                 $request->user(),
                 $payload['note'],
             ),
-            'تم تسجيل مرتجع السباك→القطاعي بنجاح',
+            'تم إرسال المرتجع وبانتظار موافقة التاجر القطاعي',
         );
     }
 

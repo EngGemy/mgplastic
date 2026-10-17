@@ -12,6 +12,7 @@ class OrderStatus
     public const REJECTED = 'rejected';
 
     public const CHANNEL_FACTORY_TO_WHOLESALE = 'factory_to_wholesale';
+    public const CHANNEL_WAREHOUSE_TO_WHOLESALE = 'warehouse_to_wholesale';
     public const CHANNEL_WHOLESALE_TO_RETAIL = 'wholesale_to_retail';
     public const CHANNEL_RETAIL_TO_PLUMBER = 'retail_to_plumber';
 
@@ -105,6 +106,7 @@ class OrderStatus
     {
         return [
             self::CHANNEL_FACTORY_TO_WHOLESALE => 'من المصنع لموزع الجملة',
+            self::CHANNEL_WAREHOUSE_TO_WHOLESALE => 'من المخزن المركزي لموزع الجملة',
             self::CHANNEL_WHOLESALE_TO_RETAIL => 'من موزع الجملة للتاجر القطاعي',
             self::CHANNEL_RETAIL_TO_PLUMBER => 'من السباك للتاجر القطاعي',
         ];
@@ -119,6 +121,7 @@ class OrderStatus
     {
         return match ($channel) {
             self::CHANNEL_FACTORY_TO_WHOLESALE => 'info',
+            self::CHANNEL_WAREHOUSE_TO_WHOLESALE => 'teal',
             self::CHANNEL_WHOLESALE_TO_RETAIL => 'warning',
             self::CHANNEL_RETAIL_TO_PLUMBER => 'success',
             default => 'gray',

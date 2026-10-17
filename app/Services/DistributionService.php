@@ -82,9 +82,10 @@ class DistributionService
     private function validateTierRoles(int $tier, User $from, User $to): void
     {
         $rules = [
-            1 => ['from' => ['super_admin', 'admin'], 'to' => 'wholesale_distributor'],
-            2 => ['from' => ['wholesale_distributor'], 'to' => 'retail_trader'],
-            3 => ['from' => ['retail_trader'], 'to' => 'plumber'],
+            1 => ['from' => ['super_admin', 'admin'], 'to' => ['wholesale_distributor']],
+            // Tier 2 also allows warehouse→wholesaler transfers (central warehouse supply).
+            2 => ['from' => ['wholesale_distributor'], 'to' => ['retail_trader', 'wholesale_distributor']],
+            3 => ['from' => ['retail_trader'], 'to' => ['plumber']],
         ];
 
         if (! isset($rules[$tier])) {
@@ -95,8 +96,8 @@ class DistributionService
             throw new \DomainException('دور المُوزِّع غير صالح لهذه الطبقة');
         }
 
-        if ($to->role !== $rules[$tier]['to']) {
-            throw new \DomainException("المستلم يجب أن يكون {$rules[$tier]['to']}");
+        if (! in_array($to->role, $rules[$tier]['to'], true)) {
+            throw new \DomainException('دور المستلم غير صالح لهذه الطبقة');
         }
     }
 

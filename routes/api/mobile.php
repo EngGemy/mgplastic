@@ -125,8 +125,11 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('distributions', [PlumberInvoiceReturnController::class, 'distributions']);
         Route::get('returns', [PlumberInvoiceReturnController::class, 'index']);
         Route::get('returns/{return}', [PlumberInvoiceReturnController::class, 'show']);
+        Route::post('returns/{return}/approve', [PlumberInvoiceReturnController::class, 'approve']);
+        Route::post('returns/{return}/reject', [PlumberInvoiceReturnController::class, 'reject']);
         Route::get('distributions/{distribution}/return-preview', [PlumberInvoiceReturnController::class, 'previewDistribution']);
         Route::post('distributions/{distribution}/returns', [PlumberInvoiceReturnController::class, 'storeDistribution']);
+        Route::get('reports', [\App\Http\Controllers\Api\Plumber\ReportController::class, 'index']);
     });
 
     // ── Retail trader (تاجر التجزئة) ───────────────────────────
@@ -200,12 +203,15 @@ Route::prefix('v1/mobile')->group(function () {
         // Invoice returns — retail→plumber (distributions) + retail←wholesale (invoices)
         Route::get('returns', [TraderInvoiceReturnController::class, 'index']);
         Route::get('returns/{return}', [TraderInvoiceReturnController::class, 'show']);
+        Route::post('returns/{return}/approve', [TraderInvoiceReturnController::class, 'approve']);
+        Route::post('returns/{return}/reject', [TraderInvoiceReturnController::class, 'reject']);
         Route::get('distributions', [TraderInvoiceReturnController::class, 'distributions']);
         Route::get('distributions/{distribution}/return-preview', [TraderInvoiceReturnController::class, 'previewDistribution']);
         Route::post('distributions/{distribution}/returns', [TraderInvoiceReturnController::class, 'storeDistribution']);
         Route::get('invoices', [TraderInvoiceReturnController::class, 'invoices']);
         Route::get('invoices/{invoice}/return-preview', [TraderInvoiceReturnController::class, 'previewInvoice']);
         Route::post('invoices/{invoice}/returns', [TraderInvoiceReturnController::class, 'storeInvoice']);
+        Route::get('reports', [\App\Http\Controllers\Api\Trader\ReportController::class, 'index']);
     });
 
     // ── Wholesale distributor (موزع الجملة) ────────────────────
@@ -277,11 +283,20 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('orders/{order}/receive', [DistributorOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [DistributorOrderController::class, 'cancel']);
 
+        // Order sources: factory + central warehouses
+        Route::get('order-sources', [DistributorOrderController::class, 'sources']);
+        Route::get('warehouses/{warehouse}/stock', [DistributorOrderController::class, 'warehouseStock'])->whereNumber('warehouse');
+
         // Invoice returns — wholesale→retail outgoing invoices
         Route::get('returns', [DistributorInvoiceReturnController::class, 'index']);
         Route::get('returns/{return}', [DistributorInvoiceReturnController::class, 'show']);
+        Route::post('returns/{return}/approve', [DistributorInvoiceReturnController::class, 'approve']);
+        Route::post('returns/{return}/reject', [DistributorInvoiceReturnController::class, 'reject']);
         Route::get('invoices', [DistributorInvoiceReturnController::class, 'invoices']);
         Route::get('invoices/{invoice}/return-preview', [DistributorInvoiceReturnController::class, 'preview']);
         Route::post('invoices/{invoice}/returns', [DistributorInvoiceReturnController::class, 'store']);
+
+        // Period reports
+        Route::get('reports', [\App\Http\Controllers\Api\Distributor\ReportController::class, 'index']);
     });
 });

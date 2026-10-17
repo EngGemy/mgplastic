@@ -8,12 +8,13 @@ use App\Models\InvoiceDistributionItem;
 use App\Models\InvoiceReturn;
 use App\Models\InvoiceReturnItem;
 use App\Models\User;
+use App\Support\InvoiceReturnStatus;
 use Illuminate\Support\Facades\DB;
 
 class InvoiceReturnService
 {
     /**
-     * Return goods on a confirmed distribution (tier 2 wholesale→retail or tier 3 retail→plumber).
+     * Request a return (pending). Stock/points apply only after approve.
      *
      * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
      */
@@ -49,7 +50,6 @@ class InvoiceReturnService
 
         return DB::transaction(function () use ($distribution, $prepared, $actor, $note, $documentInvoice, $totalPoints) {
             $totalQty = 0;
-            $confirmedPoints = 0;
 
             foreach ($prepared as $row) {
                 $distItem = InvoiceDistributionItem::query()
@@ -66,11 +66,7 @@ class InvoiceReturnService
                     );
                 }
 
-                $distItem->returned_quantity = (int) $distItem->returned_quantity + $row['quantity'];
-                $distItem->save();
-
                 $totalQty += $row['quantity'];
-                $confirmedPoints += $row['points_value'];
             }
 
             $return = InvoiceReturn::create([
@@ -80,12 +76,12 @@ class InvoiceReturnService
                 'from_user_id' => $distribution->to_user_id,
                 'to_user_id' => $distribution->from_user_id,
                 'tier' => $distribution->tier,
-                'status' => 'confirmed',
+                'status' => InvoiceReturnStatus::PENDING,
                 'total_quantity' => $totalQty,
-                'total_points' => $confirmedPoints,
+                'total_points' => $totalPoints,
                 'note' => $note,
                 'created_by' => $actor->id,
-                'confirmed_at' => now(),
+                'confirmed_at' => null,
             ]);
 
             $return->update([
@@ -103,27 +99,107 @@ class InvoiceReturnService
                 ]);
             }
 
-            // Tier 3 awarded wallet points to the plumber — claw them back exactly.
-            // Tier 2 is stock/net-points only (retail never received wallet points on sale).
-            if ((int) $distribution->tier === 3 && $confirmedPoints > 0) {
+            return $return->load(['items.product.translations', 'fromUser', 'toUser']);
+        });
+    }
+
+    /** Approve pending return — applies stock + wallet side-effects. */
+    public function approve(InvoiceReturn $return, User $actor, ?string $note = null): InvoiceReturn
+    {
+        $return->loadMissing(['items', 'distribution.items.invoiceItem.product', 'invoice']);
+
+        if (! InvoiceReturnStatus::isPending($return->status)) {
+            throw new \DomainException('لا يمكن قبول مرتجع إلا وهو بانتظار الموافقة');
+        }
+
+        $this->assertActorCanDecide($return, $actor);
+
+        $distribution = $return->distribution;
+        if (! $distribution) {
+            throw new \DomainException('تعذّر العثور على توزيع المرتجع');
+        }
+
+        $distribution->loadMissing(['items.invoiceItem.product']);
+
+        return DB::transaction(function () use ($return, $actor, $note, $distribution) {
+            $confirmedPoints = 0;
+
+            foreach ($return->items as $item) {
+                $distItem = InvoiceDistributionItem::query()
+                    ->whereKey($item->distribution_item_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $returnable = $this->returnableQtyForItem($distribution, $distItem, ignoreReturnId: (int) $return->id);
+
+                if ((int) $item->quantity > $returnable) {
+                    $name = localized_name($distItem->invoiceItem?->product, 'name', 'منتج');
+                    throw new \DomainException(
+                        "كمية المرتجع ({$item->quantity}) للمنتج «{$name}» تتجاوز المتاح للإرجاع ({$returnable})"
+                    );
+                }
+
+                $distItem->returned_quantity = (int) $distItem->returned_quantity + (int) $item->quantity;
+                $distItem->save();
+                $confirmedPoints += (int) $item->points_value;
+            }
+
+            if ((int) $return->tier === 3 && $confirmedPoints > 0) {
+                $this->assertPointsCanBeReturned($distribution, $confirmedPoints);
                 $this->transferPoints(
-                    from: User::findOrFail($distribution->to_user_id),
-                    to: User::findOrFail($distribution->from_user_id),
+                    from: User::findOrFail($return->from_user_id),
+                    to: User::findOrFail($return->to_user_id),
                     points: $confirmedPoints,
                     return: $return,
                     actor: $actor,
                 );
             }
 
-            $this->syncOutgoingInvoiceTotals($documentInvoice->fresh(['sourceDistribution.items', 'returns']));
+            $return->update([
+                'status' => InvoiceReturnStatus::APPROVED,
+                'confirmed_at' => now(),
+                'note' => $note ?: $return->note,
+            ]);
 
-            return $return->load(['items.product.translations', 'fromUser', 'toUser']);
+            if ($return->invoice) {
+                $this->syncOutgoingInvoiceTotals($return->invoice->fresh(['sourceDistribution.items', 'returns']));
+            }
+
+            return $return->fresh(['items.product.translations', 'fromUser', 'toUser']);
         });
     }
 
+    /** Reject pending return — no stock/points changes. */
+    public function reject(InvoiceReturn $return, User $actor, ?string $reason = null): InvoiceReturn
+    {
+        if (! InvoiceReturnStatus::isPending($return->status)) {
+            throw new \DomainException('لا يمكن رفض مرتجع إلا وهو بانتظار الموافقة');
+        }
+
+        $this->assertActorCanDecide($return, $actor);
+
+        $return->update([
+            'status' => InvoiceReturnStatus::REJECTED,
+            'note' => $reason
+                ? trim(($return->note ? $return->note."\n" : '').'رفض: '.$reason)
+                : $return->note,
+        ]);
+
+        return $return->fresh(['items.product.translations', 'fromUser', 'toUser']);
+    }
+
+    public function assertActorCanDecide(InvoiceReturn $return, User $actor): void
+    {
+        if (in_array($actor->role, ['super_admin', 'admin'], true)) {
+            return;
+        }
+
+        if ((int) $return->to_user_id !== (int) $actor->id) {
+            throw new \DomainException('قبول/رفض المرتجع متاح للطرف المستلم (البائع الأصلي) أو المشرف فقط');
+        }
+    }
+
     /**
-     * Wholesale → retail outgoing invoice return.
-     *
      * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
      */
     public function returnOutgoingInvoice(Invoice $invoice, array $lines, User $actor, ?string $note = null): InvoiceReturn
@@ -147,8 +223,6 @@ class InvoiceReturnService
     }
 
     /**
-     * Retail → plumber distribution return.
-     *
      * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
      */
     public function returnPlumberDistribution(
@@ -210,9 +284,13 @@ class InvoiceReturnService
     {
         $invoice->loadMissing(['returns', 'sourceDistribution.items']);
 
-        $returnedQty = (int) $invoice->returns->where('status', 'confirmed')->sum('total_quantity');
-        $returnedPoints = (int) $invoice->returns->where('status', 'confirmed')->sum('total_points');
-        $returnsCount = $invoice->returns->where('status', 'confirmed')->count();
+        $settled = $invoice->returns->filter(
+            fn (InvoiceReturn $r) => InvoiceReturnStatus::isSettled($r->status)
+        );
+
+        $returnedQty = (int) $settled->sum('total_quantity');
+        $returnedPoints = (int) $settled->sum('total_points');
+        $returnsCount = $settled->count();
 
         if ($invoice->isOutgoing() && $invoice->sourceDistribution) {
             $soldQty = (int) $invoice->sourceDistribution->items->sum('quantity');
@@ -227,7 +305,6 @@ class InvoiceReturnService
         $blockReason = null;
         $dist = $invoice->sourceDistribution;
 
-        // Only probe the spent-points gate for tier-3 plumber distributions.
         if ($dist && (int) $dist->tier === 3 && $netPoints > 0) {
             try {
                 $this->assertPointsCanBeReturned($dist, $netPoints);
@@ -250,7 +327,6 @@ class InvoiceReturnService
         ];
     }
 
-    /** Max points that would be clawed back if all returnable qty were returned now. */
     public function maxReturnablePoints(InvoiceDistribution $distribution): int
     {
         return (int) collect($this->returnableLines($distribution))->sum(
@@ -259,8 +335,6 @@ class InvoiceReturnService
     }
 
     /**
-     * Soft gate for API preview — does not mutate.
-     *
      * @return array{can_return:bool, block_reason:?string}
      */
     public function previewReturnGate(InvoiceDistribution $distribution): array
@@ -316,9 +390,26 @@ class InvoiceReturnService
         ])->save();
     }
 
-    protected function returnableQtyForItem(InvoiceDistribution $distribution, InvoiceDistributionItem $distItem): int
-    {
+    protected function returnableQtyForItem(
+        InvoiceDistribution $distribution,
+        InvoiceDistributionItem $distItem,
+        ?int $ignoreReturnId = null,
+    ): int {
         $returnable = (int) $distItem->quantity - (int) ($distItem->returned_quantity ?? 0);
+
+        // Reserve quantities on pending returns for this distribution item.
+        $pendingQty = (int) InvoiceReturnItem::query()
+            ->where('distribution_item_id', $distItem->id)
+            ->whereHas('invoiceReturn', function ($q) use ($distribution, $ignoreReturnId) {
+                $q->where('distribution_id', $distribution->id)
+                    ->where('status', InvoiceReturnStatus::PENDING);
+                if ($ignoreReturnId) {
+                    $q->whereKeyNot($ignoreReturnId);
+                }
+            })
+            ->sum('quantity');
+
+        $returnable -= $pendingQty;
 
         if ((int) $distribution->tier === 2) {
             $pushedDown = (int) InvoiceDistributionItem::query()
@@ -388,9 +479,6 @@ class InvoiceReturnService
         }
     }
 
-    /**
-     * Block returns when tier-3 points were already converted/spent beyond remaining lots.
-     */
     protected function assertPointsCanBeReturned(InvoiceDistribution $distribution, int $points): void
     {
         if ($points <= 0 || (int) $distribution->tier !== 3) {
@@ -421,9 +509,6 @@ class InvoiceReturnService
         }
     }
 
-    /**
-     * Debit buyer and credit seller the SAME amount — never mint points.
-     */
     protected function transferPoints(User $from, User $to, int $points, InvoiceReturn $return, User $actor): void
     {
         if ($points <= 0) {

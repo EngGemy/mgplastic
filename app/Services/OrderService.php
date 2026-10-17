@@ -31,7 +31,10 @@ class OrderService
         $supplier = $this->resolveSupplier($requester, $channel, $meta);
         $prepared = $this->prepareLines(
             $lines,
-            enforceFactoryBoxes: $channel === OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE,
+            enforceFactoryBoxes: in_array($channel, [
+                OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE,
+                OrderStatus::CHANNEL_WAREHOUSE_TO_WHOLESALE,
+            ], true),
         );
 
         if (empty($prepared['items'])) {
@@ -335,6 +338,29 @@ class OrderService
             return null; // factory / admin side
         }
 
+        if ($channel === OrderStatus::CHANNEL_WAREHOUSE_TO_WHOLESALE) {
+            if (! $requester->isWholesaleDistributor()) {
+                throw new \DomainException('الطلب من المخزن متاح لموزّعي الجملة فقط');
+            }
+
+            if ($requester->isCentralWarehouse()) {
+                throw new \DomainException('المخزن المركزي يطلب من المصنع مباشرة — اختر المصدر: factory');
+            }
+
+            $warehouseId = (int) ($meta['warehouse_id'] ?? $meta['supplier_id'] ?? 0);
+            $warehouse = $warehouseId > 0 ? User::query()->find($warehouseId) : null;
+
+            if (! $warehouse || ! $warehouse->isCentralWarehouse()) {
+                throw new \DomainException('اختر مخزناً مركزياً صالحاً (warehouse_id)');
+            }
+
+            if (! $warehouse->is_active || ! $warehouse->is_approved) {
+                throw new \DomainException('هذا المخزن غير مفعّل حالياً');
+            }
+
+            return $warehouse;
+        }
+
         if ($channel === OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL) {
             if (! $requester->isRetailTrader()) {
                 throw new \DomainException('الطلب من الجملة متاح لتجّار القطاعي فقط');
@@ -568,6 +594,10 @@ class OrderService
             return $this->fulfilRetailToPlumber($order, $lines);
         }
 
+        if ($order->isWarehouseChannel()) {
+            return $this->fulfilWarehouseToWholesale($order, $lines, $actor);
+        }
+
         // wholesale → retail
         $wholesaler = $order->supplier;
         $retailTrader = $order->requester;
@@ -623,6 +653,59 @@ class OrderService
         return [
             'invoice_id' => null,
             'reference' => ['invoice_numbers' => $invoiceNumbers],
+        ];
+    }
+
+    /**
+     * Warehouse (central) supplies another wholesaler: burn warehouse slots + issue incoming stock to buyer.
+     *
+     * @param  array<int, array{product_id:int, quantity:int, points_per_unit?:float}>  $lines
+     * @return array{invoice_id?:?int, reference?:?array<string, mixed>}
+     */
+    protected function fulfilWarehouseToWholesale(Order $order, array $lines, User $actor): array
+    {
+        $warehouse = $order->supplier;
+        $buyer = $order->requester;
+
+        if (! $warehouse?->isCentralWarehouse() || ! $buyer?->isWholesaleDistributor()) {
+            throw new \DomainException('تعذّر تسليم طلب المخزن: الأطراف غير صالحة');
+        }
+
+        $this->assertWholesalerOrderFullyStocked($order);
+
+        $stock = $this->inventory->stockForWholesaler($warehouse);
+        $requested = [];
+        foreach ($lines as $line) {
+            $requested[$line['product_id']] = ($requested[$line['product_id']] ?? 0) + (int) $line['quantity'];
+        }
+        $groups = $this->inventory->allocateFromStock($stock, $requested);
+
+        foreach ($groups as $group) {
+            $invoice = Invoice::query()->findOrFail($group['invoice_id']);
+
+            $distribution = $this->distributions->createDistribution(
+                invoice: $invoice,
+                fromUser: $warehouse,
+                toUser: $buyer,
+                tier: 2,
+                items: $group['items'],
+                parentId: $group['parent_distribution_id'],
+                skipCallerCheck: true,
+            );
+
+            $this->distributions->confirmDistribution($distribution->fresh(['items']));
+        }
+
+        // Buyer receives MG wholesale stock (same shape as factory incoming).
+        $incoming = $this->wholesaleInvoices->issueFromCart(
+            wholesaler: $buyer,
+            lines: $lines,
+            issuedBy: $actor,
+        );
+
+        return [
+            'invoice_id' => $incoming->id,
+            'reference' => ['invoice_number' => $incoming->number, 'source' => 'warehouse'],
         ];
     }
 
@@ -763,14 +846,20 @@ class OrderService
      */
     protected function assertWholesalerOrderFullyStocked(Order $order): void
     {
-        if ($order->channel !== OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL || ! $order->supplier) {
+        if (! in_array($order->channel, [
+            OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL,
+            OrderStatus::CHANNEL_WAREHOUSE_TO_WHOLESALE,
+        ], true) || ! $order->supplier) {
             return;
         }
 
         $stock = $this->inventory->stockForWholesaler($order->supplier)->keyBy('product_id');
+        $emptyLabel = $order->isWarehouseChannel()
+            ? 'مخزون المخزن المركزي فارغ حالياً — تعذّر تأكيد/شحن الطلب'
+            : 'مخزون موزّع الجملة فارغ حالياً — تعذّر تأكيد/شحن الطلب';
 
         if ($stock->isEmpty()) {
-            throw new \DomainException('مخزون موزّع الجملة فارغ حالياً — تعذّر تأكيد/شحن الطلب');
+            throw new \DomainException($emptyLabel);
         }
 
         $shortages = [];

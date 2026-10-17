@@ -68,6 +68,34 @@ trait HandlesInvoiceReturnApi
     }
 
     /**
+     * @param  callable(): InvoiceReturn  $fn
+     */
+    protected function runReturnDecision(callable $fn, string $successMessage): JsonResponse
+    {
+        try {
+            $return = $fn();
+
+            return $this->success(
+                new InvoiceReturnResource($return->load(['items.product.translations', 'fromUser', 'toUser'])),
+                $successMessage,
+            );
+        } catch (\DomainException $e) {
+            return $this->error($e->getMessage(), 422);
+        }
+    }
+
+    protected function assertCanViewReturn(InvoiceReturn $return, $user): ?JsonResponse
+    {
+        if ((int) $return->from_user_id !== (int) $user->id
+            && (int) $return->to_user_id !== (int) $user->id
+            && ! in_array($user->role, ['super_admin', 'admin'], true)) {
+            return $this->error('غير مصرّح', 403);
+        }
+
+        return null;
+    }
+
+    /**
      * @return array{lines: array<int, array{invoice_item_id:int, quantity:int}>, note:?string}|JsonResponse
      */
     protected function validatedReturnPayload(Request $request): array|JsonResponse

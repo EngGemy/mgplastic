@@ -12,9 +12,13 @@ Returns are allowed on:
 | جملة → قطاعي (tier 2) | جملة أو قطاعي (طرف الفاتورة) | Distributor / Trader invoice returns |
 | قطاعي → سباك (tier 3) | قطاعي أو سباك (طرف التوزيع) | Trader / Plumber distribution returns |
 
+**حالات المرتجع:** `pending` → `approved` | `rejected`  
+قبول/رفض: `POST …/returns/{id}/approve` و `…/reject` + `available_actions`  
+التفاصيل الكاملة: [MOBILE_SOURCES_RETURNS_REPORTS.md](./MOBILE_SOURCES_RETURNS_REPORTS.md)
+
 **Blocked:** مرتجع بعد صرف/تحويل نقاط السباك من نفس التوزيع.  
-**Tier 2:** لا يحرّك محفظة النقاط (مخزون/صافي فقط).  
-**Tier 3:** يخصم من محفظة السباك ويعيد نفس العدد للقطاعي — بدون تضخيم نقاط.  
+**Tier 2:** لا يحرّك محفظة النقاط (مخزون/صافي فقط) — بعد **الموافقة**.  
+**Tier 3:** يخصم من محفظة السباك ويعيد نفس العدد للقطاعي — بعد **الموافقة**.  
 **Zero points (`mg_no_points`):** مرتجع كمية فقط؛ بوابة صرف النقاط لا تُفعّل.
 
 ---

@@ -38,7 +38,7 @@ trait HandlesInvoiceReturns
             ->visible(fn () => $this->canReturnThisInvoice())
             ->modalHeading('مرتجع بضاعة ونقاط')
             ->modalDescription(null)
-            ->modalSubmitActionLabel('تأكيد المرتجع')
+            ->modalSubmitActionLabel('إرسال المرتجع')
             ->modalCancelActionLabel('إلغاء')
             ->modalWidth('3xl')
             ->form(fn () => $this->returnFormSchema())
@@ -54,7 +54,7 @@ trait HandlesInvoiceReturns
             ->visible(fn () => $this->canReturnThisInvoice())
             ->modalHeading('مرتجع بضاعة ونقاط')
             ->modalDescription(null)
-            ->modalSubmitActionLabel('تأكيد المرتجع')
+            ->modalSubmitActionLabel('إرسال المرتجع')
             ->modalCancelActionLabel('إلغاء')
             ->modalWidth('3xl')
             ->form(fn () => $this->returnFormSchema())
@@ -86,8 +86,8 @@ trait HandlesInvoiceReturns
 
             Notification::make()
                 ->success()
-                ->title('تم تسجيل المرتجع ✓')
-                ->body("رقم {$ret->return_number} — أُرجع {$ret->total_quantity} وحدة / {$ret->total_points} نقطة وخُصمت من صافي الفاتورة")
+                ->title('تم إرسال المرتجع — بانتظار الموافقة')
+                ->body("رقم {$ret->return_number} — {$ret->total_quantity} وحدة / {$ret->total_points} نقطة (يُطبَّق بعد قبول المستلم)")
                 ->persistent()
                 ->send();
 
