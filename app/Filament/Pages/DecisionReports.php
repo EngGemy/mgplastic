@@ -52,8 +52,13 @@ class DecisionReports extends Page
     {
         $user = auth()->user();
 
-        return $user?->isSuperAdmin()
-            || $user?->canAdminPermission(AdminPermissions::REPORTS_VIEW);
+        if (! $user) {
+            return false;
+        }
+
+        return $user->isSuperAdmin()
+            || $user->isAdminUser()
+            || $user->canAdminPermission(AdminPermissions::REPORTS_VIEW);
     }
 
     public function setTab(string $tab): void

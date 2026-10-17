@@ -38,7 +38,7 @@ class ForgotPasswordOtpTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('status', true)
-            ->assertJsonPath('message', 'OTP sent.');
+            ->assertJsonPath('message', 'تم إرسال رمز التحقق');
 
         $this->assertSame('req-1', $user->fresh()->marsol_otp_request_id);
         Http::assertSent(fn ($request) => $request->url() === 'https://api.marsol.ly/public/otp/initiate'
