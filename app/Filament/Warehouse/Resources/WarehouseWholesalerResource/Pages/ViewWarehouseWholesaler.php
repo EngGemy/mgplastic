@@ -27,11 +27,25 @@ class ViewWarehouseWholesaler extends ViewRecord
     {
         return $infolist->schema([
             Infolists\Components\Section::make('بيانات المخزن')->schema([
-                Infolists\Components\TextEntry::make('brand_name')->label('العلامة'),
-                Infolists\Components\TextEntry::make('name')->label('الاسم'),
-                Infolists\Components\TextEntry::make('network_code')->label('الرقم الموحّد'),
-                Infolists\Components\TextEntry::make('phone')->label('الهاتف'),
-                Infolists\Components\TextEntry::make('email')->label('البريد'),
+                Infolists\Components\TextEntry::make('display_name')
+                    ->label('اسم المخزن')
+                    ->state(fn ($record) => trim((string) ($record->brand_name ?: $record->name)) ?: '—')
+                    ->copyable()
+                    ->copyMessage('تم نسخ اسم المخزن'),
+                Infolists\Components\TextEntry::make('brand_name')
+                    ->label('العلامة')
+                    ->placeholder('—')
+                    ->visible(fn ($record) => filled($record->brand_name)),
+                Infolists\Components\TextEntry::make('name')
+                    ->label('الاسم')
+                    ->copyable(),
+                Infolists\Components\TextEntry::make('network_code')
+                    ->label('الرقم الموحّد')
+                    ->copyable()
+                    ->copyMessage('تم نسخ الرقم الموحّد'),
+                Infolists\Components\TextEntry::make('phone')->label('الهاتف')->copyable(),
+                Infolists\Components\TextEntry::make('email')->label('البريد')->copyable(),
+                Infolists\Components\TextEntry::make('city.name')->label('المدينة')->placeholder('—'),
                 Infolists\Components\IconEntry::make('is_approved')->label('معتمد')->boolean(),
                 Infolists\Components\IconEntry::make('is_active')->label('نشط')->boolean(),
             ])->columns(2),

@@ -91,22 +91,34 @@ class WarehouseWholesalerResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('brand_name')
+                Tables\Columns\TextColumn::make('name')
                     ->label('المخزن / العلامة')
-                    ->searchable()
+                    ->formatStateUsing(fn ($state, User $record) => trim((string) ($record->brand_name ?: $record->name)) ?: '—')
+                    ->description(fn (User $r) => filled($r->brand_name) && $r->brand_name !== $r->name ? $r->name : null)
+                    ->searchable(query: function ($query, string $search) {
+                        $query->where(function ($q) use ($search) {
+                            $q->where('name', 'like', "%{$search}%")
+                                ->orWhere('brand_name', 'like', "%{$search}%");
+                        });
+                    })
                     ->sortable()
                     ->weight('bold')
-                    ->description(fn (User $r) => $r->name),
+                    ->copyable()
+                    ->copyMessage('تم نسخ اسم المخزن'),
                 Tables\Columns\TextColumn::make('network_code')
                     ->label('الرقم الموحّد')
                     ->badge()
                     ->color('success')
-                    ->searchable(),
+                    ->searchable()
+                    ->copyable()
+                    ->copyMessage('تم نسخ الرقم الموحّد'),
                 Tables\Columns\TextColumn::make('phone')
                     ->label('الهاتف')
-                    ->searchable(),
+                    ->searchable()
+                    ->copyable(),
                 Tables\Columns\TextColumn::make('city.name')
                     ->label('المدينة')
+                    ->placeholder('—')
                     ->toggleable(),
                 Tables\Columns\IconColumn::make('is_approved')
                     ->label('معتمد')
@@ -130,7 +142,7 @@ class WarehouseWholesalerResource extends Resource
                     ->url(fn (User $record) => \App\Filament\Warehouse\Pages\WarehouseReports::getUrl().'?warehouse_id='.$record->id),
                 Tables\Actions\ViewAction::make()->label('عرض'),
             ])
-            ->defaultSort('brand_name');
+            ->defaultSort('name');
     }
 
     public static function getPages(): array
