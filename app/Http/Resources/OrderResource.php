@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\OrderService;
 use App\Support\OrderStatus;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -11,6 +12,8 @@ class OrderResource extends JsonResource
     /** @return array<string, mixed> */
     public function toArray(Request $request): array
     {
+        $actionMeta = $this->availableActionsWithMeta($request);
+
         return [
             'id' => $this->id,
             'order_number' => $this->order_number,
@@ -24,7 +27,8 @@ class OrderResource extends JsonResource
             'status_color' => OrderStatus::color($this->status),
             'is_open' => OrderStatus::isOpen($this->status),
             'timeline' => $this->buildTimeline(),
-            'available_actions' => $this->availableActions($request),
+            'available_actions' => $actionMeta['actions'],
+            'blocked_actions' => $actionMeta['blocked'],
 
             'requester' => $this->when($this->relationLoaded('requester') && $this->requester, fn () => [
                 'id' => $this->requester->id,
@@ -72,33 +76,72 @@ class OrderResource extends JsonResource
     {
         $steps = OrderStatus::timeline();
         $currentIndex = array_search($this->status, $steps, true);
-        $reachedUpTo = $currentIndex === false ? -1 : $currentIndex;
+
+        // cancelled / rejected are outside the happy-path tracker
+        if ($currentIndex === false) {
+            return collect($steps)->map(fn ($step) => [
+                'status' => $step,
+                'label' => OrderStatus::label($step),
+                'icon' => OrderStatus::icon($step),
+                'reached' => false,
+                'current' => false,
+            ])->all();
+        }
 
         return collect($steps)->map(fn ($step, $index) => [
             'status' => $step,
             'label' => OrderStatus::label($step),
             'icon' => OrderStatus::icon($step),
-            'reached' => $index <= $reachedUpTo && ! OrderStatus::isFinal($this->status) || $step === $this->status,
+            // Every step up to and including the current one is reached.
+            'reached' => $index <= $currentIndex,
             'current' => $step === $this->status,
         ])->all();
     }
 
     /**
-     * Actions the authenticated user can call next (for mobile CTA buttons).
-     *
-     * @return list<string>
+     * @return array{actions: list<string>, blocked: list<array{action:string, reason:string}>}
      */
-    protected function availableActions(Request $request): array
+    protected function availableActionsWithMeta(Request $request): array
     {
         $user = $request->user();
         if (! $user) {
-            return [];
+            return ['actions' => [], 'blocked' => []];
         }
 
         $isBuyer = (int) $this->requester_id === (int) $user->id;
         $isSupplier = $this->supplier_id !== null && (int) $this->supplier_id === (int) $user->id;
         $status = $this->status;
         $actions = [];
+        $blocked = [];
+
+        $canFulfill = null;
+        $fulfillReason = 'المخزون غير كافٍ لإتمام هذه العملية';
+        $needsStockGate = in_array($status, [
+            OrderStatus::PLACED,
+            OrderStatus::CONFIRMED,
+            OrderStatus::SHIPPING,
+        ], true) && ! $this->isFactoryChannel();
+
+        $resolveStock = function () use (&$canFulfill, &$fulfillReason): bool {
+            if ($canFulfill !== null) {
+                return $canFulfill;
+            }
+
+            try {
+                $canFulfill = app(OrderService::class)->supplierCanFulfill($this->resource);
+                if (! $canFulfill) {
+                    try {
+                        app(OrderService::class)->assertSupplierCanFulfill($this->resource);
+                    } catch (\DomainException $e) {
+                        $fulfillReason = $e->getMessage();
+                    }
+                }
+            } catch (\Throwable) {
+                $canFulfill = false;
+            }
+
+            return (bool) $canFulfill;
+        };
 
         if ($isSupplier && $this->isPlumberChannel()) {
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
@@ -106,39 +149,80 @@ class OrderResource extends JsonResource
                 $actions[] = 'apply_stock';
             }
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
-                $actions[] = 'fulfill';
+                if (! $needsStockGate || $resolveStock()) {
+                    $actions[] = 'fulfill';
+                } else {
+                    $blocked[] = ['action' => 'fulfill', 'reason' => $fulfillReason];
+                }
             }
             if ($status === OrderStatus::PLACED) {
-                $actions[] = 'confirm';
+                if (! $needsStockGate || $resolveStock()) {
+                    $actions[] = 'confirm';
+                } else {
+                    $blocked[] = ['action' => 'confirm', 'reason' => $fulfillReason];
+                }
             }
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
-                $actions[] = 'ship';
+                if (! $needsStockGate || $resolveStock()) {
+                    $actions[] = 'ship';
+                } else {
+                    $blocked[] = ['action' => 'ship', 'reason' => $fulfillReason];
+                }
+                $actions[] = 'reject';
+            }
+            if ($status === OrderStatus::SHIPPING && $needsStockGate && ! $resolveStock()) {
                 $actions[] = 'reject';
             }
         }
 
         if ($isSupplier && ! $this->isPlumberChannel()) {
             if ($status === OrderStatus::PLACED) {
-                $actions[] = 'confirm';
+                if (! $needsStockGate || $resolveStock()) {
+                    $actions[] = 'confirm';
+                } else {
+                    $blocked[] = ['action' => 'confirm', 'reason' => $fulfillReason];
+                }
             }
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
-                $actions[] = 'ship';
+                if (! $needsStockGate || $resolveStock()) {
+                    $actions[] = 'ship';
+                } else {
+                    $blocked[] = ['action' => 'ship', 'reason' => $fulfillReason];
+                }
                 $actions[] = 'reject';
             }
             if (in_array($status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
-                $actions[] = 'deliver';
+                if (! $needsStockGate || $resolveStock()) {
+                    $actions[] = 'deliver';
+                } else {
+                    $blocked[] = ['action' => 'deliver', 'reason' => $fulfillReason];
+                }
+            }
+            if ($status === OrderStatus::SHIPPING && $needsStockGate && ! $resolveStock()) {
+                $actions[] = 'reject';
             }
         }
 
         if ($isBuyer) {
             if (in_array($status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
-                $actions[] = 'receive';
+                if (! $needsStockGate || $resolveStock()) {
+                    $actions[] = 'receive';
+                } else {
+                    $blocked[] = ['action' => 'receive', 'reason' => $fulfillReason];
+                }
             }
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
                 $actions[] = 'cancel';
             }
+            // Stuck shipping + no stock → allow cancel
+            if ($status === OrderStatus::SHIPPING && $needsStockGate && ! $resolveStock()) {
+                $actions[] = 'cancel';
+            }
         }
 
-        return array_values(array_unique($actions));
+        return [
+            'actions' => array_values(array_unique($actions)),
+            'blocked' => $blocked,
+        ];
     }
 }

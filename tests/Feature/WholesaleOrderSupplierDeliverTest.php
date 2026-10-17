@@ -74,12 +74,28 @@ class WholesaleOrderSupplierDeliverTest extends TestCase
             'is_approved' => true,
             'is_active' => true,
         ]);
+        User::factory()->create(['role' => 'super_admin']);
         $retail = User::factory()->create([
             'role' => 'retail_trader',
             'is_approved' => true,
             'is_active' => true,
         ]);
         $product = Product::factory()->create(['points_per_unit' => 1]);
+
+        $invoice = Invoice::factory()->create([
+            'status' => 'approved',
+            'invoice_type' => 'wholesale_pos',
+            'invoice_flow' => 'incoming',
+            'wholesale_distributor_id' => $wholesaler->id,
+        ]);
+        InvoiceItem::factory()->create([
+            'invoice_id' => $invoice->id,
+            'product_id' => $product->id,
+            'quantity' => 10,
+            'points_per_unit' => 1,
+            'total_points' => 10,
+        ]);
+        app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
 
         $order = app(OrderService::class)->place($retail, OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL, [
             ['product_id' => $product->id, 'quantity' => 1],
@@ -92,5 +108,28 @@ class WholesaleOrderSupplierDeliverTest extends TestCase
 
         $this->actingAs($wholesaler);
         $this->assertTrue(OrderResource::canMarkDeliveredAsSupplier($order->fresh()));
+    }
+
+    public function test_confirm_fails_when_wholesaler_has_no_stock(): void
+    {
+        $wholesaler = User::factory()->create([
+            'role' => 'wholesale_distributor',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        $retail = User::factory()->create([
+            'role' => 'retail_trader',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        $product = Product::factory()->create(['points_per_unit' => 1]);
+
+        $order = app(OrderService::class)->place($retail, OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL, [
+            ['product_id' => $product->id, 'quantity' => 1],
+        ], ['supplier_id' => $wholesaler->id]);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('مخزون موزّع الجملة');
+        app(OrderService::class)->confirm($order, $wholesaler);
     }
 }

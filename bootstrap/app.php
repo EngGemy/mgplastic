@@ -36,4 +36,43 @@ return Application::configure(basePath: dirname(__DIR__))
                 'retry_after' => $seconds,
             ], 429);
         });
+
+        $exceptions->render(function (\Illuminate\Database\Eloquent\ModelNotFoundException $e, $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            $model = class_basename($e->getModel() ?? '');
+            $message = match ($model) {
+                'Invoice' => 'الفاتورة غير موجودة',
+                'InvoiceDistribution' => 'التوزيع غير موجود',
+                'InvoiceReturn' => 'المرتجع غير موجود',
+                'Order' => 'الطلب غير موجود',
+                'User' => 'المستخدم غير موجود',
+                'Product' => 'المنتج غير موجود',
+                'WithdrawalRequest', 'Withdrawal' => 'طلب السحب غير موجود',
+                default => 'السجل غير موجود',
+            };
+
+            return response()->json([
+                'status' => false,
+                'message' => $message,
+            ], 404);
+        });
+
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e, $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            $previous = $e->getPrevious();
+            if ($previous instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                return null; // let the ModelNotFoundException renderer handle it
+            }
+
+            return response()->json([
+                'status' => false,
+                'message' => 'المسار أو السجل غير موجود',
+            ], 404);
+        });
     })->create();

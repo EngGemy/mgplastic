@@ -88,6 +88,9 @@ class OrderService
     {
         $this->assertStatus($order, [OrderStatus::PLACED], 'لا يمكن تأكيد هذا الطلب في حالته الحالية');
 
+        $order->loadMissing(['items', 'supplier', 'requester']);
+        $this->assertSupplierCanFulfill($order);
+
         $order->update([
             'status' => OrderStatus::CONFIRMED,
             'confirmed_at' => now(),
@@ -120,10 +123,8 @@ class OrderService
 
         $order->loadMissing(['items', 'supplier', 'requester']);
 
-        // Plumber receive will deduct network stock — block ship if trader cannot fulfill.
-        if ($order->isPlumberChannel()) {
-            $this->assertPlumberOrderFullyStocked($order);
-        }
+        // Receive/deliver deducts supplier stock — block ship when it cannot be fulfilled.
+        $this->assertSupplierCanFulfill($order);
 
         $order->update([
             'status' => OrderStatus::SHIPPING,
@@ -245,35 +246,23 @@ class OrderService
         }
     }
 
-    /** Supplier rejects the order. */
-    public function reject(Order $order, User $actor, ?string $reason = null): Order
-    {
-        $this->assertStatus($order, [OrderStatus::PLACED, OrderStatus::CONFIRMED], 'لا يمكن رفض هذا الطلب في حالته الحالية');
-
-        $order->update([
-            'status' => OrderStatus::REJECTED,
-            'cancelled_at' => now(),
-            'supplier_note' => $reason ?: $order->supplier_note,
-        ]);
-
-        $this->notifyRequester(
-            $order,
-            'تم رفض الطلب',
-            "طلب رقم {$order->order_number} تم رفضه".($reason ? " — السبب: {$reason}" : '').'.',
-            'danger',
-        );
-        $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
-            $order->fresh(['requester']),
-            'تم رفض الطلب'.($reason ? " — السبب: {$reason}" : ''),
-        ));
-
-        return $order;
-    }
-
-    /** Buyer cancels their own order before it is shipped. */
+    /**
+     * Buyer cancels their order while open.
+     * Shipping may be cancelled when supplier stock can no longer fulfill receive
+     * (avoids stuck orders that cannot receive and previously could not cancel).
+     */
     public function cancel(Order $order, User $actor, ?string $reason = null): Order
     {
-        $this->assertStatus($order, [OrderStatus::PLACED, OrderStatus::CONFIRMED], 'لا يمكن إلغاء الطلب بعد شحنه');
+        $allowed = [OrderStatus::PLACED, OrderStatus::CONFIRMED];
+
+        if ($order->status === OrderStatus::SHIPPING) {
+            if ($this->supplierCanFulfill($order)) {
+                throw new \DomainException('لا يمكن إلغاء الطلب بعد شحنه طالما يمكن استلامه — تواصل مع المورّد');
+            }
+            $allowed[] = OrderStatus::SHIPPING;
+        }
+
+        $this->assertStatus($order, $allowed, 'لا يمكن إلغاء الطلب في حالته الحالية');
 
         $order->update([
             'status' => OrderStatus::CANCELLED,
@@ -294,6 +283,39 @@ class OrderService
                 'أُلغي الطلب من قبل المشتري'.($reason ? " — السبب: {$reason}" : ''),
             ));
         }
+
+        return $order;
+    }
+
+    /**
+     * Supplier rejects the order (also undeliverable shipping when stock is gone).
+     */
+    public function reject(Order $order, User $actor, ?string $reason = null): Order
+    {
+        $allowed = [OrderStatus::PLACED, OrderStatus::CONFIRMED];
+
+        if ($order->status === OrderStatus::SHIPPING && ! $this->supplierCanFulfill($order)) {
+            $allowed[] = OrderStatus::SHIPPING;
+        }
+
+        $this->assertStatus($order, $allowed, 'لا يمكن رفض هذا الطلب في حالته الحالية');
+
+        $order->update([
+            'status' => OrderStatus::REJECTED,
+            'cancelled_at' => now(),
+            'supplier_note' => $reason ?: $order->supplier_note,
+        ]);
+
+        $this->notifyRequester(
+            $order,
+            'تم رفض الطلب',
+            "طلب رقم {$order->order_number} تم رفضه".($reason ? " — السبب: {$reason}" : '').'.',
+            'danger',
+        );
+        $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
+            $order->fresh(['requester']),
+            'تم رفض الطلب'.($reason ? " — السبب: {$reason}" : ''),
+        ));
 
         return $order;
     }
@@ -370,6 +392,17 @@ class OrderService
 
             if (! $supplier->is_active || ! $supplier->is_approved) {
                 throw new \DomainException('هذا التاجر القطاعي غير مفعّل حالياً');
+            }
+
+            // Plumber may order only from their linked retail shop.
+            // Unassigned plumbers may order from any shop (first order claims the link).
+            $links = app(PlumberRetailLinkService::class);
+            $parent = $links->retailParent($requester);
+            if ($parent && (int) $parent->id !== (int) $supplier->id) {
+                $shop = $parent->brand_name ?: $parent->name;
+                throw new \DomainException(
+                    "يمكنك الطلب فقط من محل القطاعي المرتبط بك («{$shop}») — فك الارتباط من المحل الحالي أولاً إن أردت التبديل"
+                );
             }
 
             return $supplier;
@@ -582,6 +615,46 @@ class OrderService
     }
 
     /**
+     * Whether the supplier currently has enough stock for every line (receive/deliver safe).
+     * Factory channel always returns true (stock is issued from factory inventory).
+     */
+    public function supplierCanFulfill(Order $order): bool
+    {
+        try {
+            $this->assertSupplierCanFulfill($order);
+
+            return true;
+        } catch (\DomainException) {
+            return false;
+        }
+    }
+
+    /**
+     * @throws \DomainException
+     */
+    public function assertSupplierCanFulfill(Order $order): void
+    {
+        $order->loadMissing(['items', 'supplier']);
+
+        if ($order->isFactoryChannel()) {
+            return;
+        }
+
+        if ($order->items->isEmpty()) {
+            throw new \DomainException('الطلب بلا أصناف');
+        }
+
+        if ($order->isPlumberChannel()) {
+            $this->assertPlumberOrderFullyStocked($order);
+
+            return;
+        }
+
+        // wholesale → retail
+        $this->assertWholesalerOrderFullyStocked($order);
+    }
+
+    /**
      * Ensure the retail trader has enough network stock for every plumber-order line.
      *
      * @throws \DomainException
@@ -620,6 +693,43 @@ class OrderService
         throw new \DomainException(
             "مخزون التاجر القطاعي غير كافٍ لتسليم الطلب: {$list}. "
             .'عدّل الكميات من لوحة التاجر أو طبّق المتوفر ثم نفّذ كفاتورة.'
+        );
+    }
+
+    /**
+     * Ensure the wholesaler has enough stock for a wholesale→retail order.
+     *
+     * @throws \DomainException
+     */
+    protected function assertWholesalerOrderFullyStocked(Order $order): void
+    {
+        if ($order->channel !== OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL || ! $order->supplier) {
+            return;
+        }
+
+        $stock = $this->inventory->stockForWholesaler($order->supplier)->keyBy('product_id');
+
+        if ($stock->isEmpty()) {
+            throw new \DomainException('مخزون موزّع الجملة فارغ حالياً — تعذّر تأكيد/شحن الطلب');
+        }
+
+        $shortages = [];
+        foreach ($order->items as $item) {
+            $row = $stock->get((int) $item->product_id);
+            $available = (int) ($row['available_qty'] ?? 0);
+            $requested = (int) $item->quantity;
+            if ($available < $requested) {
+                $name = $item->name_snapshot ?: ($row['name'] ?? 'منتج');
+                $shortages[] = "«{$name}»: مطلوب {$requested} — متوفر {$available}";
+            }
+        }
+
+        if ($shortages === []) {
+            return;
+        }
+
+        throw new \DomainException(
+            'مخزون موزّع الجملة غير كافٍ: '.implode(' | ', $shortages)
         );
     }
 

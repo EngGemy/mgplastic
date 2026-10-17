@@ -23,7 +23,10 @@ class InvoiceReturnResource extends JsonResource
             },
             'status' => $this->status,
             'total_quantity' => (int) $this->total_quantity,
-            'total_points' => (int) $this->total_points,
+            // Tier 2 stores product-point equivalents for audit but never moves the wallet.
+            'total_points' => (int) $this->tier === 3 ? (int) $this->total_points : 0,
+            'product_points' => (int) $this->total_points,
+            'affects_wallet_points' => (int) $this->tier === 3,
             'note' => $this->note,
             'from_user' => $this->when($this->relationLoaded('fromUser') && $this->fromUser, fn () => [
                 'id' => $this->fromUser->id,

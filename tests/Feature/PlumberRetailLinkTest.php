@@ -45,11 +45,22 @@ class PlumberRetailLinkTest extends TestCase
 
         $this->assertSame($shop->id, $plumber->fresh()->parent_distributor_id);
 
-        app(OrderService::class)->place($plumber->fresh(), OrderStatus::CHANNEL_RETAIL_TO_PLUMBER, [
-            ['product_id' => $product->id, 'quantity' => 1],
-        ], ['retail_trader_id' => $other->id]);
+        // Still linked to $shop — ordering from another retail shop must fail.
+        try {
+            app(OrderService::class)->place($plumber->fresh(), OrderStatus::CHANNEL_RETAIL_TO_PLUMBER, [
+                ['product_id' => $product->id, 'quantity' => 1],
+            ], ['retail_trader_id' => $other->id]);
+            $this->fail('Expected DomainException when ordering from a different retail shop');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('يمكنك الطلب فقط من محل القطاعي المرتبط بك', $e->getMessage());
+        }
 
         $this->assertSame($shop->id, $plumber->fresh()->parent_distributor_id);
+
+        // Same linked shop still works.
+        app(OrderService::class)->place($plumber->fresh(), OrderStatus::CHANNEL_RETAIL_TO_PLUMBER, [
+            ['product_id' => $product->id, 'quantity' => 1],
+        ], ['retail_trader_id' => $shop->id]);
     }
 
     public function test_link_by_code_claims_a_free_plumber_and_refuses_one_already_taken(): void

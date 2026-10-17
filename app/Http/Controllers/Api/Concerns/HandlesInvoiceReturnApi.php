@@ -31,12 +31,20 @@ trait HandlesInvoiceReturnApi
             $blockReason = 'غير مصرّح لك بعمل مرتجع على هذا التوزيع';
         }
 
+        $tier = (int) $distribution->tier;
+        $productPoints = $this->returns()->maxReturnablePoints($distribution);
+        $affectsWallet = $tier === 3;
+
         return $this->success([
+            'id' => (int) $distribution->id,
             'distribution_id' => (int) $distribution->id,
-            'tier' => (int) $distribution->tier,
+            'tier' => $tier,
             'status' => $distribution->status,
             'lines' => $lines,
-            'returnable_points_preview' => $this->returns()->maxReturnablePoints($distribution),
+            // Tier 2 never moves wallet points — preview is 0 so apps don't show a clawback.
+            'returnable_points_preview' => $affectsWallet ? $productPoints : 0,
+            'product_points_preview' => $productPoints,
+            'affects_wallet_points' => $affectsWallet,
             'can_return' => $canReturn,
             'block_reason' => $blockReason,
         ], 'معاينة المرتجع');
@@ -134,11 +142,17 @@ trait HandlesInvoiceReturnApi
         $gate = $this->returns()->previewReturnGate($distribution);
         $lines = $this->returns()->returnableLines($distribution);
         $other = $counterpartySide === 'from' ? $distribution->fromUser : $distribution->toUser;
+        $tier = (int) $distribution->tier;
+        $productPoints = $this->returns()->maxReturnablePoints($distribution);
+        $affectsWallet = $tier === 3;
+        $distributionId = (int) $distribution->id;
 
         return [
-            'distribution_id' => (int) $distribution->id,
+            // Use `id` with …/distributions/{id}/return-preview and …/returns
+            'id' => $distributionId,
+            'distribution_id' => $distributionId,
             'invoice_id' => $distribution->invoice_id ? (int) $distribution->invoice_id : null,
-            'tier' => (int) $distribution->tier,
+            'tier' => $tier,
             'status' => $distribution->status,
             $counterpartyKey => [
                 'id' => $other?->id,
@@ -148,7 +162,9 @@ trait HandlesInvoiceReturnApi
             'sold_quantity' => (int) $distribution->items->sum('quantity'),
             'returned_quantity' => (int) $distribution->items->sum(fn ($i) => (int) ($i->returned_quantity ?? 0)),
             'returnable_quantity' => (int) collect($lines)->sum('returnable'),
-            'returnable_points_preview' => $this->returns()->maxReturnablePoints($distribution),
+            'returnable_points_preview' => $affectsWallet ? $productPoints : 0,
+            'product_points_preview' => $productPoints,
+            'affects_wallet_points' => $affectsWallet,
             'can_return' => (bool) ($gate['can_return'] ?? false),
             'block_reason' => $gate['block_reason'] ?? null,
             'confirmed_at' => optional($distribution->confirmed_at)->toIso8601String(),
@@ -180,6 +196,8 @@ trait HandlesInvoiceReturnApi
         }
 
         $row = $this->summarizeDistributionReturnRow($distribution, $counterpartyKey, $counterpartySide);
+        // For invoice lists, `id` is the invoice id expected by …/invoices/{id}/…
+        $row['id'] = (int) $invoice->id;
         $row['invoice_id'] = (int) $invoice->id;
         $row['invoice_number'] = $invoice->number ?? null;
         $row['invoice_status'] = $invoice->status;

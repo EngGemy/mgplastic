@@ -45,8 +45,12 @@ class InvoiceReturnController extends Controller
                 $gate = $this->returns()->previewReturnGate($d);
                 $lines = $this->returns()->returnableLines($d);
 
+                $distributionId = (int) $d->id;
+                $productPoints = $this->returns()->maxReturnablePoints($d);
+
                 return [
-                    'distribution_id' => (int) $d->id,
+                    'id' => $distributionId,
+                    'distribution_id' => $distributionId,
                     'tier' => 3,
                     'status' => $d->status,
                     'retail_trader' => [
@@ -57,7 +61,9 @@ class InvoiceReturnController extends Controller
                     'sold_quantity' => (int) $d->items->sum('quantity'),
                     'returned_quantity' => (int) $d->items->sum(fn ($i) => (int) ($i->returned_quantity ?? 0)),
                     'returnable_quantity' => (int) collect($lines)->sum('returnable'),
-                    'returnable_points_preview' => $this->returns()->maxReturnablePoints($d),
+                    'returnable_points_preview' => $productPoints,
+                    'product_points_preview' => $productPoints,
+                    'affects_wallet_points' => true,
                     'can_return' => (bool) ($gate['can_return'] ?? false),
                     'block_reason' => $gate['block_reason'] ?? null,
                     'confirmed_at' => optional($d->confirmed_at)->toIso8601String(),

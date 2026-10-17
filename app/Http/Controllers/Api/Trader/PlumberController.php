@@ -54,15 +54,20 @@ class PlumberController extends Controller
     public function link(Request $request, PlumberRetailLinkService $links): JsonResponse
     {
         $v = Validator::make($request->all(), [
-            'code' => ['required_without:phone', 'nullable', 'string', 'max:50'],
-            'phone' => ['required_without:code', 'nullable', 'string', 'max:50'],
+            'network_code' => ['required_without_all:code,phone', 'nullable', 'string', 'max:50'],
+            'code' => ['nullable', 'string', 'max:50'],
+            'phone' => ['nullable', 'string', 'max:50'],
         ]);
 
         if ($v->fails()) {
             return $this->error('أدخل الرقم الموحّد أو رقم الهاتف', 422, $v->errors());
         }
 
-        $needle = trim((string) ($request->input('code') ?: $request->input('phone')));
+        $needle = trim((string) (
+            $request->input('network_code')
+            ?: $request->input('code')
+            ?: $request->input('phone')
+        ));
 
         try {
             $result = $links->linkByCode($request->user(), $needle);
