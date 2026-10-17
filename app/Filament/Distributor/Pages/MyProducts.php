@@ -22,6 +22,13 @@ class MyProducts extends Page
 
     protected static string $view = 'filament.pages.my-products';
 
+    public static function getNavigationGroup(): ?string
+    {
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'واجهة المحل'
+            : 'متجري';
+    }
+
     public function getHeading(): string
     {
         return '';

@@ -15,6 +15,7 @@ class MgDashboardStatsService
     public function forPanel(string $panelId, ?User $user): array
     {
         return match ($panelId) {
+            'warehouse' => $this->warehouse($user),
             'distributor' => $this->distributor($user),
             'trader' => $this->trader($user),
             default => $this->admin($user),
@@ -67,6 +68,39 @@ class MgDashboardStatsService
                 $this->card('فواتير قيد المراجعة', $pendingInvoices, 'heroicon-o-document-check', 'amber', null, $pendingDistributions.' توزيع مسودة'),
                 $this->card('إجمالي النقاط', $totalPoints, 'heroicon-o-star', 'green', ['text' => number_format($pointsThisMonth).' وصلت للسباكين هذا الشهر', 'positive' => true], number_format($network['remaining_points']).' متبقية في الجملة · '.number_format($network['plumber_balances']).' رصيد السباكين'),
                 $this->card('المنتجات', $products, 'heroicon-o-cube', 'purple', null, $stores.' موزع جملة'),
+            ],
+        ];
+    }
+
+    /** @return array{welcomeTitle: string, welcomeSubtitle: string, accent: string, cards: array<int, array<string, mixed>>} */
+    private function warehouse(?User $user): array
+    {
+        $name = $user?->brand_name ?: ($user?->name ?? 'مخزن الدعوة');
+        $summary = app(WholesalerNetworkService::class)->getSummary($user);
+        $pending = $this->scopedPendingCount((int) $user?->id);
+        $confirmedToday = $this->scopedConfirmedTodayCount((int) $user?->id);
+        $remaining = (int) ($summary['remaining_points'] ?? 0);
+        $openOrders = \App\Models\Order::query()
+            ->where(function ($q) use ($user) {
+                $q->where('supplier_id', $user?->id)->orWhere('requester_id', $user?->id);
+            })
+            ->whereIn('status', ['placed', 'confirmed', 'shipping'])
+            ->count();
+
+        return [
+            'welcomeTitle' => "مرحباً {$name} 👋",
+            'welcomeSubtitle' => 'المخزن المركزي — استقبال الطلبيات، تحديث المخزون، رصيد النقاط، والطلب من المصنع',
+            'networkCode' => $user?->network_code,
+            'accent' => 'teal',
+            'cards' => [
+                $this->card('الرقم الموحّد', $user?->network_code ?: '—', 'heroicon-o-qr-code', 'indigo', null, 'هويتك في شبكة MG'),
+                $this->card('رصيد النقاط', $remaining, 'heroicon-o-wallet', 'green', null, 'المتاح للتوزيع الآن'),
+                $this->card('نقاط من المصنع', (int) $summary['factory_points'], 'heroicon-o-building-office-2', 'teal', null, number_format((int) $summary['distributed_points']).' موزّعة · '.number_format($remaining).' متبقية'),
+                $this->card('طلبيات مفتوحة', $openOrders, 'heroicon-o-clipboard-document-list', 'amber', null, 'بانتظار إجراء منك أو من الشبكة'),
+                $this->card('وحدات المخزون', (int) $summary['product_units'], 'heroicon-o-cube', 'blue', null, ($summary['product_types'] ?? 0).' صنف'),
+                $this->card('متاجر قطاعي', (int) $summary['retail_traders_count'], 'heroicon-o-building-office', 'indigo', null, 'مرتبطة بالمخزن'),
+                $this->card('توزيعات معلّقة', $pending, 'heroicon-o-clock', $pending > 0 ? 'amber' : 'gray', null, 'مسودات لم تُؤكد'),
+                $this->card('مؤكدة اليوم', $confirmedToday, 'heroicon-o-check-circle', 'green', null, 'خلال اليوم الحالي'),
             ],
         ];
     }

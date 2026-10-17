@@ -24,7 +24,9 @@ class DistributorDistributionResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'المخزون والنقاط'
+            : 'نظام النقاط';
     }
 
     public static function getEloquentQuery(): Builder

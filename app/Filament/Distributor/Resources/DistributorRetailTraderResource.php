@@ -25,7 +25,9 @@ class DistributorRetailTraderResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return 'شبكتي';
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'الشبكة'
+            : 'شبكتي';
     }
 
     public static function getModelLabel(): string

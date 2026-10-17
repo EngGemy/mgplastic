@@ -27,6 +27,20 @@ class DistributorPos extends Page
 
     protected static ?string $navigationGroup = 'نظام النقاط';
 
+    public static function getNavigationLabel(): string
+    {
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'صرف مخزون للقطاعي'
+            : 'كاشير البيع للقطاعي';
+    }
+
+    public static function getNavigationGroup(): ?string
+    {
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'المخزون والنقاط'
+            : 'نظام النقاط';
+    }
+
     protected static ?int $navigationSort = 5;
 
     protected static string $view = 'filament.distributor.pages.distributor-pos';

@@ -28,6 +28,10 @@ class EnsureWholesaleDistributorAccess
             abort(403, 'مخصص لموزعي الجملة فقط');
         }
 
+        if ($user->isCentralWarehouse()) {
+            return redirect('/warehouse');
+        }
+
         return $next($request);
     }
 }

@@ -26,7 +26,9 @@ class DistributorOrderResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return 'الطلبيات';
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'الطلبيات والمصنع'
+            : 'الطلبيات';
     }
 
     public static function getModelLabel(): string { return 'طلبية'; }

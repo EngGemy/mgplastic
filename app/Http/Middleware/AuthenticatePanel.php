@@ -39,6 +39,7 @@ class AuthenticatePanel extends FilamentAuthenticate
         $target = $this->homeForRole((string) ($user->role ?? ''));
         $here = match ($panel?->getId()) {
             'admin' => AdminPanelPath::url(),
+            'warehouse' => '/warehouse',
             'distributor' => '/distributor',
             'trader' => '/trader',
             default => null,
@@ -53,6 +54,10 @@ class AuthenticatePanel extends FilamentAuthenticate
 
     private function homeForRole(string $role): ?string
     {
+        if ($role === 'wholesale_distributor' && auth()->user()?->isCentralWarehouse()) {
+            return '/warehouse';
+        }
+
         return match ($role) {
             'super_admin', 'admin' => AdminPanelPath::url(),
             'wholesale_distributor' => '/distributor',

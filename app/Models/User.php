@@ -42,6 +42,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         'network_code',
         'parent_distributor_id',
         'is_independent',
+        'is_central_warehouse',
         'profile_photo',
         'brand_logo',
         'brand_name',
@@ -86,6 +87,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
             'otp_expires_at' => 'datetime',
             'is_phone_verified' => 'boolean',
             'is_independent' => 'boolean',
+            'is_central_warehouse' => 'boolean',
             'show_social_links' => 'boolean',
             'permissions' => 'array',
             'latitude' => 'float',
@@ -373,6 +375,12 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         return $this->role === 'wholesale_distributor';
     }
 
+    /** مخزن الدعوة — wholesale node with dedicated /warehouse panel */
+    public function isCentralWarehouse(): bool
+    {
+        return $this->isWholesaleDistributor() && (bool) $this->is_central_warehouse;
+    }
+
     public function isRetailTrader(): bool
     {
         return $this->role === 'retail_trader';
@@ -423,7 +431,10 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     {
         return match ($panel->getId()) {
             'admin' => $this->isAdminUser(),
+            'warehouse' => $this->isCentralWarehouse()
+                && $this->canStorePermission(StorePermissions::PANEL_ACCESS),
             'distributor' => $this->isWholesaleDistributor()
+                && ! $this->isCentralWarehouse()
                 && $this->canStorePermission(StorePermissions::PANEL_ACCESS),
             'trader' => $this->isRetailTrader()
                 && $this->canStorePermission(StorePermissions::PANEL_ACCESS),

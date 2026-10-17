@@ -29,7 +29,9 @@ class DistributorMyStoreResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return 'شبكتي';
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'واجهة المحل'
+            : 'شبكتي';
     }
 
     public static function getEloquentQuery(): Builder
