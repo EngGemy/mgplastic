@@ -57,11 +57,14 @@ class WarehousePanelProvider extends PanelProvider
                 \App\Filament\Distributor\Resources\DistributorOrderResource::class,
                 \App\Filament\Distributor\Resources\DistributorInvoiceResource::class,
                 \App\Filament\Distributor\Resources\DistributorDistributionResource::class,
+                \App\Filament\Warehouse\Resources\WarehouseWholesalerResource::class,
                 \App\Filament\Distributor\Resources\DistributorRetailTraderResource::class,
+                \App\Filament\Warehouse\Resources\WarehouseReturnResource::class,
                 \App\Filament\Distributor\Resources\DistributorMyStoreResource::class,
             ])
             ->pages([
                 \App\Filament\Warehouse\Pages\WarehouseDashboard::class,
+                \App\Filament\Warehouse\Pages\WarehouseReports::class,
                 \App\Filament\Distributor\Pages\DistributorPos::class,
                 // MyProducts (non-MG shop media) intentionally omitted — warehouse is MG-only.
             ])

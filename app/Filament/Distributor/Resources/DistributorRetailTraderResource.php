@@ -30,31 +30,55 @@ class DistributorRetailTraderResource extends Resource
             : 'شبكتي';
     }
 
+    public static function getNavigationLabel(): string
+    {
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'مخازن القطاعي'
+            : 'تجار القطاعي';
+    }
+
     public static function getModelLabel(): string
     {
-        return 'تاجر قطاعي';
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'مخزن قطاعي'
+            : 'تاجر قطاعي';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'تجار القطاعي';
+        return filament()->getCurrentPanel()?->getId() === 'warehouse'
+            ? 'مخازن القطاعي'
+            : 'تجار القطاعي';
     }
 
     public static function getEloquentQuery(): Builder
     {
-        $wholesalerId = auth()->id();
+        $user = auth()->user();
+
+        // Central warehouse sees the full retail network.
+        if ($user?->isCentralWarehouse() && filament()->getCurrentPanel()?->getId() === 'warehouse') {
+            return parent::getEloquentQuery()
+                ->where('role', 'retail_trader')
+                ->with(['country', 'city', 'parentDistributor:id,name,brand_name'])
+                ->withCount('plumbers');
+        }
 
         return parent::getEloquentQuery()
             ->where('role', 'retail_trader')
-            ->visibleToWholesaler((int) $wholesalerId)
+            ->visibleToWholesaler((int) $user?->id)
             ->with(['country', 'city'])
             ->withCount('plumbers');
     }
 
     public static function canEdit($record): bool
     {
+        $user = auth()->user();
+        if ($user?->isCentralWarehouse()) {
+            return true;
+        }
+
         return app(\App\Services\RetailNetworkLinkService::class)
-            ->isLinked(auth()->user(), $record);
+            ->isLinked($user, $record);
     }
 
     public static function canViewAny(): bool
@@ -69,6 +93,10 @@ class DistributorRetailTraderResource extends Resource
 
     public static function canView($record): bool
     {
+        if (auth()->user()?->isCentralWarehouse()) {
+            return $record->isRetailTrader();
+        }
+
         return static::canEdit($record);
     }
 

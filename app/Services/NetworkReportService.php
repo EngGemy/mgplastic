@@ -407,4 +407,80 @@ class NetworkReportService
             ->values()
             ->all();
     }
+
+    /**
+     * Per-warehouse summaries for the central invitation warehouse overview.
+     *
+     * @return list<array{
+     *   id:int,
+     *   name:string,
+     *   network_code:?string,
+     *   retail_count:int,
+     *   orders_incoming:int,
+     *   orders_placed:int,
+     *   sales_qty:int,
+     *   sales_points:int,
+     *   returns_pending:int
+     * }>
+     */
+    public function networkWholesalerSummaries(User $central, ?string $from = null, ?string $to = null): array
+    {
+        if (! $central->isCentralWarehouse()) {
+            return [];
+        }
+
+        $fromDate = $from ? Carbon::parse($from)->startOfDay() : now()->subDays(29)->startOfDay();
+        $toDate = $to ? Carbon::parse($to)->endOfDay() : now()->endOfDay();
+
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfDay(), $fromDate->copy()->endOfDay()];
+        }
+
+        $warehouses = User::query()
+            ->where('role', 'wholesale_distributor')
+            ->where(function ($q) {
+                $q->where('is_central_warehouse', false)->orWhereNull('is_central_warehouse');
+            })
+            ->whereKeyNot($central->id)
+            ->orderBy('brand_name')
+            ->withCount(['linkedRetailTraders as retail_count'])
+            ->get(['id', 'name', 'brand_name', 'network_code']);
+
+        return $warehouses->map(function (User $w) use ($fromDate, $toDate) {
+            $outgoingIds = InvoiceDistribution::query()
+                ->where('from_user_id', $w->id)
+                ->where('tier', 2)
+                ->whereIn('status', ['confirmed', 'points_awarded'])
+                ->whereBetween('confirmed_at', [$fromDate, $toDate])
+                ->pluck('id');
+
+            $salesAgg = $outgoingIds->isEmpty()
+                ? (object) ['qty' => 0, 'points' => 0]
+                : DB::table('invoice_distribution_items')
+                    ->whereIn('distribution_id', $outgoingIds)
+                    ->selectRaw('COALESCE(SUM(quantity),0) as qty, COALESCE(SUM(points_value),0) as points')
+                    ->first();
+
+            return [
+                'id' => (int) $w->id,
+                'name' => $w->brand_name ?: $w->name,
+                'network_code' => $w->network_code,
+                'retail_count' => (int) ($w->retail_count ?? 0),
+                'orders_incoming' => Order::query()
+                    ->where('supplier_id', $w->id)
+                    ->whereBetween('created_at', [$fromDate, $toDate])
+                    ->count(),
+                'orders_placed' => Order::query()
+                    ->where('requester_id', $w->id)
+                    ->whereBetween('created_at', [$fromDate, $toDate])
+                    ->count(),
+                'sales_qty' => (int) ($salesAgg->qty ?? 0),
+                'sales_points' => (int) ($salesAgg->points ?? 0),
+                'returns_pending' => InvoiceReturn::query()
+                    ->where('to_user_id', $w->id)
+                    ->where('status', InvoiceReturnStatus::PENDING)
+                    ->count(),
+            ];
+        })->values()->all();
+    }
 }

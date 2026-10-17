@@ -8,6 +8,9 @@ use App\Filament\Distributor\Resources\DistributorInvoiceResource;
 use App\Filament\Distributor\Resources\DistributorMyStoreResource;
 use App\Filament\Distributor\Resources\DistributorOrderResource;
 use App\Filament\Distributor\Resources\DistributorRetailTraderResource;
+use App\Filament\Warehouse\Pages\WarehouseReports;
+use App\Filament\Warehouse\Resources\WarehouseReturnResource;
+use App\Filament\Warehouse\Resources\WarehouseWholesalerResource;
 use Filament\Widgets\Widget;
 
 class WarehouseQuickLinksWidget extends Widget
@@ -35,11 +38,14 @@ class WarehouseQuickLinksWidget extends Widget
         $links = [];
 
         $candidates = [
+            ['التقارير', 'شامل + لكل مخزن', WarehouseReports::class, null],
             ['الطلبيات', 'استقبال وتأكيد / شحن', DistributorOrderResource::class, 'index'],
             ['الفواتير', 'وارد وصادر المخزن', DistributorInvoiceResource::class, 'index'],
             ['التوزيعات', 'سلسلة النقاط', DistributorDistributionResource::class, 'index'],
             ['صرف للقطاعي', 'بيع من المخزون', DistributorPos::class, null],
-            ['تجار القطاعي', 'شبكة المخزن', DistributorRetailTraderResource::class, 'index'],
+            ['مخازن الجملة', 'شبكة الجملة', WarehouseWholesalerResource::class, 'index'],
+            ['مخازن القطاعي', 'كل شبكة القطاعي', DistributorRetailTraderResource::class, 'index'],
+            ['المرتجعات', 'قبول ورفض', WarehouseReturnResource::class, 'index'],
             ['متجري', 'واجهة الكتالوج MG', DistributorMyStoreResource::class, 'index'],
         ];
 

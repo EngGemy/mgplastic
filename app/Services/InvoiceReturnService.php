@@ -194,6 +194,11 @@ class InvoiceReturnService
             return;
         }
 
+        // Central warehouse oversees network returns.
+        if ($actor->isCentralWarehouse()) {
+            return;
+        }
+
         if ((int) $return->to_user_id !== (int) $actor->id) {
             throw new \DomainException('قبول/رفض المرتجع متاح للطرف المستلم (البائع الأصلي) أو المشرف فقط');
         }
