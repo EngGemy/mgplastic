@@ -150,6 +150,23 @@ class PointsConversionService
     }
 
     /**
+     * Points still redeemable on a specific tier-3 distribution after conversions/returns.
+     * Used to block invoice returns once those points were spent.
+     */
+    public function remainingPointsForDistribution(User $plumber, InvoiceDistribution $distribution, string $currency = 'LYD'): int
+    {
+        if ((int) $distribution->tier !== 3 || (int) $distribution->to_user_id !== (int) $plumber->id) {
+            return 0;
+        }
+
+        $wallet = $plumber->wallet($currency);
+
+        return (int) $this->availableLots($plumber, $wallet)
+            ->filter(fn (array $lot) => (int) ($lot['distribution_id'] ?? 0) === (int) $distribution->id)
+            ->sum('points_remaining');
+    }
+
+    /**
      * @return Collection<int, array{
      *   key:string,
      *   product_id:?int,

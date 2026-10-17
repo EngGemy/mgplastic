@@ -25,8 +25,8 @@ trait HandlesNetworkPosCart
 
     public function getFilteredStockProperty(): Collection
     {
+        // Show MG products with points AND catalog items without points (no-points sales).
         return $this->stockRows()
-            ->filter(fn ($row) => (float) ($row['points_per_unit'] ?? 0) > 0)
             ->when($this->selectedCategoryId, fn (Collection $c) => $c->filter(
                 fn ($row) => (int) ($row['category_id'] ?? 0) === (int) $this->selectedCategoryId
                     || $this->categoryMatchesChild($row, $this->selectedCategoryId)
@@ -76,11 +76,14 @@ trait HandlesNetworkPosCart
             }
             $this->cart[$key]['quantity']++;
         } else {
+            $ppu = max(0, (float) ($row['points_per_unit'] ?? 0));
             $this->cart[$key] = [
                 'product_id' => $productId,
                 'name' => $row['name'],
                 'quantity' => 1,
-                'points_per_unit' => (float) $row['points_per_unit'],
+                'points_per_unit' => $ppu,
+                'has_points' => $ppu > 0,
+                'product_kind' => $ppu > 0 ? 'mg_points' : 'mg_no_points',
                 'image' => $row['image'] ?? null,
                 'max_qty' => (int) $row['available_qty'],
             ];

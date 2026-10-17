@@ -91,7 +91,15 @@ class StoreMedia extends Model
             'sort_order' => $this->sort_order,
             'is_active' => $this->is_active,
             'created_at' => $this->created_at?->toISOString(),
-        ] + ($this->kind === 'my_product' ? ['has_points' => false] : []);
+        ] + ($this->kind === 'my_product' ? [
+            'has_points' => false,
+            'awards_points' => false,
+            'is_mg' => false,
+            'product_kind' => 'shop',
+            // Shop-owned display products — not inventoriable via MG network stock;
+            // apps may show them in the store catalog but orders without points only.
+            'orderable_without_points' => true,
+        ] : []);
     }
 
     public function scopeMyProducts($query)

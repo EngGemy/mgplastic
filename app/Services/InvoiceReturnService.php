@@ -13,12 +13,7 @@ use Illuminate\Support\Facades\DB;
 class InvoiceReturnService
 {
     /**
-     * Return goods on a confirmed distribution (tier 2 or 3).
-     *
-     * Points move back up the chain:
-     * - Debit the buyer (original to_user)
-     * - Credit the seller (original from_user)
-     * - Update outgoing invoice net points
+     * Return goods on a confirmed distribution (tier 2 wholesale→retail or tier 3 retail→plumber).
      *
      * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
      */
@@ -32,11 +27,11 @@ class InvoiceReturnService
         $distribution->loadMissing(['items.invoiceItem.product', 'invoice', 'fromUser', 'toUser']);
 
         if (! in_array($distribution->status, ['confirmed', 'points_awarded'], true)) {
-            throw new \DomainException('لا يمكن عمل مرتجع إلا على توزيع مؤكّد');
+            throw new \DomainException('لا يمكن عمل مرتجع إلا على توزيع مؤكّد أو تم صرف نقاطه');
         }
 
         if (! in_array((int) $distribution->tier, [2, 3], true)) {
-            throw new \DomainException('المرتجعات متاحة لتوزيعات الجملة→قطاعي أو قطاعي→سباك فقط');
+            throw new \DomainException('المرتجعات متاحة فقط لتوزيعات الجملة→قطاعي أو القطاعي→سباك — مرتجع المصنع غير مدعوم من هذا المسار');
         }
 
         $this->assertActorCanReturn($distribution, $actor);
@@ -44,14 +39,17 @@ class InvoiceReturnService
         $prepared = $this->prepareLines($distribution, $lines);
 
         if ($prepared === []) {
-            throw new \DomainException('أضف كمية مرتجعة واحدة على الأقل');
+            throw new \DomainException('أضف كمية مرتجعة واحدة على الأقل لصنف صحيح');
         }
+
+        $totalPoints = (int) collect($prepared)->sum('points_value');
+        $this->assertPointsCanBeReturned($distribution, $totalPoints);
 
         $documentInvoice ??= $this->resolveDocumentInvoice($distribution);
 
-        return DB::transaction(function () use ($distribution, $prepared, $actor, $note, $documentInvoice) {
+        return DB::transaction(function () use ($distribution, $prepared, $actor, $note, $documentInvoice, $totalPoints) {
             $totalQty = 0;
-            $totalPoints = 0;
+            $confirmedPoints = 0;
 
             foreach ($prepared as $row) {
                 $distItem = InvoiceDistributionItem::query()
@@ -72,7 +70,7 @@ class InvoiceReturnService
                 $distItem->save();
 
                 $totalQty += $row['quantity'];
-                $totalPoints += $row['points_value'];
+                $confirmedPoints += $row['points_value'];
             }
 
             $return = InvoiceReturn::create([
@@ -84,7 +82,7 @@ class InvoiceReturnService
                 'tier' => $distribution->tier,
                 'status' => 'confirmed',
                 'total_quantity' => $totalQty,
-                'total_points' => $totalPoints,
+                'total_points' => $confirmedPoints,
                 'note' => $note,
                 'created_by' => $actor->id,
                 'confirmed_at' => now(),
@@ -105,13 +103,17 @@ class InvoiceReturnService
                 ]);
             }
 
-            $this->transferPoints(
-                from: User::findOrFail($distribution->to_user_id),
-                to: User::findOrFail($distribution->from_user_id),
-                points: $totalPoints,
-                return: $return,
-                actor: $actor,
-            );
+            // Tier 3 awarded wallet points to the plumber — claw them back exactly.
+            // Tier 2 is stock/net-points only (retail never received wallet points on sale).
+            if ((int) $distribution->tier === 3 && $confirmedPoints > 0) {
+                $this->transferPoints(
+                    from: User::findOrFail($distribution->to_user_id),
+                    to: User::findOrFail($distribution->from_user_id),
+                    points: $confirmedPoints,
+                    return: $return,
+                    actor: $actor,
+                );
+            }
 
             $this->syncOutgoingInvoiceTotals($documentInvoice->fresh(['sourceDistribution.items', 'returns']));
 
@@ -120,26 +122,50 @@ class InvoiceReturnService
     }
 
     /**
+     * Wholesale → retail outgoing invoice return.
+     *
      * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
      */
     public function returnOutgoingInvoice(Invoice $invoice, array $lines, User $actor, ?string $note = null): InvoiceReturn
     {
         if (! $invoice->isWholesalePos() || $invoice->invoice_flow !== 'outgoing') {
-            throw new \DomainException('المرتجع متاح على فواتير الصادر (جملة → قطاعي) فقط');
+            throw new \DomainException('مرتجع الجملة→قطاعي متاح على فواتير الصادر لنقاط البيع فقط');
         }
 
         $distribution = $invoice->sourceDistribution
             ?? InvoiceDistribution::query()->whereKey($invoice->source_distribution_id)->first();
 
         if (! $distribution) {
-            throw new \DomainException('تعذّر العثور على توزيع الفاتورة المرتبط');
+            throw new \DomainException('تعذّر العثور على توزيع الفاتورة المرتبط — تأكد أن الفاتورة صادرة ومؤكّدة');
+        }
+
+        if ((int) $distribution->tier !== 2) {
+            throw new \DomainException('هذه الفاتورة ليست توزيع جملة→قطاعي');
         }
 
         return $this->returnDistribution($distribution, $lines, $actor, $note, $invoice);
     }
 
     /**
-     * @return array<int, array{invoice_item_id:int, product_name:string, returnable:int, points_per_unit:float, sold:int, returned:int}>
+     * Retail → plumber distribution return.
+     *
+     * @param  array<int, array{invoice_item_id:int, quantity:int}>  $lines
+     */
+    public function returnPlumberDistribution(
+        InvoiceDistribution $distribution,
+        array $lines,
+        User $actor,
+        ?string $note = null,
+    ): InvoiceReturn {
+        if ((int) $distribution->tier !== 3) {
+            throw new \DomainException('هذا المسار لمرتجع القطاعي→سباك فقط (tier 3)');
+        }
+
+        return $this->returnDistribution($distribution, $lines, $actor, $note);
+    }
+
+    /**
+     * @return array<int, array{invoice_item_id:int, product_name:string, returnable:int, points_per_unit:float, sold:int, returned:int, has_points:bool}>
      */
     public function returnableLines(InvoiceDistribution $distribution): array
     {
@@ -154,13 +180,17 @@ class InvoiceReturnService
                 continue;
             }
 
+            $ppu = (float) ($distItem->invoiceItem?->points_per_unit ?? 0);
+
             $lines[] = [
                 'invoice_item_id' => (int) $distItem->invoice_item_id,
+                'product_id' => $distItem->invoiceItem?->product_id ? (int) $distItem->invoiceItem->product_id : null,
                 'product_name' => localized_name($distItem->invoiceItem?->product, 'name', 'منتج'),
                 'sold' => (int) $distItem->quantity,
                 'returned' => (int) ($distItem->returned_quantity ?? 0),
                 'returnable' => $returnable,
-                'points_per_unit' => (float) ($distItem->invoiceItem?->points_per_unit ?? 0),
+                'points_per_unit' => $ppu,
+                'has_points' => $ppu > 0,
             ];
         }
 
@@ -168,12 +198,12 @@ class InvoiceReturnService
     }
 
     /**
-     * Summary for invoice UI (outgoing preferred).
-     *
      * @return array{
      *   sold_qty:int, returned_qty:int, net_qty:int,
      *   sold_points:int, returned_points:int, net_points:int,
-     *   returns_count:int
+     *   returns_count:int,
+     *   can_return:bool,
+     *   block_reason:?string
      * }
      */
     public function invoiceReturnSummary(Invoice $invoice): array
@@ -192,15 +222,70 @@ class InvoiceReturnService
             $soldPoints = (int) ($invoice->points_awarded ?: $invoice->items->sum('total_points'));
         }
 
+        $netPoints = max(0, $soldPoints - $returnedPoints);
+        $canReturn = true;
+        $blockReason = null;
+        $dist = $invoice->sourceDistribution;
+
+        // Only probe the spent-points gate for tier-3 plumber distributions.
+        if ($dist && (int) $dist->tier === 3 && $netPoints > 0) {
+            try {
+                $this->assertPointsCanBeReturned($dist, $netPoints);
+            } catch (\DomainException $e) {
+                $canReturn = false;
+                $blockReason = $e->getMessage();
+            }
+        }
+
         return [
             'sold_qty' => $soldQty,
             'returned_qty' => $returnedQty,
             'net_qty' => max(0, $soldQty - $returnedQty),
             'sold_points' => $soldPoints,
             'returned_points' => $returnedPoints,
-            'net_points' => max(0, $soldPoints - $returnedPoints),
+            'net_points' => $netPoints,
             'returns_count' => $returnsCount,
+            'can_return' => $canReturn,
+            'block_reason' => $blockReason,
         ];
+    }
+
+    /** Max points that would be clawed back if all returnable qty were returned now. */
+    public function maxReturnablePoints(InvoiceDistribution $distribution): int
+    {
+        return (int) collect($this->returnableLines($distribution))->sum(
+            fn (array $line) => (int) floor(($line['returnable'] ?? 0) * ($line['points_per_unit'] ?? 0))
+        );
+    }
+
+    /**
+     * Soft gate for API preview — does not mutate.
+     *
+     * @return array{can_return:bool, block_reason:?string}
+     */
+    public function previewReturnGate(InvoiceDistribution $distribution): array
+    {
+        try {
+            if (! in_array($distribution->status, ['confirmed', 'points_awarded'], true)) {
+                return [
+                    'can_return' => false,
+                    'block_reason' => 'لا يمكن عمل مرتجع إلا على توزيع مؤكّد أو تم صرف نقاطه',
+                ];
+            }
+
+            if ($this->returnableLines($distribution) === []) {
+                return [
+                    'can_return' => false,
+                    'block_reason' => 'لا توجد كميات متاحة للإرجاع على هذا التوزيع',
+                ];
+            }
+
+            $this->assertPointsCanBeReturned($distribution, $this->maxReturnablePoints($distribution));
+
+            return ['can_return' => true, 'block_reason' => null];
+        } catch (\DomainException $e) {
+            return ['can_return' => false, 'block_reason' => $e->getMessage()];
+        }
     }
 
     protected function resolveDocumentInvoice(InvoiceDistribution $distribution): Invoice
@@ -269,7 +354,7 @@ class InvoiceReturnService
             $distItem = $distribution->items->firstWhere('invoice_item_id', $invoiceItemId);
 
             if (! $distItem) {
-                throw new \DomainException('أحد البنود غير موجود في هذا التوزيع');
+                throw new \DomainException('أحد البنود غير موجود في هذا التوزيع — راجع invoice_item_id');
             }
 
             $ppu = (float) ($distItem->invoiceItem?->points_per_unit ?? 0);
@@ -299,10 +384,46 @@ class InvoiceReturnService
         ];
 
         if (! in_array((int) $actor->id, $allowed, true)) {
-            throw new \DomainException('غير مصرّح لك بعمل مرتجع على هذا التوزيع');
+            throw new \DomainException('غير مصرّح لك بعمل مرتجع على هذا التوزيع — يجب أن تكون البائع أو المشتري أو مشرفاً');
         }
     }
 
+    /**
+     * Block returns when tier-3 points were already converted/spent beyond remaining lots.
+     */
+    protected function assertPointsCanBeReturned(InvoiceDistribution $distribution, int $points): void
+    {
+        if ($points <= 0 || (int) $distribution->tier !== 3) {
+            return;
+        }
+
+        $buyer = User::query()->find($distribution->to_user_id);
+        if (! $buyer) {
+            throw new \DomainException('تعذّر تحديد مشتري التوزيع لاسترجاع النقاط');
+        }
+
+        $wallet = $buyer->wallet();
+        $balance = (int) $wallet->balance_points;
+
+        if ($balance < $points) {
+            throw new \DomainException(
+                "لا يمكن عمل مرتجع بعد صرف النقاط — المطلوب استرجاع {$points} نقطة ورصيد السباك الحالي {$balance} نقطة فقط"
+            );
+        }
+
+        $remainingOnDist = app(PointsConversionService::class)
+            ->remainingPointsForDistribution($buyer, $distribution);
+
+        if ($remainingOnDist < $points) {
+            throw new \DomainException(
+                "لا يمكن عمل مرتجع بعد صرف نقاط هذه الفاتورة — المتبقي من نقاط التوزيع {$remainingOnDist} والمطلوب {$points}"
+            );
+        }
+    }
+
+    /**
+     * Debit buyer and credit seller the SAME amount — never mint points.
+     */
     protected function transferPoints(User $from, User $to, int $points, InvoiceReturn $return, User $actor): void
     {
         if ($points <= 0) {
@@ -311,17 +432,20 @@ class InvoiceReturnService
 
         $fromWallet = $from->wallet();
         $balance = (int) $fromWallet->balance_points;
-        $debit = min($points, max(0, $balance));
 
-        if ($debit > 0) {
-            $fromWallet->debitPoints($debit, [
-                'reason' => 'invoice_return_out',
-                'return_id' => $return->id,
-                'invoice_id' => $return->invoice_id,
-                'distribution_id' => $return->distribution_id,
-                'tier' => $return->tier,
-            ], $actor, "مرتجع فاتورة {$return->return_number}");
+        if ($balance < $points) {
+            throw new \DomainException(
+                "رصيد النقاط غير كافٍ لاستكمال المرتجع (المطلوب {$points} / المتاح {$balance})"
+            );
         }
+
+        $fromWallet->debitPoints($points, [
+            'reason' => 'invoice_return_out',
+            'return_id' => $return->id,
+            'invoice_id' => $return->invoice_id,
+            'distribution_id' => $return->distribution_id,
+            'tier' => $return->tier,
+        ], $actor, "مرتجع فاتورة {$return->return_number}");
 
         $to->wallet()->creditPoints($points, [
             'reason' => 'invoice_return_in',
@@ -329,7 +453,7 @@ class InvoiceReturnService
             'invoice_id' => $return->invoice_id,
             'distribution_id' => $return->distribution_id,
             'tier' => $return->tier,
-            'debited_from_balance' => $debit,
+            'debited_from_balance' => $points,
             'requested_points' => $points,
         ], $actor, "استلام مرتجع {$return->return_number}");
     }

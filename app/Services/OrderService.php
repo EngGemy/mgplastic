@@ -408,7 +408,8 @@ class OrderService
                 continue;
             }
 
-            $ppu = (float) ($product->points_per_unit ?? 0);
+            // Non-MG / zero-point catalog items stay orderable with 0 points.
+            $ppu = $product->effectivePointsPerUnit();
             $linePoints = (int) floor($qty * $ppu);
 
             $items[] = [

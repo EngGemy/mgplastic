@@ -84,6 +84,7 @@ class ProductCatalogController extends Controller
         $points = (float) ($product->points_per_unit ?? 0);
 
         // Network apps see totals on orders only — not the per-unit rate (decimal UX).
+        // mg_no_points = MG catalog without loyalty points (still orderable).
         $item = [
             'id' => (int) $product->id,
             'name' => localized_name($product, 'name', 'منتج #'.$product->id),
@@ -93,6 +94,9 @@ class ProductCatalogController extends Controller
                 ?? ($image ? asset('storage/'.ltrim($image, '/')) : null),
             'points_per_unit' => null,
             'has_points' => $points > 0,
+            'product_kind' => $product->productKind(),
+            'is_mg' => true,
+            'awards_points' => $product->awardsPoints(),
             'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
             'category_name' => $product->category
                 ? localized_name($product->category, 'name', '')

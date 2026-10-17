@@ -1,8 +1,11 @@
 # MG Plastic — Mobile API Documentation
 
-**Version:** 1.0  
-**Base URL:** `http://127.0.0.1:8000/api`  
-**Interactive docs (Swagger/OpenAPI):** `http://127.0.0.1:8000/docs/api`
+**Version:** 2.0  
+**Base URL:** `http://127.0.0.1:8000/api` · Production: `https://mg-plastic.com/api`  
+**Interactive docs (Swagger/OpenAPI):** `GET /docs/api`
+
+> **الدليل الشامل المحدّث:** [MOBILE_API_COMPLETE.md](./MOBILE_API_COMPLETE.md)  
+> طلبيات: [MOBILE_NETWORK_ORDERS.md](./MOBILE_NETWORK_ORDERS.md) · مرتجعات: [MOBILE_INVOICE_RETURNS.md](./MOBILE_INVOICE_RETURNS.md)
 
 ---
 
@@ -16,20 +19,13 @@ Accept: application/json
 Accept-Language: ar
 ```
 
-### Register (Plumber / Vendor)
+### Register
 
-```http
-POST /api/v1/auth/register-plumber
-Content-Type: application/json
-
-{
-  "name": "محمود",
-  "phone": "218912345678",
-  "password": "password",
-  "password_confirmation": "password",
-  "role": "plumber"
-}
-```
+| Role | Endpoint |
+|------|----------|
+| سباك | `POST /api/v1/auth/register-plumber` |
+| قطاعي | `POST /api/v1/auth/register-retail` (alias `register-trader`) |
+| جملة | `POST /api/v1/auth/register-store` |
 
 ### Login
 
@@ -59,7 +55,7 @@ POST /api/v1/auth/verify-otp
 | POST | `/api/v1/mobile/logout` | Revoke current token |
 | POST | `/api/v1/mobile/logout-all` | Revoke all tokens |
 
-> **Retail trader / Wholesale distributor** accounts are created by admin or parent distributor. They login with the same `/auth/login` endpoint.
+الجملة يقدر يسجّل قطاعي في شبكته من `POST /mobile/distributor/retail-traders` كمان.
 
 ---
 

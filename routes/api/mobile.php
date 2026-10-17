@@ -9,9 +9,12 @@
 
 use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\Distributor\DashboardController as DistributorDashboardController;
+use App\Http\Controllers\Api\Distributor\InvoiceReturnController as DistributorInvoiceReturnController;
+use App\Http\Controllers\Api\Distributor\NetworkPlumberController as DistributorNetworkPlumberController;
 use App\Http\Controllers\Api\Distributor\OrderController as DistributorOrderController;
 use App\Http\Controllers\Api\Distributor\PosController as DistributorPosController;
 use App\Http\Controllers\Api\Distributor\RetailTraderController;
+use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
@@ -23,6 +26,7 @@ use App\Http\Controllers\Api\Plumber\WalletApiController;
 use App\Http\Controllers\Api\Plumber\WalletController;
 use App\Http\Controllers\Api\Plumber\WithdrawalController;
 use App\Http\Controllers\Api\Trader\DashboardController as TraderDashboardController;
+use App\Http\Controllers\Api\Trader\InvoiceReturnController as TraderInvoiceReturnController;
 use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
 use App\Http\Controllers\Api\Trader\PosController as TraderPosController;
@@ -142,6 +146,12 @@ Route::prefix('v1/mobile')->group(function () {
         // Catalog — pick products when placing supply order to wholesaler
         Route::get('products', [TraderProductCatalogController::class, 'index']);
 
+        // Shop display products (non-MG / no points) — aliases of /v1/my-store/my-products
+        Route::get('my-products', [NetworkStoreController::class, 'listMyProducts']);
+        Route::post('my-products', [NetworkStoreController::class, 'uploadMyProduct']);
+        Route::match(['put', 'patch', 'post'], 'my-products/{mediaId}', [NetworkStoreController::class, 'updateMyProduct'])->whereNumber('mediaId');
+        Route::delete('my-products/{mediaId}', [NetworkStoreController::class, 'deleteMyProduct'])->whereNumber('mediaId');
+
         // Orders — place to wholesaler + fulfil plumber orders
         Route::get('orders', [TraderOrderController::class, 'index']);
         Route::post('orders', [TraderOrderController::class, 'store']);
@@ -155,6 +165,14 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('orders/{order}/reject', [TraderOrderController::class, 'reject']);
         Route::post('orders/{order}/receive', [TraderOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [TraderOrderController::class, 'cancel']);
+
+        // Invoice returns — retail→plumber (distributions) + retail←wholesale (invoices)
+        Route::get('returns', [TraderInvoiceReturnController::class, 'index']);
+        Route::get('returns/{return}', [TraderInvoiceReturnController::class, 'show']);
+        Route::get('distributions/{distribution}/return-preview', [TraderInvoiceReturnController::class, 'previewDistribution']);
+        Route::post('distributions/{distribution}/returns', [TraderInvoiceReturnController::class, 'storeDistribution']);
+        Route::get('invoices/{invoice}/return-preview', [TraderInvoiceReturnController::class, 'previewInvoice']);
+        Route::post('invoices/{invoice}/returns', [TraderInvoiceReturnController::class, 'storeInvoice']);
     });
 
     // ── Wholesale distributor (موزع الجملة) ────────────────────
@@ -162,8 +180,16 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('dashboard', DistributorDashboardController::class);
 
         Route::get('retail-traders', [RetailTraderController::class, 'index']);
+        Route::post('retail-traders', [RetailTraderController::class, 'store']);
         Route::post('retail-traders/link', [RetailTraderController::class, 'link']);
         Route::get('retail-traders/{retailTrader}', [RetailTraderController::class, 'show']);
+        Route::delete('retail-traders/{retailTrader}', [RetailTraderController::class, 'unlink']);
+
+        // Plumbers under linked retail shops (not direct wholesale↔plumber)
+        Route::get('plumbers', [DistributorNetworkPlumberController::class, 'index']);
+        Route::post('plumbers', [DistributorNetworkPlumberController::class, 'store']);
+        Route::post('plumbers/link', [DistributorNetworkPlumberController::class, 'link']);
+        Route::get('plumbers/{plumber}', [DistributorNetworkPlumberController::class, 'show']);
 
         Route::get('pos/stock', [DistributorPosController::class, 'stock']);
         Route::post('pos/checkout', [DistributorPosController::class, 'checkout']);
@@ -187,6 +213,12 @@ Route::prefix('v1/mobile')->group(function () {
         // Catalog — pick products when placing factory order
         Route::get('products', [TraderProductCatalogController::class, 'index']);
 
+        // Shop display products (non-MG / no points)
+        Route::get('my-products', [NetworkStoreController::class, 'listMyProducts']);
+        Route::post('my-products', [NetworkStoreController::class, 'uploadMyProduct']);
+        Route::match(['put', 'patch', 'post'], 'my-products/{mediaId}', [NetworkStoreController::class, 'updateMyProduct'])->whereNumber('mediaId');
+        Route::delete('my-products/{mediaId}', [NetworkStoreController::class, 'deleteMyProduct'])->whereNumber('mediaId');
+
         // Orders — place to factory + fulfil retail-trader orders
         Route::get('orders', [DistributorOrderController::class, 'index']);
         Route::post('orders', [DistributorOrderController::class, 'store']);
@@ -197,5 +229,11 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('orders/{order}/reject', [DistributorOrderController::class, 'reject']);
         Route::post('orders/{order}/receive', [DistributorOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [DistributorOrderController::class, 'cancel']);
+
+        // Invoice returns — wholesale→retail outgoing invoices
+        Route::get('returns', [DistributorInvoiceReturnController::class, 'index']);
+        Route::get('returns/{return}', [DistributorInvoiceReturnController::class, 'show']);
+        Route::get('invoices/{invoice}/return-preview', [DistributorInvoiceReturnController::class, 'preview']);
+        Route::post('invoices/{invoice}/returns', [DistributorInvoiceReturnController::class, 'store']);
     });
 });

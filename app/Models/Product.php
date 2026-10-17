@@ -187,6 +187,28 @@ class Product extends Model
         return $cat ? $cat->isAccessoriesFamily() : false;
     }
 
+    /** MG network product that awards loyalty points. */
+    public function awardsPoints(): bool
+    {
+        return (float) ($this->points_per_unit ?? 0) > 0;
+    }
+
+    /**
+     * Catalog classification for mobile/POS:
+     * - mg_points: MG product with points
+     * - mg_no_points: MG catalog item sold without points (still orderable)
+     */
+    public function productKind(): string
+    {
+        return $this->awardsPoints() ? 'mg_points' : 'mg_no_points';
+    }
+
+    /** Effective PPU for orders/POS — never negative. */
+    public function effectivePointsPerUnit(): float
+    {
+        return max(0, (float) ($this->points_per_unit ?? 0));
+    }
+
     /** إجمالي القيمة المالية لنقاط وحدة واحدة (د.ل) */
     public function pointMonetaryValuePerUnit(?int $unitPriceCents = null): float
     {
