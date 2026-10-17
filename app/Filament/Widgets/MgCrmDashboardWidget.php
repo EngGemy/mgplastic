@@ -11,9 +11,11 @@ class MgCrmDashboardWidget extends Widget
 
     protected static bool $isDiscovered = false;
 
+    protected static bool $isLazy = false;
+
     protected static ?int $sort = -200;
 
-    protected static ?string $pollingInterval = '30s';
+    protected static ?string $pollingInterval = null;
 
     protected int|string|array $columnSpan = 'full';
 

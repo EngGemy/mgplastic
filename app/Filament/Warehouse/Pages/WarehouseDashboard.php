@@ -37,7 +37,7 @@ class WarehouseDashboard extends BaseDashboard
         return [
             \App\Filament\Warehouse\Widgets\WarehousePointsPanelWidget::class,
             \App\Filament\Widgets\MgCrmDashboardWidget::class,
-            \App\Filament\Widgets\QuickAccessWidget::class,
+            \App\Filament\Warehouse\Widgets\WarehouseQuickLinksWidget::class,
         ];
     }
 

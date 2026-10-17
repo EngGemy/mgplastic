@@ -11,6 +11,8 @@ class WarehousePointsPanelWidget extends Widget
 
     protected static bool $isDiscovered = false;
 
+    protected static bool $isLazy = false;
+
     protected static ?int $sort = -300;
 
     protected int|string|array $columnSpan = 'full';
