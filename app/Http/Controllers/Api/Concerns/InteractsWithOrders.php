@@ -11,7 +11,7 @@ trait InteractsWithOrders
     {
         // Include role — stock/permission helpers call isWholesaleDistributor()/isRetailTrader().
         return $order->load([
-            'items',
+            'items.product:id,pieces_per_box',
             'requester:id,name,brand_name,role',
             'supplier:id,name,brand_name,role',
         ]);

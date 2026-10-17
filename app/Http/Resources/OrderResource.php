@@ -58,14 +58,22 @@ class OrderResource extends JsonResource
             'shipped_at' => $this->shipped_at?->toIso8601String(),
             'delivered_at' => $this->delivered_at?->toIso8601String(),
 
-            'items' => $this->whenLoaded('items', fn () => $this->items->map(fn ($item) => [
-                'product_id' => (int) $item->product_id,
-                'name' => $item->name_snapshot,
-                'quantity' => (int) $item->quantity,
-                // Per-unit rate is admin-only; apps show line/order totals.
-                'points_per_unit' => null,
-                'line_points' => (int) $item->line_points,
-            ])->values()),
+            'items' => $this->whenLoaded('items', fn () => $this->items->map(function ($item) {
+                $piecesPerBox = (int) ($item->product?->pieces_per_box ?? 0);
+                $qty = (int) $item->quantity;
+
+                return [
+                    'product_id' => (int) $item->product_id,
+                    'name' => $item->name_snapshot,
+                    'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
+                    'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
+                    'boxes' => $piecesPerBox > 0 ? (int) ($qty / max($piecesPerBox, 1)) : null,
+                    'quantity' => $qty,
+                    // Network apps: never show product/line points — only order total_points.
+                    'points_per_unit' => null,
+                    'line_points' => null,
+                ];
+            })->values()),
 
             'created_at' => $this->created_at?->toIso8601String(),
         ];

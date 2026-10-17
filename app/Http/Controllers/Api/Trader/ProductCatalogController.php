@@ -24,20 +24,34 @@ class ProductCatalogController extends Controller
         $lang = $this->language($request);
         app()->setLocale($lang);
 
-        $perPage = min(max((int) $request->integer('per_page', 20), 1), 100);
-        $page = $this->catalogQuery($request)->latest('id')->paginate($perPage);
+        $orderUnit = $this->requestedOrderUnit($request);
+        $baseQuery = $this->catalogQuery($request, applyOrderUnit: false);
+
+        $boxCount = (clone $baseQuery)->where('pieces_per_box', '>', 0)->count();
+        $pieceCount = (clone $baseQuery)->where(function ($q) {
+            $q->whereNull('pieces_per_box')->orWhere('pieces_per_box', '<=', 0);
+        })->count();
+
+        $query = $this->catalogQuery($request, applyOrderUnit: true)->latest('id');
+        $perPage = min(max((int) $request->integer('per_page', 20), 1), 50);
+        $page = $query->paginate($perPage);
 
         $items = collect($page->items())->map(fn (Product $product) => $this->mapCatalogProduct($product))->values();
 
         return $this->success([
             'items' => $items,
-            'pagination' => [
-                'current_page' => $page->currentPage(),
-                'last_page' => $page->lastPage(),
-                'per_page' => $page->perPage(),
-                'total' => $page->total(),
+            'units' => [
+                'all' => $boxCount + $pieceCount,
+                'box' => $boxCount,
+                'piece' => $pieceCount,
             ],
-        ], 'كتالوج منتجات MG — للمصنع والمخزن');
+            'filters' => [
+                'order_unit' => $orderUnit,
+                'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
+                'search' => $request->query('q') ?? $request->query('search'),
+            ],
+            'pagination' => $this->paginationMeta($page),
+        ], 'كتالوج منتجات MG — صناديق / قطع (بدون نقاط للمنتج)');
     }
 
     /**
@@ -67,7 +81,7 @@ class ProductCatalogController extends Controller
         return $this->success(['items' => $categories], 'تصنيفات منتجات MG');
     }
 
-    protected function catalogQuery(Request $request): Builder
+    protected function catalogQuery(Request $request, bool $applyOrderUnit = true): Builder
     {
         $query = Product::query()
             ->with(['translations', 'images', 'category.translations']);
@@ -96,7 +110,45 @@ class ProductCatalogController extends Controller
             }
         }
 
+        if ($applyOrderUnit) {
+            $orderUnit = $this->requestedOrderUnit($request);
+            if ($orderUnit === 'box') {
+                $query->where('pieces_per_box', '>', 0);
+            } elseif ($orderUnit === 'piece') {
+                $query->where(function ($q) {
+                    $q->whereNull('pieces_per_box')->orWhere('pieces_per_box', '<=', 0);
+                });
+            }
+        }
+
         return $query;
+    }
+
+    /** @return 'box'|'piece'|null */
+    protected function requestedOrderUnit(Request $request): ?string
+    {
+        $raw = strtolower(trim((string) ($request->query('order_unit') ?? $request->query('unit') ?? '')));
+
+        return in_array($raw, ['box', 'piece'], true) ? $raw : null;
+    }
+
+    /**
+     * @param  \Illuminate\Contracts\Pagination\LengthAwarePaginator<\App\Models\Product>  $page
+     * @return array<string, mixed>
+     */
+    protected function paginationMeta($page): array
+    {
+        return [
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+            'per_page' => $page->perPage(),
+            'total' => $page->total(),
+            'from' => $page->firstItem(),
+            'to' => $page->lastItem(),
+            'has_more' => $page->hasMorePages(),
+            'next_page' => $page->hasMorePages() ? $page->currentPage() + 1 : null,
+            'prev_page' => $page->currentPage() > 1 ? $page->currentPage() - 1 : null,
+        ];
     }
 
     /**

@@ -4,6 +4,9 @@
 Base: `/api/v1/mobile`  
 Auth: `Authorization: Bearer {token}`
 
+> **كتالوج الجملة (صناديق/قطع + باجينيشن + مجموع نقاط فقط):**  
+> انظر [MOBILE_WHOLESALE_SUPPLY_CATALOG.md](./MOBILE_WHOLESALE_SUPPLY_CATALOG.md)
+
 ---
 
 ## 1) مصادر التوريد (مصنع + مخازن)

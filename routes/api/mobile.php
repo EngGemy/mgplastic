@@ -274,6 +274,7 @@ Route::prefix('v1/mobile')->group(function () {
 
         // Orders — place to factory + fulfil retail-trader orders
         Route::get('orders', [DistributorOrderController::class, 'index']);
+        Route::post('orders/quote', [DistributorOrderController::class, 'quote']);
         Route::post('orders', [DistributorOrderController::class, 'store']);
         Route::get('orders/{order}', [DistributorOrderController::class, 'show']);
         Route::post('orders/{order}/confirm', [DistributorOrderController::class, 'confirm']);

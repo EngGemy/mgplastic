@@ -121,20 +121,52 @@ class OrderController extends Controller
             return $this->error('هذا المخزن غير مفعّل حالياً', 403);
         }
 
-        $stock = $this->inventory->stockForWholesaler($warehouse);
+        $orderUnit = strtolower(trim((string) ($request->query('order_unit') ?? $request->query('unit') ?? '')));
+        $orderUnit = in_array($orderUnit, ['box', 'piece'], true) ? $orderUnit : null;
+        $search = trim((string) ($request->query('q') ?? $request->query('search') ?? ''));
+        $categoryId = $request->filled('category_id') ? (int) $request->query('category_id') : null;
+        $perPage = min(max((int) $request->integer('per_page', 20), 1), 50);
+        $pageNum = max((int) $request->integer('page', 1), 1);
 
-        $items = $stock->map(fn (array $row) => [
-            'product_id' => (int) $row['product_id'],
-            'name' => $row['name'],
-            'image' => $row['image'] ?? null,
-            'image_url' => $row['image'] ?? null,
-            'category_id' => $row['category_id'] ?? null,
-            'points_per_unit' => null,
-            'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
-            'pieces_per_box' => isset($row['pieces_per_box']) ? (int) $row['pieces_per_box'] : null,
-            'available_qty' => (int) ($row['available_qty'] ?? 0),
-            'available_quantity' => (int) ($row['available_qty'] ?? 0),
-        ])->values();
+        $mapped = $this->inventory->stockForWholesaler($warehouse)
+            ->map(function (array $row) {
+                $piecesPerBox = isset($row['pieces_per_box']) ? (int) $row['pieces_per_box'] : 0;
+
+                return [
+                    'product_id' => (int) $row['product_id'],
+                    'name' => $row['name'],
+                    'image' => $row['image'] ?? null,
+                    'image_url' => $row['image'] ?? null,
+                    'category_id' => $row['category_id'] ?? null,
+                    'points_per_unit' => null,
+                    'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
+                    'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
+                    'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
+                    'available_qty' => (int) ($row['available_qty'] ?? 0),
+                    'available_quantity' => (int) ($row['available_qty'] ?? 0),
+                ];
+            })
+            ->filter(fn (array $row) => (int) $row['available_qty'] > 0)
+            ->values();
+
+        $boxCount = $mapped->where('order_unit', 'box')->count();
+        $pieceCount = $mapped->where('order_unit', 'piece')->count();
+
+        $filtered = $mapped
+            ->when($orderUnit === 'box', fn ($c) => $c->where('order_unit', 'box'))
+            ->when($orderUnit === 'piece', fn ($c) => $c->where('order_unit', 'piece'))
+            ->when($categoryId, fn ($c) => $c->where('category_id', $categoryId))
+            ->when($search !== '', fn ($c) => $c->filter(
+                fn (array $row) => str_contains(mb_strtolower((string) $row['name']), mb_strtolower($search))
+            ))
+            ->values();
+
+        $total = $filtered->count();
+        $lastPage = max((int) ceil($total / $perPage), 1);
+        $pageNum = min($pageNum, $lastPage);
+        $slice = $filtered->forPage($pageNum, $perPage)->values();
+        $from = $total === 0 ? null : (($pageNum - 1) * $perPage) + 1;
+        $to = $total === 0 ? null : min($pageNum * $perPage, $total);
 
         return $this->success([
             'warehouse' => [
@@ -143,8 +175,67 @@ class OrderController extends Controller
                 'phone' => $warehouse->phone,
                 'network_code' => $warehouse->network_code,
             ],
-            'items' => $items,
-        ], 'مخزون المخزن المتاح');
+            'items' => $slice,
+            'units' => [
+                'all' => $boxCount + $pieceCount,
+                'box' => $boxCount,
+                'piece' => $pieceCount,
+            ],
+            'filters' => [
+                'order_unit' => $orderUnit,
+                'category_id' => $categoryId,
+                'search' => $search !== '' ? $search : null,
+            ],
+            'pagination' => [
+                'current_page' => $pageNum,
+                'last_page' => $lastPage,
+                'per_page' => $perPage,
+                'total' => $total,
+                'from' => $from,
+                'to' => $to,
+                'has_more' => $pageNum < $lastPage,
+                'next_page' => $pageNum < $lastPage ? $pageNum + 1 : null,
+                'prev_page' => $pageNum > 1 ? $pageNum - 1 : null,
+            ],
+        ], 'مخزون المخزن المتاح — صناديق / قطع');
+    }
+
+    /**
+     * Preview cart totals before placing — returns total_points only (no product points).
+     */
+    public function quote(Request $request): JsonResponse
+    {
+        $v = Validator::make($request->all(), [
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
+            'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $v->after(function ($validator) use ($request) {
+            foreach ($request->input('lines', []) as $i => $line) {
+                $boxes = $line['boxes'] ?? null;
+                $qty = $line['quantity'] ?? null;
+                if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
+                    $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+                }
+            }
+        });
+
+        if ($v->fails()) {
+            return $this->error('بيانات غير صالحة', 422, $v->errors());
+        }
+
+        try {
+            $quote = $this->orders->quote(
+                lines: $request->input('lines'),
+                enforceFactoryBoxes: true,
+            );
+
+            return $this->success($quote, 'ملخص السلة — مجموع النقاط فقط');
+        } catch (\DomainException $e) {
+            return $this->error($e->getMessage(), 422);
+        }
     }
 
     public function store(Request $request): JsonResponse

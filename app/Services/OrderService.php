@@ -438,9 +438,45 @@ class OrderService
     }
 
     /**
-     * @param  array<int, array{product_id:int, quantity:int}>  $lines
-     * @return array{items:array<int, array<string, mixed>>, total_quantity:int, total_points:int}
+     * Cart quote for mobile — totals only; never expose per-product points rates.
+     *
+     * @param  array<int, array{product_id:int, quantity?:int, boxes?:int}>  $lines
+     * @return array{
+     *   total_quantity:int,
+     *   total_points:int,
+     *   items:list<array<string, mixed>>
+     * }
      */
+    public function quote(array $lines, bool $enforceFactoryBoxes = true): array
+    {
+        $prepared = $this->prepareLines($lines, enforceFactoryBoxes: $enforceFactoryBoxes);
+
+        $items = [];
+        foreach ($prepared['items'] as $row) {
+            $product = Product::query()->find($row['product_id']);
+            $piecesPerBox = (int) ($product?->pieces_per_box ?? 0);
+            $qty = (int) $row['quantity'];
+
+            $items[] = [
+                'product_id' => (int) $row['product_id'],
+                'name' => $row['name_snapshot'],
+                'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
+                'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
+                'boxes' => $piecesPerBox > 0 ? (int) ($qty / $piecesPerBox) : null,
+                'quantity' => $qty,
+                // Apps must not show product points — only order total_points.
+                'points_per_unit' => null,
+                'line_points' => null,
+            ];
+        }
+
+        return [
+            'total_quantity' => (int) $prepared['total_quantity'],
+            'total_points' => (int) $prepared['total_points'],
+            'items' => $items,
+        ];
+    }
+
     /**
      * Normalize cart lines into piece quantities.
      *
