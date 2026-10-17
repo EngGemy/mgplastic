@@ -284,45 +284,45 @@ class QuickAccessWidget extends Widget
                     )
                     : null,
 
-                WithdrawalRequestResource::canViewAny()
+                ($this->isAdminPanel() && WithdrawalRequestResource::canViewAny())
                     ? $this->link(
                         'طلبات السحب',
                         'موافقة وصرف',
                         'heroicon-o-banknotes',
                         'purple',
-                        WithdrawalRequestResource::getUrl('index'),
+                        $this->adminUrl(WithdrawalRequestResource::class),
                         $badges['withdrawals'] ?: null,
                         'warning',
                     )
                     : null,
 
-                DecisionReports::canAccess()
+                ($this->isAdminPanel() && DecisionReports::canAccess())
                     ? $this->link(
                         'غرفة القرارات',
                         'سكشن صناعة القرار',
                         'heroicon-o-light-bulb',
                         'blue',
-                        DecisionReports::getUrl(),
+                        DecisionReports::getUrl(panel: 'admin'),
                     )
                     : null,
 
-                ProductsReport::canAccess()
+                ($this->isAdminPanel() && ProductsReport::canAccess())
                     ? $this->link(
                         'تقرير النقاط',
                         'كل منتج وتحويله',
                         'heroicon-o-presentation-chart-bar',
                         'amber',
-                        ProductsReport::getUrl(),
+                        ProductsReport::getUrl(panel: 'admin'),
                     )
                     : null,
 
-                ConversionRuleResource::canViewAny()
+                ($this->isAdminPanel() && ConversionRuleResource::canViewAny())
                     ? $this->link(
                         'إعدادات الصرف',
                         'فترة الصرف والإشعارات',
                         'heroicon-o-bell-alert',
                         'indigo',
-                        ConversionRuleResource::getUrl('index'),
+                        $this->adminUrl(ConversionRuleResource::class),
                     )
                     : null,
             ]),
