@@ -17,8 +17,10 @@ use App\Http\Controllers\Api\Distributor\RetailTraderController;
 use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
+use App\Http\Controllers\Api\Mobile\PointsPanelController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
 use App\Http\Controllers\Api\Mobile\SettingsController;
+use App\Http\Controllers\Api\Mobile\SuggestController;
 use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardController;
 use App\Http\Controllers\Api\Plumber\InvoiceReturnController as PlumberInvoiceReturnController;
 use App\Http\Controllers\Api\Plumber\OrderController as PlumberOrderController;
@@ -56,6 +58,9 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('profile', [ProfileController::class, 'show']);
         Route::match(['put', 'patch', 'post'], 'profile', [ProfileController::class, 'update']);
+
+        // Fast typeahead suggestions (link plumbers / retail / stores)
+        Route::get('suggest', SuggestController::class);
 
         Route::prefix('notifications')->group(function () {
             Route::get('/', [NotificationController::class, 'index']);
@@ -127,6 +132,7 @@ Route::prefix('v1/mobile')->group(function () {
     // ── Retail trader (تاجر التجزئة) ───────────────────────────
     Route::middleware(['auth:sanctum', 'role.api:retail_trader'])->prefix('trader')->group(function () {
         Route::get('dashboard', TraderDashboardController::class);
+        Route::get('points-panel', PointsPanelController::class);
 
         Route::get('plumbers', [TraderPlumberController::class, 'index']);
         Route::post('plumbers/link', [TraderPlumberController::class, 'link']);
@@ -155,14 +161,27 @@ Route::prefix('v1/mobile')->group(function () {
             Route::delete('{id}', [NotificationController::class, 'destroy']);
         });
 
-        // Catalog — pick products when placing supply order to wholesaler
+        // MG catalog — order from wholesaler/warehouse
         Route::get('products', [TraderProductCatalogController::class, 'index']);
+        Route::get('products/categories', [TraderProductCatalogController::class, 'categories']);
 
-        // Shop display products (non-MG / no points) — aliases of /v1/my-store/my-products
+        // Shop display products (non-MG / no points) + animation
         Route::get('my-products', [NetworkStoreController::class, 'listMyProducts']);
         Route::post('my-products', [NetworkStoreController::class, 'uploadMyProduct']);
         Route::match(['put', 'patch', 'post'], 'my-products/{mediaId}', [NetworkStoreController::class, 'updateMyProduct'])->whereNumber('mediaId');
         Route::delete('my-products/{mediaId}', [NetworkStoreController::class, 'deleteMyProduct'])->whereNumber('mediaId');
+
+        // Storefront visuals: slider (carousel) + gallery (casual / معرض أعمال)
+        Route::get('slider', [NetworkStoreController::class, 'listSlider']);
+        Route::post('slider', [NetworkStoreController::class, 'uploadSlider']);
+        Route::delete('slider/{mediaId}', [NetworkStoreController::class, 'deleteSlider'])->whereNumber('mediaId');
+        Route::put('slider/order', [NetworkStoreController::class, 'reorderSlider']);
+        Route::get('gallery', [NetworkStoreController::class, 'listGallery']);
+        Route::post('gallery', [NetworkStoreController::class, 'uploadGallery']);
+        Route::delete('gallery/{mediaId}', [NetworkStoreController::class, 'deleteGallery'])->whereNumber('mediaId');
+        Route::get('media', [NetworkStoreController::class, 'listStoreMedia']);
+        Route::post('media', [NetworkStoreController::class, 'uploadStoreMedia']);
+        Route::delete('media/{mediaId}', [NetworkStoreController::class, 'deleteStoreMedia'])->whereNumber('mediaId');
 
         // Orders — place to wholesaler + fulfil plumber orders
         Route::get('orders', [TraderOrderController::class, 'index']);
@@ -192,6 +211,7 @@ Route::prefix('v1/mobile')->group(function () {
     // ── Wholesale distributor (موزع الجملة) ────────────────────
     Route::middleware(['auth:sanctum', 'role.api:wholesale_distributor'])->prefix('distributor')->group(function () {
         Route::get('dashboard', DistributorDashboardController::class);
+        Route::get('points-panel', PointsPanelController::class);
 
         Route::get('retail-traders', [RetailTraderController::class, 'index']);
         Route::post('retail-traders', [RetailTraderController::class, 'store']);
@@ -224,14 +244,27 @@ Route::prefix('v1/mobile')->group(function () {
             Route::delete('{id}', [NotificationController::class, 'destroy']);
         });
 
-        // Catalog — pick products when placing factory order
+        // MG catalog — order from factory
         Route::get('products', [TraderProductCatalogController::class, 'index']);
+        Route::get('products/categories', [TraderProductCatalogController::class, 'categories']);
 
-        // Shop display products (non-MG / no points)
+        // Shop display products (non-MG / no points) + animation
         Route::get('my-products', [NetworkStoreController::class, 'listMyProducts']);
         Route::post('my-products', [NetworkStoreController::class, 'uploadMyProduct']);
         Route::match(['put', 'patch', 'post'], 'my-products/{mediaId}', [NetworkStoreController::class, 'updateMyProduct'])->whereNumber('mediaId');
         Route::delete('my-products/{mediaId}', [NetworkStoreController::class, 'deleteMyProduct'])->whereNumber('mediaId');
+
+        // Storefront visuals: slider + gallery
+        Route::get('slider', [NetworkStoreController::class, 'listSlider']);
+        Route::post('slider', [NetworkStoreController::class, 'uploadSlider']);
+        Route::delete('slider/{mediaId}', [NetworkStoreController::class, 'deleteSlider'])->whereNumber('mediaId');
+        Route::put('slider/order', [NetworkStoreController::class, 'reorderSlider']);
+        Route::get('gallery', [NetworkStoreController::class, 'listGallery']);
+        Route::post('gallery', [NetworkStoreController::class, 'uploadGallery']);
+        Route::delete('gallery/{mediaId}', [NetworkStoreController::class, 'deleteGallery'])->whereNumber('mediaId');
+        Route::get('media', [NetworkStoreController::class, 'listStoreMedia']);
+        Route::post('media', [NetworkStoreController::class, 'uploadStoreMedia']);
+        Route::delete('media/{mediaId}', [NetworkStoreController::class, 'deleteStoreMedia'])->whereNumber('mediaId');
 
         // Orders — place to factory + fulfil retail-trader orders
         Route::get('orders', [DistributorOrderController::class, 'index']);

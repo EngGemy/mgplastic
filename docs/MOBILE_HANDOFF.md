@@ -2,12 +2,14 @@
 
 ملف واحد لمطوّر التطبيق. إن تعارض أي مستند قديم مع هذا الملف — **اعتمد هذا**.
 
+**تطبيق المحل (جملة/قطاعي):** كتالوج MG · اقتراحات بحث · معرض · منتجات عرض · لوحة نقاط → [MOBILE_STORE_APP.md](./MOBILE_STORE_APP.md)
+
 | | |
 |--|--|
 | **Production** | `https://mg-plastic.com/api` |
 | **Local** | `http://mgplastic.test/api` |
 | **OpenAPI** | `GET /docs/api` |
-| **تاريخ** | 2026-10-17 (rev 2 — إصلاحات الموبايل العاجلة) |
+| **تاريخ** | 2026-10-17 (rev 3 — متجر الموبايل) |
 
 ```http
 Authorization: Bearer {token}

@@ -21,6 +21,21 @@ class RetailTraderController extends Controller
             ->linkedRetailersFor($request->user())
             ->load(['country', 'city']);
 
+        $term = trim((string) $request->query('search', $request->query('q', '')));
+        if ($term !== '') {
+            $like = mb_strtolower($term);
+            $items = $items->filter(function (User $u) use ($like) {
+                $hay = mb_strtolower(implode(' ', array_filter([
+                    $u->name,
+                    $u->brand_name,
+                    $u->phone,
+                    $u->network_code,
+                ])));
+
+                return str_contains($hay, $like);
+            })->values();
+        }
+
         $page = max(1, $request->integer('page', 1));
         $perPage = max(1, min(100, $request->integer('per_page', 50)));
         $slice = $items->forPage($page, $perPage)->values();
@@ -29,7 +44,7 @@ class RetailTraderController extends Controller
             'items' => UserProfileResource::collection($slice),
             'pagination' => [
                 'current_page' => $page,
-                'last_page' => (int) max(1, ceil($items->count() / $perPage)),
+                'last_page' => (int) max(1, (int) ceil($items->count() / $perPage)),
                 'per_page' => $perPage,
                 'total' => $items->count(),
             ],

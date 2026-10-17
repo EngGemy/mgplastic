@@ -29,8 +29,20 @@ class StoreMedia extends Model
         'thumbnail_path',
         'title',
         'description',
+        'animation',
         'sort_order',
         'is_active',
+    ];
+
+    /** Allowed animation presets for shop (non-MG) display products. */
+    public const ANIMATIONS = [
+        'none',
+        'fade',
+        'slide_up',
+        'slide_left',
+        'zoom_in',
+        'bounce',
+        'pulse',
     ];
 
     protected $casts = [
@@ -96,10 +108,13 @@ class StoreMedia extends Model
             'awards_points' => false,
             'is_mg' => false,
             'product_kind' => 'shop',
+            'animation' => $this->animation ?: 'fade',
             // Shop-owned display products — not inventoriable via MG network stock;
             // apps may show them in the store catalog but orders without points only.
             'orderable_without_points' => true,
-        ] : []);
+        ] : [
+            'animation' => $this->animation,
+        ]);
     }
 
     public function scopeMyProducts($query)

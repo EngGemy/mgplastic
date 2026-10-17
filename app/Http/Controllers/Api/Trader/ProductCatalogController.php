@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Trader;
 use App\Http\Controllers\Api\Concerns\ApiResponds;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\ProductTag;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -36,7 +37,34 @@ class ProductCatalogController extends Controller
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
             ],
-        ], 'كتالوج منتجات MG');
+        ], 'كتالوج منتجات MG — للمصنع والمخزن');
+    }
+
+    /**
+     * Categories for MG catalog filters (wholesale + retail mobile).
+     */
+    public function categories(Request $request): JsonResponse
+    {
+        $lang = $this->language($request);
+        app()->setLocale($lang);
+
+        $categories = ProductCategory::query()
+            ->with('translations')
+            ->withCount('products')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (ProductCategory $c) => [
+                'id' => (int) $c->id,
+                'name' => localized_name($c, 'name', 'تصنيف #'.$c->id),
+                'slug' => $c->slug,
+                'image' => $c->image,
+                'image_url' => $c->image ? asset('storage/'.ltrim($c->image, '/')) : null,
+                'products_count' => (int) $c->products_count,
+                'parent_id' => $c->parent_id ? (int) $c->parent_id : null,
+            ])
+            ->values();
+
+        return $this->success(['items' => $categories], 'تصنيفات منتجات MG');
     }
 
     protected function catalogQuery(Request $request): Builder

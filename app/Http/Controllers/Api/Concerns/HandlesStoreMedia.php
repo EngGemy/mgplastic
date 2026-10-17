@@ -57,6 +57,7 @@ trait HandlesStoreMedia
             'name' => ['required', 'string', 'max:255'],
             'title' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
+            'animation' => ['nullable', 'string', 'in:'.implode(',', \App\Models\StoreMedia::ANIMATIONS)],
         ]);
 
         $name = $request->input('name') ?: $request->input('title');
@@ -70,10 +71,19 @@ trait HandlesStoreMedia
             $request->input('description'),
         );
 
+        $created = $result['created'][0] ?? null;
+        if ($created && $request->filled('animation')) {
+            $media = \App\Models\StoreMedia::query()->find($created['id'] ?? null);
+            if ($media) {
+                $media->update(['animation' => $request->input('animation')]);
+                $created = $media->fresh()->toApiArray();
+            }
+        }
+
         return response()->json([
             'status' => true,
-            'message' => 'تمت إضافة المنتج',
-            'data' => $result['created'][0] ?? null,
+            'message' => 'تمت إضافة المنتج (بدون نقاط MG)',
+            'data' => $created,
             'skipped' => $result['skipped'],
         ], 201);
     }
@@ -86,6 +96,7 @@ trait HandlesStoreMedia
             'name' => ['nullable', 'string', 'max:255'],
             'title' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
+            'animation' => ['nullable', 'string', 'in:'.implode(',', StoreMedia::ANIMATIONS)],
             'is_active' => ['nullable', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
@@ -109,6 +120,9 @@ trait HandlesStoreMedia
         }
         if ($request->exists('description')) {
             $data['description'] = $request->input('description');
+        }
+        if ($request->exists('animation')) {
+            $data['animation'] = $request->input('animation') ?: 'fade';
         }
         if ($request->exists('is_active')) {
             $data['is_active'] = $request->boolean('is_active');
@@ -163,17 +177,22 @@ trait HandlesStoreMedia
         $owner = $this->resolveStoreMediaOwner($request);
 
         $request->validate([
-            'kind' => ['required', 'in:banner,slider,video,product_image,gallery,my_product'],
+            'kind' => ['required', 'in:banner,slider,carousel,video,product_image,gallery,causal,casual,my_product'],
             'media' => ['required', 'array', 'min:1'],
             'media.*' => ['required', 'file', 'max:512000'],
             'product_id' => ['nullable', 'integer', 'exists:products,id'],
             'title' => ['nullable', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
+            'animation' => ['nullable', 'string', 'in:'.implode(',', StoreMedia::ANIMATIONS)],
         ]);
 
-        // "slider" is the public-facing name for store banners.
-        $kind = $request->input('kind') === 'slider' ? 'banner' : $request->input('kind');
+        // Mobile aliases: slider/carousel → banner · causal/casual → gallery
+        $kind = match ($request->input('kind')) {
+            'slider', 'carousel' => 'banner',
+            'causal', 'casual' => 'gallery',
+            default => $request->input('kind'),
+        };
         $rules = match ($kind) {
             'video' => 'mimes:mp4,mov,webm,mkv,avi',
             default => 'mimes:jpg,jpeg,png,webp',
@@ -192,12 +211,50 @@ trait HandlesStoreMedia
             $request->input('description'),
         );
 
+        $created = $result['created'];
+        if ($kind === 'my_product' && $request->filled('animation') && is_array($created)) {
+            $animation = $request->input('animation');
+            foreach ($created as $i => $row) {
+                $media = StoreMedia::query()->find($row['id'] ?? null);
+                if ($media) {
+                    $media->update(['animation' => $animation]);
+                    $created[$i] = $media->fresh()->toApiArray();
+                }
+            }
+        }
+
         return response()->json([
             'status' => true,
             'message' => 'تم رفع الوسائط بنجاح',
-            'data' => $result['created'],
+            'data' => $created,
             'skipped' => $result['skipped'],
         ], 201);
+    }
+
+    /** Gallery / causal works photos — same as kind=gallery. */
+    public function listGallery(Request $request): JsonResponse
+    {
+        $owner = $this->resolveStoreMediaOwner($request);
+        $owner->loadMissing('storeMedia');
+
+        $items = $owner->storeMedia->where('kind', 'gallery')->values()->map->toApiArray();
+
+        return response()->json([
+            'status' => true,
+            'data' => $items,
+        ]);
+    }
+
+    public function uploadGallery(Request $request, StoreMediaUploadService $uploader): JsonResponse
+    {
+        $request->merge(['kind' => 'gallery']);
+
+        return $this->uploadStoreMedia($request, $uploader);
+    }
+
+    public function deleteGallery(Request $request, int $mediaId, StoreMediaUploadService $uploader): JsonResponse
+    {
+        return $this->deleteStoreMedia($request, $mediaId, $uploader);
     }
 
     public function listStoreMedia(Request $request): JsonResponse
