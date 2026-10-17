@@ -44,6 +44,10 @@ class NetworkPanelUrls
 
     public static function panelIdForUser(?User $user): string
     {
+        if ($user?->isCentralWarehouse()) {
+            return 'warehouse';
+        }
+
         if ($user?->isWholesaleDistributor()) {
             return 'distributor';
         }
@@ -53,6 +57,14 @@ class NetworkPanelUrls
         }
 
         return 'admin';
+    }
+
+    /** Normalize warehouse → distributor resources (same Filament resource classes). */
+    public static function resourcePanelId(?string $panelId = null): string
+    {
+        $id = $panelId ?? static::panelId();
+
+        return $id === 'warehouse' ? 'warehouse' : $id;
     }
 
     public static function invoiceIndex(array $parameters = []): string
@@ -82,22 +94,24 @@ class NetworkPanelUrls
 
     public static function retailTraderIndex(): ?string
     {
-        if (static::panelId() !== 'distributor') {
+        if (! in_array(static::panelId(), ['distributor', 'warehouse'], true)) {
             return RetailTraderResource::canViewAny()
                 ? RetailTraderResource::getUrl('index', panel: 'admin')
                 : null;
         }
 
+        $panel = static::panelId();
+
         return DistributorRetailTraderResource::canViewAny()
-            ? DistributorRetailTraderResource::getUrl('index', panel: 'distributor')
+            ? DistributorRetailTraderResource::getUrl('index', panel: $panel)
             : null;
     }
 
     public static function retailTraderCreate(): ?string
     {
-        if (static::panelId() === 'distributor') {
+        if (in_array(static::panelId(), ['distributor', 'warehouse'], true)) {
             return DistributorRetailTraderResource::canCreate()
-                ? DistributorRetailTraderResource::getUrl('create', panel: 'distributor')
+                ? DistributorRetailTraderResource::getUrl('create', panel: static::panelId())
                 : null;
         }
 
@@ -108,9 +122,9 @@ class NetworkPanelUrls
 
     public static function posRetail(): ?string
     {
-        if (static::panelId() === 'distributor') {
+        if (in_array(static::panelId(), ['distributor', 'warehouse'], true)) {
             return CreateRetailPos::canAccess()
-                ? DistributorPos::getUrl(panel: 'distributor')
+                ? DistributorPos::getUrl(panel: static::panelId())
                 : null;
         }
 
@@ -143,7 +157,7 @@ class NetworkPanelUrls
     private static function invoiceResource(): string
     {
         return match (static::panelId()) {
-            'distributor' => DistributorInvoiceResource::class,
+            'distributor', 'warehouse' => DistributorInvoiceResource::class,
             'trader' => TraderInvoiceResource::class,
             default => InvoiceResource::class,
         };
@@ -153,7 +167,7 @@ class NetworkPanelUrls
     private static function distributionResource(): string
     {
         return match (static::panelId()) {
-            'distributor' => DistributorDistributionResource::class,
+            'distributor', 'warehouse' => DistributorDistributionResource::class,
             'trader' => TraderDistributionResource::class,
             default => InvoiceDistributionResource::class,
         };

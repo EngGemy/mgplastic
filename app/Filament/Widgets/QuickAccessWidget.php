@@ -188,8 +188,8 @@ class QuickAccessWidget extends Widget
         $panelId = filament()->getCurrentPanel()?->getId();
 
         $url = match ($panelId) {
-            'distributor' => DistributorMyStoreResource::canViewAny()
-                ? DistributorMyStoreResource::getUrl('index')
+            'distributor', 'warehouse' => DistributorMyStoreResource::canViewAny()
+                ? DistributorMyStoreResource::getUrl('index', panel: $panelId)
                 : null,
             'trader' => TraderMyStoreResource::canViewAny()
                 ? TraderMyStoreResource::getUrl('index')

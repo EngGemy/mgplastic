@@ -19,16 +19,22 @@ class WarehousePointsPanelWidget extends Widget
     {
         $user = auth()->user();
 
-        return $user && $user->isCentralWarehouse();
+        return (bool) ($user && $user->isCentralWarehouse());
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function getViewData(): array
     {
         $user = auth()->user();
 
+        // Do NOT key this as "panel" — Filament already injects $panel (Panel object) into views.
         return [
-            'panel' => MobileDashboardService::pointsPanelForWholesale($user),
-            'storeName' => $user?->brand_name ?: $user?->name,
+            'points' => $user
+                ? MobileDashboardService::pointsPanelForWholesale($user)
+                : [],
+            'storeName' => $user?->brand_name ?: ($user?->name ?: 'مخزن الدعوة'),
             'networkCode' => $user?->network_code,
         ];
     }

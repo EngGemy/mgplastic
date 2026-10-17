@@ -1,14 +1,15 @@
 @php
-    $panel = $panel ?? [];
-    $cards = $panel['cards'] ?? [];
-    $stock = $panel['stock'] ?? [];
-    $network = $panel['network'] ?? [];
-    $pctDist = (int) ($panel['percent_distributed'] ?? 0);
-    $pctRem = (int) ($panel['percent_remaining'] ?? 0);
+    /** @var array<string, mixed> $points */
+    $points = is_array($points ?? null) ? $points : [];
+    $cards = $points['cards'] ?? [];
+    $stock = $points['stock'] ?? [];
+    $network = $points['network'] ?? [];
+    $pctDist = (int) ($points['percent_distributed'] ?? 0);
+    $pctRem = (int) ($points['percent_remaining'] ?? 0);
 @endphp
 
 <x-filament-widgets::widget>
-    <div style="
+    <div class="wh-points" style="
         direction: rtl;
         font-family: Cairo, sans-serif;
         background: linear-gradient(135deg, #0f766e 0%, #134e4a 55%, #0f172a 100%);
@@ -30,12 +31,12 @@
             <div style="text-align:left">
                 <div style="font-size:12px;opacity:.8">النقاط المتبقية</div>
                 <div style="font-size:34px;font-weight:900;letter-spacing:-1px">
-                    {{ number_format((int) ($panel['remaining_points'] ?? 0)) }}
+                    {{ number_format((int) ($points['remaining_points'] ?? 0)) }}
                 </div>
             </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px">
+        <div class="wh-points-cards" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px">
             @foreach($cards as $card)
                 @php
                     $bg = match ($card['color'] ?? 'primary') {
@@ -62,7 +63,7 @@
             </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+        <div class="wh-points-stock" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
             <div style="background:rgba(255,255,255,.08);border-radius:12px;padding:12px">
                 <div style="font-size:11px;opacity:.75">أصناف المخزون</div>
                 <div style="font-size:18px;font-weight:800">{{ number_format((int) ($stock['products'] ?? 0)) }}</div>
@@ -85,7 +86,14 @@
 
 <style>
 @media (max-width: 900px) {
-    .fi-wi-warehouse-points-panel div[style*="grid-template-columns:repeat(3"] {
+    .wh-points-cards,
+    .wh-points-stock {
+        grid-template-columns: 1fr 1fr !important;
+    }
+}
+@media (max-width: 560px) {
+    .wh-points-cards,
+    .wh-points-stock {
         grid-template-columns: 1fr !important;
     }
 }

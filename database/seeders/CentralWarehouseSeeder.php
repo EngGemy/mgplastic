@@ -27,10 +27,25 @@ class CentralWarehouseSeeder extends Seeder
                 'approved_at' => now(),
                 'is_active' => true,
                 'is_phone_verified' => true,
+                'deactivated_at' => null,
                 'store_description' => 'المخزن المركزي — يستقبل طلبيات الجملة والقطاعي، يحدّث المخزون، ويطلب من المصنع مباشرة.',
                 'short_description' => 'مخزن الدعوة المركزي لشبكة MG Plastic',
             ],
         );
+
+        // Also promote any existing "مخزن الدعوة" account created manually.
+        User::query()
+            ->where(function ($q) {
+                $q->where('brand_name', 'مخزن الدعوة')
+                    ->orWhere('name', 'مخزن الدعوة')
+                    ->orWhere('email', 'warehouse@mg-plastic.com');
+            })
+            ->where('role', 'wholesale_distributor')
+            ->update([
+                'is_central_warehouse' => true,
+                'is_approved' => true,
+                'is_active' => true,
+            ]);
 
         app(NetworkCodeService::class)->ensure($user);
 
