@@ -24,7 +24,7 @@ class UsersReport extends Page implements HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?int $navigationSort = 15;
+    protected static ?int $navigationSort = 2;
 
     protected static string $view = 'filament.pages.users-report';
 
@@ -41,7 +41,7 @@ class UsersReport extends Page implements HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المستخدمون';
+        return 'التقارير';
     }
 
     public static function getNavigationLabel(): string

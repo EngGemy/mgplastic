@@ -13,7 +13,7 @@ class EnsurePhoneVerified
         if (!$user || !$user->is_phone_verified) {
             return response()->json([
                 'status' => false,
-                'message' => 'Phone verification required.'
+                'message' => 'يجب توثيق رقم الهاتف أولاً',
             ], 403);
         }
         return $next($request);

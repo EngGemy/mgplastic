@@ -20,7 +20,7 @@ class ProductsReport extends Page implements HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-bar';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 3;
 
     protected static string $view = 'filament.pages.products-report';
 
@@ -31,7 +31,7 @@ class ProductsReport extends Page implements HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'التقارير';
     }
 
     public static function getNavigationLabel(): string

@@ -80,4 +80,14 @@ return [
         'ffprobe_binaries' => env('FFPROBE_BINARIES', PHP_OS_FAMILY === 'Windows' ? 'ffprobe.exe' : 'ffprobe'),
     ],
 
+    /*
+    | Google Gemini — decision Q&A inside admin reports.
+    | Get a key: https://aistudio.google.com/apikey
+    */
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+        'model' => env('GEMINI_MODEL', 'gemini-2.0-flash'),
+        'timeout' => (int) env('GEMINI_TIMEOUT', 45),
+    ],
+
 ];

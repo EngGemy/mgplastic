@@ -88,17 +88,18 @@ class PlumberRegisterController extends Controller
         if (! $issued) {
             return response()->json([
                 'status' => false,
-                'message' => 'User created, but OTP sending failed.',
+                'message' => 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق — حاول لاحقاً',
                 'error' => $this->lastMarsolError,
-                'hint' => 'Set MARSOL_USE_OTP_API=true, fix MARSOL_SENDER_ID via GET /public/senderIds, then php artisan config:cache',
             ], 500);
         }
 
         $this->applyMarsolOtpToUser($user, $issued);
 
+        $roleLabel = $request->role === 'plumber' ? 'السباك' : 'البائع';
+
         return response()->json([
             'status' => true,
-            'message' => ucfirst($request->role).' registered. OTP sent.',
+            'message' => "تم تسجيل {$roleLabel} — تم إرسال رمز التحقق",
             'requires_otp' => true,
             'data' => [
                 'user' => $user->fresh(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']),

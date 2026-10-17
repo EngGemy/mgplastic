@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Pages\DecisionReports;
 use App\Filament\Pages\ProductsReport;
 use App\Filament\Resources\BlogCategoryResource;
 use App\Filament\Resources\BlogResource;
@@ -292,6 +293,16 @@ class QuickAccessWidget extends Widget
                         WithdrawalRequestResource::getUrl('index'),
                         $badges['withdrawals'] ?: null,
                         'warning',
+                    )
+                    : null,
+
+                DecisionReports::canAccess()
+                    ? $this->link(
+                        'مركز القرارات',
+                        'تقارير + Gemini',
+                        'heroicon-o-chart-bar-square',
+                        'blue',
+                        DecisionReports::getUrl(),
                     )
                     : null,
 

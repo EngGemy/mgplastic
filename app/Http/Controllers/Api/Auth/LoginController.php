@@ -3,14 +3,15 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendOtpSms;
 use App\Models\User;
 use App\Models\WalletAccount;
+use App\Support\ArabicWait;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
-use Carbon\Carbon;
-use App\Jobs\SendOtpSms;
 
 class LoginController extends Controller
 {
@@ -41,8 +42,8 @@ class LoginController extends Controller
 
         if (! $user || ! Hash::check($request->password, (string) $user->password)) {
             return response()->json([
-                'status'  => false,
-                'message' => 'Invalid credentials',
+                'status' => false,
+                'message' => 'رقم الهاتف أو كلمة المرور غير صحيحة',
             ], 401);
         }
 
@@ -53,11 +54,11 @@ class LoginController extends Controller
             $user->is_phone_verified = false;
 
             return response()->json([
-                'status'  => true,
-                'message' => 'Phone not verified. OTP sent.',
-                'token'   => null,
-                'user'    => $this->userPayload($user),
-                'otp'            => $otpMeta['otp'], // DEV ONLY
+                'status' => true,
+                'message' => 'الهاتف غير موثّق — تم إرسال رمز التحقق',
+                'token' => null,
+                'user' => $this->userPayload($user),
+                'otp' => $otpMeta['otp'], // DEV ONLY
                 'otp_expires_at' => $otpMeta['expires_at']->toIso8601String(),
             ], 200);
         }
@@ -67,16 +68,16 @@ class LoginController extends Controller
 
         if (! $isNetworkStore && method_exists($user, 'isApprovedAndActive') && ! $user->isApprovedAndActive()) {
             return response()->json([
-                'status'  => false,
+                'status' => false,
                 'message' => $user->is_approved
-                    ? 'Your account is deactivated. Please contact support.'
-                    : 'Awaiting admin approval.',
+                    ? 'حسابك موقوف — تواصل مع الدعم'
+                    : 'حسابك بانتظار موافقة الإدارة',
             ], 403);
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        $message = 'Logged in successfully';
+        $message = 'تم تسجيل الدخول بنجاح';
         if ($isNetworkStore && ! $user->is_approved) {
             $message = 'تم تسجيل الدخول. متجرك لم يُفعَّل بعد — بانتظار موافقة الإدارة.';
         } elseif ($isNetworkStore && ! $user->is_active) {
@@ -124,7 +125,7 @@ class LoginController extends Controller
         if (RateLimiter::tooManyAttempts($limiterKey, 5)) {
             $seconds = RateLimiter::availableIn($limiterKey);
             throw ValidationException::withMessages([
-                'phone' => ["Too many OTP requests. Try again in {$seconds} seconds."],
+                'phone' => [ArabicWait::message($seconds, 'طلب رمز تحقق جديد')],
             ]);
         }
 

@@ -17,13 +17,14 @@ class ResolveLocale
 
     public function handle(Request $request, Closure $next)
     {
+        // Libya-first: default Arabic when the client omits a language header.
         $raw = $request->header('Accept-Language')
             ?? $request->header('X-Locale')
-            ?? $request->query('lang', 'en');
+            ?? $request->query('lang', 'ar');
 
-        $first  = strtolower(\Illuminate\Support\Str::of($raw)->before(',')->before(';')->value() ?: 'en');
-        $base   = \Illuminate\Support\Str::of($first)->before('-')->before('_')->value();
-        $locale = in_array($base, ['en','ar'], true) ? $base : 'en';
+        $first = strtolower(\Illuminate\Support\Str::of($raw)->before(',')->before(';')->value() ?: 'ar');
+        $base = \Illuminate\Support\Str::of($first)->before('-')->before('_')->value();
+        $locale = in_array($base, ['en', 'ar'], true) ? $base : 'ar';
 
         app()->setLocale($locale);
         \Carbon\Carbon::setLocale($locale);

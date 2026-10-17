@@ -23,5 +23,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            $seconds = (int) ($e->getHeaders()['Retry-After'] ?? 60);
+
+            return response()->json([
+                'status' => false,
+                'message' => \App\Support\ArabicWait::message($seconds, 'المحاولة مرة أخرى'),
+                'retry_after' => $seconds,
+            ], 429);
+        });
     })->create();

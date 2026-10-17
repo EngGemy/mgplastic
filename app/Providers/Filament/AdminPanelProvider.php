@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\DecisionReports;
 use App\Filament\Pages\ProductsReport;
 use Filament\FontProviders\GoogleFontProvider;
 use App\Http\Middleware\AuthenticatePanel;
@@ -58,6 +59,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
                 Dashboard::class,
+                DecisionReports::class,
                 ProductsReport::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')

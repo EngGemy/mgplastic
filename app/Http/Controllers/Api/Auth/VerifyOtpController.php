@@ -4,34 +4,26 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use Illuminate\Http\Request;
 use App\Traits\SendsMarsolSmsOtp;
+use Illuminate\Http\Request;
 
 class VerifyOtpController extends Controller
 {
     use SendsMarsolSmsOtp;
 
-    /* ============================================================
-     * VERIFY OTP
-     * ============================================================
-     */
     public function verify(Request $request)
     {
         $request->validate([
             'phone' => 'required|string',
-            'otp'   => 'required|string',
+            'otp' => 'required|string',
         ]);
 
         $user = User::where('phone', $request->phone)->first();
         if (! $user) {
-            return response()->json(['status'=>false,'message'=>'User not found'],404);
+            return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
 
-        $isLibya = $this->isLibyaPhone($user->phone);
-
-        // Marsol OTP API verify (never local SMS codes for Libya / Marsol flow).
         if ($user->marsol_otp_request_id) {
-
             $resp = $this->verifyMarsolOtp(
                 $user->marsol_otp_request_id,
                 $request->otp,
@@ -39,42 +31,37 @@ class VerifyOtpController extends Controller
             );
 
             if (! $resp || ($resp['status'] ?? null) !== 'SUCCESS') {
-                return response()->json(['status'=>false,'message'=>'Invalid or expired OTP'],422);
+                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
             }
-
         } else {
-
-            // Legacy local OTP (only if no Marsol request was started).
-            if (!$user->otp_code || !$user->otp_expires_at || now()->gt($user->otp_expires_at)) {
-                return response()->json(['status'=>false,'message'=>'OTP expired. Please resend.'],422);
+            if (! $user->otp_code || ! $user->otp_expires_at || now()->gt($user->otp_expires_at)) {
+                return response()->json(['status' => false, 'message' => 'انتهت صلاحية الرمز — اطلب رمزاً جديداً'], 422);
             }
 
             if ($user->otp_code !== $request->otp) {
                 $user->increment('otp_attempts');
-                return response()->json(['status'=>false,'message'=>'Invalid OTP'],422);
+
+                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح'], 422);
             }
         }
 
-        // ============================================================
-        // SUCCESS → CLEAR OTP DATA
-        // ============================================================
         $user->update([
-            'is_phone_verified'       => true,
-            'otp_code'                => null,
-            'otp_expires_at'          => null,
-            'otp_attempts'            => 0,
-            'marsol_otp_request_id'   => null,
+            'is_phone_verified' => true,
+            'otp_code' => null,
+            'otp_expires_at' => null,
+            'otp_attempts' => 0,
+            'marsol_otp_request_id' => null,
             'marsol_otp_resend_token' => null,
-            'marsol_otp_expires_at'   => null,
+            'marsol_otp_expires_at' => null,
         ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
         $payload = [
             'status' => true,
-            'message' => 'Phone verified successfully.',
+            'message' => 'تم توثيق الهاتف بنجاح',
             'token' => $token,
-            'user'  => $user,
+            'user' => $user,
         ];
 
         if ($user->isNetworkStore()) {
@@ -94,27 +81,24 @@ class VerifyOtpController extends Controller
         return response()->json($payload);
     }
 
-    /* ============================================================
-     * RESEND OTP
-     * ============================================================
-     */
     public function resend(Request $request)
     {
         $request->validate(['phone' => 'required|string']);
 
         $user = User::where('phone', $request->phone)->first();
         if (! $user) {
-            return response()->json(['status'=>false,'message'=>'User not found'],404);
+            return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
 
-        // Prevent spam
         if ($user->otp_last_sent_at && abs(now()->diffInSeconds($user->otp_last_sent_at)) < 60) {
-            return response()->json(['status'=>false,'message'=>'Please wait before requesting another OTP'],429);
+            return response()->json([
+                'status' => false,
+                'message' => 'انتظر دقيقة قبل طلب رمز تحقق جديد',
+            ], 429);
         }
 
-        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
+        $lang = 'AR';
 
-        // Marsol OTP API only (company SMS account is not verified).
         if ($user->marsol_otp_request_id && $user->marsol_otp_resend_token) {
             $resp = $this->resendMarsolOtp(
                 $user->marsol_otp_request_id,
@@ -123,12 +107,11 @@ class VerifyOtpController extends Controller
             );
 
             if (! $resp || empty($resp['requestId'])) {
-                // Token expired — start a fresh OTP initiate.
                 $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', $lang, 'CODE');
                 if (! $issued) {
                     return response()->json([
                         'status' => false,
-                        'message' => 'Failed to resend OTP',
+                        'message' => 'تعذّر إعادة إرسال رمز التحقق — حاول لاحقاً',
                         'error' => $this->lastMarsolError,
                     ], 500);
                 }
@@ -151,7 +134,7 @@ class VerifyOtpController extends Controller
             if (! $issued) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Failed to send OTP',
+                    'message' => 'تعذّر إرسال رمز التحقق — حاول لاحقاً',
                     'error' => $this->lastMarsolError,
                 ], 500);
             }
@@ -161,7 +144,7 @@ class VerifyOtpController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'OTP resent successfully.',
+            'message' => 'تم إعادة إرسال رمز التحقق',
         ]);
     }
 }

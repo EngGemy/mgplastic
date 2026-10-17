@@ -32,7 +32,7 @@ class RegisterController extends Controller
         if (! $issued) {
             return response()->json([
                 'status' => false,
-                'message' => 'User created, but OTP sending failed.',
+                'message' => 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق',
             ], 500);
         }
 
@@ -40,7 +40,7 @@ class RegisterController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'User registered. OTP sent.',
+            'message' => 'تم التسجيل — تم إرسال رمز التحقق',
             'data' => [
                 'user' => $user->fresh(),
                 'token' => $user->createToken('auth_token')->plainTextToken,
