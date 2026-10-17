@@ -220,7 +220,7 @@ class InvoiceReturnEdgesTest extends TestCase
         ])
             ->assertCreated()
             ->assertJsonPath('data.total_points', 0)
-            ->assertJsonPath('data.items.0.line_points', 0);
+            ->assertJsonPath('data.items.0.line_points', null);
 
         Sanctum::actingAs($retail);
         $this->getJson('/api/v1/mobile/trader/products')

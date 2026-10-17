@@ -159,27 +159,31 @@ class OrderService
      * Mark order delivered — callable by buyer (receipt) or supplier (hand-over).
      * Stock moves to the buyer via the distribution pipeline.
      *
+     * Locked inside the transaction so concurrent deliver + receive cannot mint stock twice.
+     *
      * @throws \DomainException
      */
     public function deliver(Order $order, User $actor): Order
     {
-        $this->assertStatus(
-            $order,
-            [OrderStatus::SHIPPING, OrderStatus::CONFIRMED],
-            'لا يمكن تأكيد التسليم قبل تأكيد أو شحن الطلب',
-        );
-
         return DB::transaction(function () use ($order, $actor) {
-            $order->loadMissing('items', 'requester', 'supplier');
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
 
-            $reference = $this->fulfilStock($order, $actor);
+            $this->assertStatus(
+                $locked,
+                [OrderStatus::SHIPPING, OrderStatus::CONFIRMED],
+                'لا يمكن تأكيد التسليم قبل تأكيد أو شحن الطلب',
+            );
+
+            $locked->loadMissing('items', 'requester', 'supplier');
+
+            $reference = $this->fulfilStock($locked, $actor);
 
             // Plumber channel credits points via tier-3 distribution — skip double credit.
-            if (! $order->isPlumberChannel()) {
-                $this->creditRequesterPoints($order, $actor, $reference['invoice_id'] ?? null);
+            if (! $locked->isPlumberChannel()) {
+                $this->creditRequesterPoints($locked, $actor, $reference['invoice_id'] ?? null);
             }
 
-            $order->update([
+            $locked->update([
                 'status' => OrderStatus::DELIVERED,
                 'delivered_at' => now(),
                 'delivered_by' => $actor->id,
@@ -187,38 +191,38 @@ class OrderService
                 'delivered_reference' => $reference['reference'] ?? null,
             ]);
 
-            $bySupplier = (int) $actor->id === (int) $order->supplier_id
-                || ($order->isFactoryChannel() && in_array($actor->role, ['super_admin', 'admin'], true));
+            $bySupplier = (int) $actor->id === (int) $locked->supplier_id
+                || ($locked->isFactoryChannel() && in_array($actor->role, ['super_admin', 'admin'], true));
 
-            $points = (int) $order->total_points;
+            $points = (int) $locked->total_points;
             $pointsNote = $points > 0
-                ? ($order->isPlumberChannel()
+                ? ($locked->isPlumberChannel()
                     ? " وتم إضافة {$points} نقطة لمحفظة السباك."
                     : " وتم إضافة {$points} نقطة لمحفظتك.")
                 : '.';
 
             $this->notifyRequester(
-                $order,
+                $locked,
                 $bySupplier ? 'تم تسليم طلبك ✓' : 'تم استلام طلبك ✓',
-                "طلب رقم {$order->order_number} تم تسليمه{$pointsNote}",
+                "طلب رقم {$locked->order_number} تم تسليمه{$pointsNote}",
                 'success',
             );
 
             $this->notifySupplierAndAdmins(
-                $order,
+                $locked,
                 'تم تسليم الطلب ✓',
                 $bySupplier
-                    ? "طلب رقم {$order->order_number} تم تسليمه للمشتري {$order->requester?->name}."
-                    : "طلب رقم {$order->order_number} تم استلامه وتأكيده من {$order->requester?->name}.",
+                    ? "طلب رقم {$locked->order_number} تم تسليمه للمشتري {$locked->requester?->name}."
+                    : "طلب رقم {$locked->order_number} تم استلامه وتأكيده من {$locked->requester?->name}.",
                 'success',
             );
 
             $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
-                $order->fresh(['requester']),
+                $locked->fresh(['requester']),
                 'تم استلام طلبك ✓'.$pointsNote,
             ));
 
-            return $order;
+            return $locked->fresh(['items', 'requester', 'supplier']);
         });
     }
 
@@ -1049,12 +1053,6 @@ class OrderService
             throw new \DomainException('تحويل الطلب لفاتورة متاح لطلبات السباكين فقط');
         }
 
-        $this->assertStatus(
-            $order,
-            [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING],
-            'لا يمكن تنفيذ هذا الطلب في حالته الحالية',
-        );
-
         $order->loadMissing(['items', 'requester', 'supplier']);
 
         if ($order->items->isEmpty()) {
@@ -1076,16 +1074,26 @@ class OrderService
         }
 
         return DB::transaction(function () use ($order, $actor, $note) {
-            if ($order->status === OrderStatus::PLACED) {
-                $order->update([
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            $this->assertStatus(
+                $locked,
+                [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPING],
+                'لا يمكن تنفيذ هذا الطلب في حالته الحالية',
+            );
+
+            $locked->loadMissing(['items', 'requester', 'supplier']);
+
+            if ($locked->status === OrderStatus::PLACED) {
+                $locked->update([
                     'status' => OrderStatus::CONFIRMED,
                     'confirmed_at' => now(),
                     'confirmed_by' => $actor->id,
                 ]);
             }
 
-            if (! $order->shipped_at) {
-                $order->update([
+            if (! $locked->shipped_at) {
+                $locked->update([
                     'status' => OrderStatus::SHIPPING,
                     'shipped_at' => now(),
                     'shipped_by' => $actor->id,
@@ -1093,25 +1101,27 @@ class OrderService
             }
 
             if ($note) {
-                $order->update(['supplier_note' => $note]);
+                $locked->update(['supplier_note' => $note]);
             }
 
-            $order = $order->fresh(['items', 'requester', 'supplier']);
+            $locked = $locked->fresh(['items', 'requester', 'supplier']);
 
-            $lines = $order->items->map(fn (OrderItem $item) => [
+            $lines = $locked->items->map(fn (OrderItem $item) => [
                 'product_id' => (int) $item->product_id,
                 'quantity' => (int) $item->quantity,
                 'points_per_unit' => (float) $item->points_per_unit,
             ])->all();
 
-            $reference = $this->fulfilRetailToPlumber($order, $lines);
+            $reference = $this->fulfilRetailToPlumber($locked, $lines);
 
-            $order->update([
+            $locked->update([
                 'status' => OrderStatus::DELIVERED,
                 'delivered_at' => now(),
                 'delivered_by' => $actor->id,
                 'delivered_reference' => $reference['reference'] ?? null,
             ]);
+
+            $order = $locked;
 
             $points = (int) $order->total_points;
             $pointsNote = $points > 0 ? " وتم إضافة {$points} نقطة لمحفظتك." : '.';

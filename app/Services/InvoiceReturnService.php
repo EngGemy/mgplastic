@@ -35,6 +35,7 @@ class InvoiceReturnService
             throw new \DomainException('المرتجعات متاحة فقط لتوزيعات الجملة→قطاعي أو القطاعي→سباك — مرتجع المصنع غير مدعوم من هذا المسار');
         }
 
+        $this->assertNotWarehouseToWholesaleSupply($distribution);
         $this->assertActorCanReturn($distribution, $actor);
 
         $prepared = $this->prepareLines($distribution, $lines);
@@ -119,18 +120,30 @@ class InvoiceReturnService
             throw new \DomainException('تعذّر العثور على توزيع المرتجع');
         }
 
-        $distribution->loadMissing(['items.invoiceItem.product']);
+        $distribution->loadMissing(['items.invoiceItem.product', 'fromUser', 'toUser']);
+        $this->assertNotWarehouseToWholesaleSupply($distribution);
 
         return DB::transaction(function () use ($return, $actor, $note, $distribution) {
+            $lockedReturn = InvoiceReturn::query()
+                ->whereKey($return->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! InvoiceReturnStatus::isPending($lockedReturn->status)) {
+                throw new \DomainException('لا يمكن قبول مرتجع إلا وهو بانتظار الموافقة');
+            }
+
+            $lockedReturn->loadMissing(['items', 'invoice']);
+
             $confirmedPoints = 0;
 
-            foreach ($return->items as $item) {
+            foreach ($lockedReturn->items as $item) {
                 $distItem = InvoiceDistributionItem::query()
                     ->whereKey($item->distribution_item_id)
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                $returnable = $this->returnableQtyForItem($distribution, $distItem, ignoreReturnId: (int) $return->id);
+                $returnable = $this->returnableQtyForItem($distribution, $distItem, ignoreReturnId: (int) $lockedReturn->id);
 
                 if ((int) $item->quantity > $returnable) {
                     $name = localized_name($distItem->invoiceItem?->product, 'name', 'منتج');
@@ -144,28 +157,28 @@ class InvoiceReturnService
                 $confirmedPoints += (int) $item->points_value;
             }
 
-            if ((int) $return->tier === 3 && $confirmedPoints > 0) {
+            if ((int) $lockedReturn->tier === 3 && $confirmedPoints > 0) {
                 $this->assertPointsCanBeReturned($distribution, $confirmedPoints);
                 $this->transferPoints(
-                    from: User::findOrFail($return->from_user_id),
-                    to: User::findOrFail($return->to_user_id),
+                    from: User::findOrFail($lockedReturn->from_user_id),
+                    to: User::findOrFail($lockedReturn->to_user_id),
                     points: $confirmedPoints,
-                    return: $return,
+                    return: $lockedReturn,
                     actor: $actor,
                 );
             }
 
-            $return->update([
+            $lockedReturn->update([
                 'status' => InvoiceReturnStatus::APPROVED,
                 'confirmed_at' => now(),
-                'note' => $note ?: $return->note,
+                'note' => $note ?: $lockedReturn->note,
             ]);
 
-            if ($return->invoice) {
-                $this->syncOutgoingInvoiceTotals($return->invoice->fresh(['sourceDistribution.items', 'returns']));
+            if ($lockedReturn->invoice) {
+                $this->syncOutgoingInvoiceTotals($lockedReturn->invoice->fresh(['sourceDistribution.items', 'returns']));
             }
 
-            return $return->fresh(['items.product.translations', 'fromUser', 'toUser']);
+            return $lockedReturn->fresh(['items.product.translations', 'fromUser', 'toUser']);
         });
     }
 
@@ -352,6 +365,8 @@ class InvoiceReturnService
                 ];
             }
 
+            $this->assertNotWarehouseToWholesaleSupply($distribution);
+
             if ($this->returnableLines($distribution) === []) {
                 return [
                     'can_return' => false,
@@ -364,6 +379,25 @@ class InvoiceReturnService
             return ['can_return' => true, 'block_reason' => null];
         } catch (\DomainException $e) {
             return ['can_return' => false, 'block_reason' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Warehouse→wholesale fulfilment burns warehouse slots AND remints a separate incoming
+     * invoice for the buyer. Approving a tier-2 return only restores warehouse stock and
+     * leaves the reminted buyer stock → network inflation. Block until a full reverse exists.
+     */
+    protected function assertNotWarehouseToWholesaleSupply(InvoiceDistribution $distribution): void
+    {
+        $distribution->loadMissing(['fromUser', 'toUser']);
+
+        $from = $distribution->fromUser;
+        $to = $distribution->toUser;
+
+        if ($from?->isCentralWarehouse() && $to?->isWholesaleDistributor()) {
+            throw new \DomainException(
+                'مرتجع توريد المخزن→الجملة غير متاح حالياً — التسليم يُنشئ مخزوناً مستقلاً للمشتري؛ تواصل مع الإدارة لضبط المخزون'
+            );
         }
     }
 
