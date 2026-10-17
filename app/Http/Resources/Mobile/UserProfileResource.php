@@ -18,6 +18,7 @@ class UserProfileResource extends JsonResource
             'phone' => $this->phone,
             'role' => $this->role,
             'role_label' => UserRoles::label($this->role),
+            'is_central_warehouse' => (bool) $this->is_central_warehouse,
             'profile_photo' => $this->profile_photo_url,
             'profile_photo_path' => $this->profile_photo,
             'about_me' => api_plain_text($this->about_me),

@@ -84,6 +84,8 @@ POST /api/v1/mobile/distributor/orders
 
 تطبيق الجملة يعمل مع حساب المخزن لأن الدور `wholesale_distributor`:
 
+- `POST /api/v1/auth/login` و `GET /api/v1/mobile/me` → داخل `user`:  
+  `role: "wholesale_distributor"` + **`is_central_warehouse: true`**
 - `GET /api/v1/mobile/distributor/dashboard`
 - `GET /api/v1/mobile/distributor/points-panel`
 - `POST /api/v1/mobile/distributor/orders` (طلب مصنع — صناديق للمنتجات المعبأة)

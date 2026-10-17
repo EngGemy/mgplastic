@@ -95,6 +95,7 @@ class LoginController extends Controller
     protected function userPayload(User $user): array
     {
         $payload = $user->makeHidden(['otp_code', 'otp_expires_at'])->toArray();
+        $payload['is_central_warehouse'] = (bool) $user->is_central_warehouse;
 
         if ($user->role === User::ROLE_PLUMBER || $user->role === 'plumber') {
             $payload['balance_points'] = (int) (WalletAccount::query()
