@@ -113,6 +113,8 @@ class ProductCatalogController extends Controller
 
         // Network apps see totals on orders only — not the per-unit rate (decimal UX).
         // mg_no_points = MG catalog without loyalty points (still orderable).
+        $piecesPerBox = (int) ($product->pieces_per_box ?? 0);
+
         $item = [
             'id' => (int) $product->id,
             'name' => localized_name($product, 'name', 'منتج #'.$product->id),
@@ -125,6 +127,8 @@ class ProductCatalogController extends Controller
             'product_kind' => $product->productKind(),
             'is_mg' => true,
             'awards_points' => $product->awardsPoints(),
+            'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
+            'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
             'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
             'category_name' => $product->category
                 ? localized_name($product->category, 'name', '')

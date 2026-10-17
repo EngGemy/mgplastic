@@ -3,7 +3,6 @@
 namespace App\Filament\Warehouse\Widgets;
 
 use App\Filament\Distributor\Pages\DistributorPos;
-use App\Filament\Distributor\Pages\MyProducts;
 use App\Filament\Distributor\Resources\DistributorDistributionResource;
 use App\Filament\Distributor\Resources\DistributorInvoiceResource;
 use App\Filament\Distributor\Resources\DistributorMyStoreResource;
@@ -41,8 +40,7 @@ class WarehouseQuickLinksWidget extends Widget
             ['التوزيعات', 'سلسلة النقاط', DistributorDistributionResource::class, 'index'],
             ['صرف للقطاعي', 'بيع من المخزون', DistributorPos::class, null],
             ['تجار القطاعي', 'شبكة المخزن', DistributorRetailTraderResource::class, 'index'],
-            ['منتجاتي', 'مخزون ونقاط', MyProducts::class, null],
-            ['متجري', 'واجهة الكتالوج', DistributorMyStoreResource::class, 'index'],
+            ['متجري', 'واجهة الكتالوج MG', DistributorMyStoreResource::class, 'index'],
         ];
 
         foreach ($candidates as [$label, $sub, $class, $page]) {

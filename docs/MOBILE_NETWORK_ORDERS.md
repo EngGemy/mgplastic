@@ -269,11 +269,17 @@ POST /api/v1/mobile/distributor/orders
 ```json
 {
   "lines": [
-    { "product_id": 42, "quantity": 50 }
+    { "product_id": 42, "boxes": 3 },
+    { "product_id": 7, "quantity": 50 }
   ],
   "note": "طلب توريد"
 }
 ```
+
+- كتالوج المنتجات يعيد `pieces_per_box` و `order_unit` (`box` | `piece`).
+- لو `order_unit=box`: أرسل **`boxes`** (يُحوَّل داخلياً إلى قطع = `boxes × pieces_per_box`).
+- لو `order_unit=piece`: أرسل **`quantity`** بالقطع.
+- لو أرسلت `quantity` لمنتج له صندوق: لازم تكون من مضاعفات `pieces_per_box`.
 
 3. Track as buyer:
 

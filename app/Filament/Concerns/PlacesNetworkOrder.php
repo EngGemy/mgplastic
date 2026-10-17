@@ -12,7 +12,9 @@ use Illuminate\Support\Collection;
 
 trait PlacesNetworkOrder
 {
-    use SetsCartQuantity;
+    use SetsCartQuantity {
+        setQuantity as private setPieceQuantity;
+    }
 
     public string $search = '';
 
@@ -23,7 +25,19 @@ trait PlacesNetworkOrder
     /** Wholesale distributor chosen by the retail trader before submit. */
     public ?int $supplierId = null;
 
-    /** @var array<string, array{product_id:int, name:string, quantity:int, points_per_unit:float, image:?string, initials:string, color_class:string}> */
+    /**
+     * @var array<string, array{
+     *   product_id:int,
+     *   name:string,
+     *   quantity:int,
+     *   boxes:?int,
+     *   pieces_per_box:?int,
+     *   points_per_unit:float,
+     *   image:?string,
+     *   initials:string,
+     *   color_class:string
+     * }>
+     */
     public array $cart = [];
 
     protected ?Collection $catalogCache = null;
@@ -173,11 +187,15 @@ trait PlacesNetworkOrder
                 $initials = collect(explode(' ', $name))->take(2)
                     ->map(fn ($w) => mb_substr($w, 0, 1))->implode('');
 
+                $piecesPerBox = (int) ($p->pieces_per_box ?? 0);
+
                 return [
                     'product_id' => $p->id,
                     'name' => $name,
                     'category_id' => $p->product_category_id,
                     'points_per_unit' => (float) ($p->points_per_unit ?? 0),
+                    'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
+                    'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
                     'image' => $p->display_image_url,
                     'initials' => $initials ?: 'MG',
                     'color_class' => $this->colorFromName($name),
@@ -186,6 +204,47 @@ trait PlacesNetworkOrder
             ->values();
 
         return $this->catalogCache;
+    }
+
+    /** Factory orders use boxes when the product has pieces_per_box. */
+    protected function usesFactoryBoxOrdering(): bool
+    {
+        return $this->orderChannel() === OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE;
+    }
+
+    public function isBoxed(string $key): bool
+    {
+        return $this->usesFactoryBoxOrdering()
+            && (int) ($this->cart[$key]['pieces_per_box'] ?? 0) > 0;
+    }
+
+    public function setBoxes(string $key, mixed $value): void
+    {
+        if (! isset($this->cart[$key]) || ! $this->isBoxed($key)) {
+            return;
+        }
+
+        $boxes = (int) $value;
+        if ($boxes < 1) {
+            unset($this->cart[$key]);
+
+            return;
+        }
+
+        $pieces = (int) $this->cart[$key]['pieces_per_box'];
+        $this->cart[$key]['boxes'] = $boxes;
+        $this->cart[$key]['quantity'] = $boxes * $pieces;
+    }
+
+    public function setQuantity(string $key, mixed $value): void
+    {
+        if ($this->isBoxed($key)) {
+            $this->setBoxes($key, $value);
+
+            return;
+        }
+
+        $this->setPieceQuantity($key, $value);
     }
 
     private function colorFromName(string $name): string
@@ -204,32 +263,58 @@ trait PlacesNetworkOrder
         }
 
         $key = (string) $productId;
+        $piecesPerBox = $this->usesFactoryBoxOrdering()
+            ? (int) ($row['pieces_per_box'] ?? 0)
+            : 0;
+        $boxed = $piecesPerBox > 0;
 
         if (isset($this->cart[$key])) {
-            $this->cart[$key]['quantity']++;
-        } else {
-            $this->cart[$key] = [
-                'product_id' => $productId,
-                'name' => $row['name'],
-                'quantity' => 1,
-                'points_per_unit' => (float) $row['points_per_unit'],
-                'image' => $row['image'],
-                'initials' => $row['initials'],
-                'color_class' => $row['color_class'],
-            ];
+            if ($this->isBoxed($key)) {
+                $this->setBoxes($key, (int) $this->cart[$key]['boxes'] + 1);
+            } else {
+                $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
+            }
+
+            return;
         }
+
+        $this->cart[$key] = [
+            'product_id' => $productId,
+            'name' => $row['name'],
+            'quantity' => $boxed ? $piecesPerBox : 1,
+            'boxes' => $boxed ? 1 : null,
+            'pieces_per_box' => $boxed ? $piecesPerBox : null,
+            'points_per_unit' => (float) $row['points_per_unit'],
+            'image' => $row['image'],
+            'initials' => $row['initials'],
+            'color_class' => $row['color_class'],
+        ];
     }
 
     public function increment(string $key): void
     {
-        if (isset($this->cart[$key])) {
-            $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
+        if (! isset($this->cart[$key])) {
+            return;
         }
+
+        if ($this->isBoxed($key)) {
+            $this->setBoxes($key, (int) $this->cart[$key]['boxes'] + 1);
+
+            return;
+        }
+
+        $this->setQuantity($key, (int) $this->cart[$key]['quantity'] + 1);
     }
 
     public function decrement(string $key): void
     {
         if (! isset($this->cart[$key])) {
+            return;
+        }
+
+        if ($this->isBoxed($key)) {
+            $this->setBoxes($key, (int) $this->cart[$key]['boxes'] - 1);
+
             return;
         }
 
@@ -246,7 +331,12 @@ trait PlacesNetworkOrder
         }
 
         $this->addToCart($productId);
-        $this->setQuantity((string) $productId, $qty);
+        $key = (string) $productId;
+        if ($this->isBoxed($key)) {
+            $this->setBoxes($key, $qty);
+        } else {
+            $this->setQuantity($key, $qty);
+        }
     }
 
     public function removeFromCart(string $key): void
@@ -277,10 +367,18 @@ trait PlacesNetworkOrder
             return;
         }
 
-        $lines = array_values(collect($this->cart)->map(fn ($line) => [
-            'product_id' => (int) $line['product_id'],
-            'quantity' => (int) $line['quantity'],
-        ])->all());
+        $lines = array_values(collect($this->cart)->map(function ($line) {
+            $payload = [
+                'product_id' => (int) $line['product_id'],
+                'quantity' => (int) $line['quantity'],
+            ];
+
+            if ((int) ($line['pieces_per_box'] ?? 0) > 0 && isset($line['boxes'])) {
+                $payload['boxes'] = (int) $line['boxes'];
+            }
+
+            return $payload;
+        })->all());
 
         try {
             $order = app(OrderService::class)->place(

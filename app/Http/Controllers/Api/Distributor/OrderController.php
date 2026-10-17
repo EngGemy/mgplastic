@@ -56,9 +56,21 @@ class OrderController extends Controller
         $v = Validator::make($request->all(), [
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            // Boxed MG products: send `boxes` (preferred) or piece `quantity` that is a multiple of pieces_per_box.
+            'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
+            'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
             'note' => ['nullable', 'string', 'max:2000'],
         ]);
+
+        $v->after(function ($validator) use ($request) {
+            foreach ($request->input('lines', []) as $i => $line) {
+                $boxes = $line['boxes'] ?? null;
+                $qty = $line['quantity'] ?? null;
+                if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
+                    $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+                }
+            }
+        });
 
         if ($v->fails()) {
             return $this->error('بيانات غير صالحة', 422, $v->errors());

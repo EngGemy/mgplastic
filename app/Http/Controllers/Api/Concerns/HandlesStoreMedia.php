@@ -30,6 +30,10 @@ trait HandlesStoreMedia
 
     public function listMyProducts(Request $request): JsonResponse
     {
+        if ($denied = $this->denyNonMgProductsForWarehouse($request)) {
+            return $denied;
+        }
+
         $owner = $this->resolveStoreMediaOwner($request);
         $owner->loadMissing('storeMedia');
 
@@ -50,6 +54,10 @@ trait HandlesStoreMedia
 
     public function uploadMyProduct(Request $request, StoreMediaUploadService $uploader): JsonResponse
     {
+        if ($denied = $this->denyNonMgProductsForWarehouse($request)) {
+            return $denied;
+        }
+
         $owner = $this->resolveStoreMediaOwner($request);
 
         $request->validate([
@@ -90,6 +98,10 @@ trait HandlesStoreMedia
 
     public function updateMyProduct(Request $request, int $mediaId): JsonResponse
     {
+        if ($denied = $this->denyNonMgProductsForWarehouse($request)) {
+            return $denied;
+        }
+
         $owner = $this->resolveStoreMediaOwner($request);
 
         $request->validate([
@@ -151,6 +163,10 @@ trait HandlesStoreMedia
 
     public function deleteMyProduct(Request $request, int $mediaId, StoreMediaUploadService $uploader): JsonResponse
     {
+        if ($denied = $this->denyNonMgProductsForWarehouse($request)) {
+            return $denied;
+        }
+
         $owner = $this->resolveStoreMediaOwner($request);
 
         $media = StoreMedia::query()
@@ -406,6 +422,22 @@ trait HandlesStoreMedia
         }
 
         return response()->json(['status' => true, 'message' => 'تم حذف الرابط']);
+    }
+
+    /**
+     * مخزن الدعوة يتعامل مع كتالوج MG فقط — بدون منتجات محل غير MG.
+     */
+    protected function denyNonMgProductsForWarehouse(Request $request): ?JsonResponse
+    {
+        $user = $request->user();
+        if ($user && method_exists($user, 'isCentralWarehouse') && $user->isCentralWarehouse()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'مخزن الدعوة يتعامل مع منتجات MG فقط — منتجات المحل غير متاحة',
+            ], 403);
+        }
+
+        return null;
     }
 
     abstract protected function resolveStoreMediaOwner(Request $request): Model;

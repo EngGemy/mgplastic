@@ -63,7 +63,7 @@ class WarehousePanelProvider extends PanelProvider
             ->pages([
                 \App\Filament\Warehouse\Pages\WarehouseDashboard::class,
                 \App\Filament\Distributor\Pages\DistributorPos::class,
-                \App\Filament\Distributor\Pages\MyProducts::class,
+                // MyProducts (non-MG shop media) intentionally omitted — warehouse is MG-only.
             ])
             ->renderHook('panels::head.end', fn () => view('filament.hooks.admin-styles'))
             ->renderHook('panels::topbar.start', fn () => view('filament.hooks.warehouse-brand-bar'))

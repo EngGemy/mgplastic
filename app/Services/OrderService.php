@@ -29,7 +29,10 @@ class OrderService
     public function place(User $requester, string $channel, array $lines, array $meta = []): Order
     {
         $supplier = $this->resolveSupplier($requester, $channel, $meta);
-        $prepared = $this->prepareLines($lines);
+        $prepared = $this->prepareLines(
+            $lines,
+            enforceFactoryBoxes: $channel === OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE,
+        );
 
         if (empty($prepared['items'])) {
             throw new \DomainException('أضف منتجاً واحداً على الأقل للطلب');
@@ -412,15 +415,34 @@ class OrderService
      * @param  array<int, array{product_id:int, quantity:int}>  $lines
      * @return array{items:array<int, array<string, mixed>>, total_quantity:int, total_points:int}
      */
-    protected function prepareLines(array $lines): array
+    /**
+     * Normalize cart lines into piece quantities.
+     *
+     * Boxed MG products (pieces_per_box > 0): prefer `boxes` and convert to pieces.
+     * If only `quantity` is sent for a boxed product, it must be a multiple of pieces_per_box.
+     *
+     * @param  array<int, array{product_id:int, quantity?:int, boxes?:int}>  $lines
+     * @return array{items: list<array<string, mixed>>, total_quantity: int, total_points: int}
+     */
+    protected function prepareLines(array $lines, bool $enforceFactoryBoxes = false): array
     {
         $merged = [];
 
         foreach ($lines as $line) {
             $productId = (int) ($line['product_id'] ?? 0);
-            $qty = (int) ($line['quantity'] ?? 0);
+            if ($productId <= 0) {
+                continue;
+            }
 
-            if ($productId <= 0 || $qty <= 0) {
+            $product = Product::query()->find($productId);
+            if (! $product) {
+                continue;
+            }
+
+            $piecesPerBox = (int) ($product->pieces_per_box ?? 0);
+            $qty = $this->resolveLinePieceQuantity($line, $piecesPerBox, $enforceFactoryBoxes);
+
+            if ($qty <= 0) {
                 continue;
             }
 
@@ -459,6 +481,47 @@ class OrderService
             'total_quantity' => $totalQty,
             'total_points' => $totalPoints,
         ];
+    }
+
+    /**
+     * @param  array{product_id?:int, quantity?:int, boxes?:int}  $line
+     */
+    protected function resolveLinePieceQuantity(array $line, int $piecesPerBox, bool $enforceFactoryBoxes): int
+    {
+        $hasBoxes = array_key_exists('boxes', $line) && $line['boxes'] !== null && $line['boxes'] !== '';
+        $boxes = $hasBoxes ? (int) $line['boxes'] : 0;
+        $rawQty = (int) ($line['quantity'] ?? 0);
+
+        if ($piecesPerBox > 0) {
+            if ($boxes > 0) {
+                return $boxes * $piecesPerBox;
+            }
+
+            if ($rawQty <= 0) {
+                return 0;
+            }
+
+            // Already expressed as pieces in a valid box multiple.
+            if ($rawQty % $piecesPerBox === 0) {
+                return $rawQty;
+            }
+
+            if ($enforceFactoryBoxes) {
+                throw new \DomainException(
+                    "المنتجات ذات الصندوق تُطلب بالصندوق فقط (كل صندوق = {$piecesPerBox} قطعة). أرسل عدد الصناديق أو كمية من مضاعفات {$piecesPerBox}."
+                );
+            }
+
+            // Outside factory channel: treat as piece quantity (retail/plumber flows).
+            return $rawQty;
+        }
+
+        // Piece-only products.
+        if ($boxes > 0 && $rawQty <= 0) {
+            return $boxes;
+        }
+
+        return $rawQty;
     }
 
     /**

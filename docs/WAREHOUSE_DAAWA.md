@@ -30,12 +30,12 @@ php artisan db:seed --class=CentralWarehouseSeeder
 | القدرة | من الواجهة |
 |--------|------------|
 | لوحة تحكم + رصيد النقاط | الصفحة الرئيسية — بطاقات إجمالي / موزّع / متبقي |
-| طلب من المصنع مباشرة | الطلبيات → إنشاء طلب جديد (قناة `factory_to_wholesale`) |
+| طلب من المصنع مباشرة | الطلبيات → إنشاء طلب جديد (قناة `factory_to_wholesale`) — **بالصندوق** لو `pieces_per_box > 0`، وبالقطعة للمنتجات بدون صندوق |
 | استقبال طلبيات القطاعي | تبويب الوارد في الطلبيات → تأكيد / شحن / تم التسليم |
 | تحديث المخزون | استلام طلب المصنع + كاشير الصرف للقطاعي |
 | شبكة القطاعي | تجار القطاعي — إضافة / ربط |
 | فواتير وتوزيعات | موارد الفواتير والتوزيعات |
-| واجهة المحل | متجري + منتجاتي (عرض بدون نقاط) |
+| واجهة المحل | متجري (كتالوج MG فقط) — **بدون** منتجات محل غير MG |
 
 ---
 
@@ -50,6 +50,31 @@ php artisan db:seed --class=CentralWarehouseSeeder
 
 كلاهما يستخدم نفس محرك الطلبات والمخزون والنقاط.
 
+**مخزن الدعوة = منتجات MG فقط.** لا صفحة «منتجاتي» ولا رفع منتجات محل (`my-products` → 403).
+
+---
+
+## طلب المصنع: صندوق vs قطعة
+
+| المنتج | وحدة الطلب في الواجهة/API |
+|--------|---------------------------|
+| `pieces_per_box > 0` | **صناديق** — الكمية المخزّنة = `boxes × pieces_per_box` |
+| بدون صندوق / `null` / `0` | **قطع** |
+
+API مثال:
+
+```json
+POST /api/v1/mobile/distributor/orders
+{
+  "lines": [
+    { "product_id": 42, "boxes": 3 },
+    { "product_id": 7, "quantity": 5 }
+  ]
+}
+```
+
+الكتالوج يعيد `pieces_per_box` و `order_unit`: `"box"` | `"piece"`.
+
 ---
 
 ## الموبايل
@@ -58,7 +83,7 @@ php artisan db:seed --class=CentralWarehouseSeeder
 
 - `GET /api/v1/mobile/distributor/dashboard`
 - `GET /api/v1/mobile/distributor/points-panel`
-- `POST /api/v1/mobile/distributor/orders` (طلب مصنع)
+- `POST /api/v1/mobile/distributor/orders` (طلب مصنع — صناديق للمنتجات المعبأة)
 - باقي مسارات الجملة في [MOBILE_STORE_APP.md](./MOBILE_STORE_APP.md)
 
 ---

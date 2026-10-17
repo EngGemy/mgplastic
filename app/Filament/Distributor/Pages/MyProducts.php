@@ -38,8 +38,18 @@ class MyProducts extends Page
     {
         $user = auth()->user();
 
+        // مخزن الدعوة deals with MG catalog only — no shop / non-MG products.
+        if ($user?->isCentralWarehouse()) {
+            return false;
+        }
+
         return $user
             && $user->isWholesaleDistributor()
             && $user->canStorePermission(StorePermissions::CATALOG_MANAGE);
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return static::canAccess();
     }
 }

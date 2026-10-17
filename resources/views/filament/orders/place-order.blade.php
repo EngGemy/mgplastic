@@ -117,7 +117,13 @@
                     @php $key = (string) $row['product_id']; $inCart = isset($this->cart[$key]); @endphp
                     <div class="ord-card {{ $inCart ? 'in-cart' : '' }}" wire:click="addToCart({{ $row['product_id'] }})" title="اضغط للإضافة">
                         @if($inCart)
-                            <div class="ord-badge">{{ $this->cart[$key]['quantity'] }}</div>
+                            <div class="ord-badge">
+                                @if(!empty($this->cart[$key]['pieces_per_box']))
+                                    {{ $this->cart[$key]['boxes'] }}ص
+                                @else
+                                    {{ $this->cart[$key]['quantity'] }}
+                                @endif
+                            </div>
                         @endif
                         @if($row['image'])
                             <img src="{{ $row['image'] }}" alt="" class="ord-img" loading="lazy">
@@ -125,6 +131,11 @@
                             <div class="ord-init {{ $row['color_class'] }}">{{ $row['initials'] }}</div>
                         @endif
                         <div class="ord-name">{{ $row['name'] }}</div>
+                        @if(!empty($row['pieces_per_box']))
+                            <div class="ord-pts">صندوق × {{ $row['pieces_per_box'] }} قطعة</div>
+                        @elseif(($row['points_per_unit'] ?? 0) > 0)
+                            <div class="ord-pts">{{ number_format($row['points_per_unit'], 1) }} نقطة / قطعة</div>
+                        @endif
                     </div>
                 @endforeach
             </div>
@@ -146,13 +157,25 @@
                     @endif
                     <div style="flex:1;min-width:0">
                         <div class="ord-ci-name">{{ $line['name'] }}</div>
+                        @if(!empty($line['pieces_per_box']))
+                            <div class="ord-ci-pts">{{ $line['boxes'] }} صندوق × {{ $line['pieces_per_box'] }} = {{ number_format($line['quantity']) }} قطعة</div>
+                        @endif
                     </div>
                     <div class="ord-qty">
                         <button type="button" class="ord-qty-btn" wire:click="decrement('{{ $key }}')">−</button>
-                        <input type="number" min="1" class="ord-qty-val"
-                            style="width:56px;height:28px;text-align:center;font-weight:800;border:1.5px solid #cbd5e1;border-radius:7px;font-family:inherit;background:#fff"
-                            value="{{ $line['quantity'] }}"
-                            wire:change="setQuantity('{{ $key }}', $event.target.value)">
+                        @if(!empty($line['pieces_per_box']))
+                            <input type="number" min="1" class="ord-qty-val"
+                                style="width:56px;height:28px;text-align:center;font-weight:800;border:1.5px solid #cbd5e1;border-radius:7px;font-family:inherit;background:#fff"
+                                value="{{ $line['boxes'] }}"
+                                wire:change="setBoxes('{{ $key }}', $event.target.value)"
+                                title="عدد الصناديق">
+                        @else
+                            <input type="number" min="1" class="ord-qty-val"
+                                style="width:56px;height:28px;text-align:center;font-weight:800;border:1.5px solid #cbd5e1;border-radius:7px;font-family:inherit;background:#fff"
+                                value="{{ $line['quantity'] }}"
+                                wire:change="setQuantity('{{ $key }}', $event.target.value)"
+                                title="عدد القطع">
+                        @endif
                         <button type="button" class="ord-qty-btn" wire:click="increment('{{ $key }}')">+</button>
                     </div>
                     <button type="button" class="ord-rm" wire:click="removeFromCart('{{ $key }}')">حذف</button>
@@ -163,7 +186,7 @@
         <textarea class="ord-note" wire:model.blur="note" placeholder="ملاحظات للمورّد (اختياري)..."></textarea>
 
         <div class="ord-foot">
-            <div class="ord-total"><span>الكمية</span><strong>{{ number_format($cartQty) }}</strong></div>
+            <div class="ord-total"><span>الكمية (قطع)</span><strong>{{ number_format($cartQty) }}</strong></div>
             <div class="ord-total"><span>النقاط</span><span class="ord-total-pts">{{ number_format($cartPts) }}</span></div>
             <button type="button" class="ord-submit" wire:click="submitOrder"
                 @disabled(empty($this->cart) || ($this->needsWholesaleSupplier() && ! $this->supplierId))
