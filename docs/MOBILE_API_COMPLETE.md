@@ -55,8 +55,8 @@ Success → `token` (Sanctum). إذا الهاتف غير موثّق → OTP و 
 | Who | Endpoint |
 |-----|----------|
 | قطاعي | `POST /api/v1/auth/register-retail` (alias: `register-trader`) |
-| جملة | `POST /api/v1/auth/register-store` |
 | سباك | `POST /api/v1/auth/register-plumber` |
+| جملة | **Login فقط** — الحساب من الأدمن (لا تستخدم `register-store` في التطبيق) |
 
 ثم: `POST /api/v1/auth/verify-otp` · `resend-otp` · `forgot-password/*`
 
@@ -80,8 +80,10 @@ Success → `token` (Sanctum). إذا الهاتف غير موثّق → OTP و 
 | `mg_no_points` | true | false | منتج MG **يُطلب بدون نقاط** |
 | `shop` | false | false | منتج المحل (`my_product`) للعرض |
 
-- في الكتالوج الشبكي: `points_per_unit` دائماً `null` — اعرض `has_points` / إجمالي النقاط على الطلب فقط.
+- في الكتالوج الشبكي ومورد الطلب: `points_per_unit` دائماً `null` — اعرض `has_points` / إجمالي النقاط على الطلب فقط.
+- استثناء: معاينة المرتجع + مخزون POS + `orders/{id}/stock` ترجع رقماً تشغيلياً.
 - فلتر: `?has_points=1` أو `0`.
+- مخزون جملة مرتبط للقطاعي: `GET /trader/wholesalers/{id}/stock` (`points_per_unit: null` + `available_qty`).
 
 ---
 
@@ -93,11 +95,12 @@ Prefix: `/api/v1/mobile/trader` — Bearer + role `retail_trader`
 
 1. Login / register-retail  
 2. عرض محلات الجملة: `GET /api/v1/network-stores`  
-3. كتالوج MG للطلب: `GET /trader/products`  
-4. منتجاته للعرض (مش MG): `GET /trader/my-products`  
-5. طلب من جملة: `POST /trader/orders`  
-6. سباكين شبكته: `GET/POST /trader/plumbers`  
-7. تنفيذ طلبات السباكين + مرتجعات + إشعارات  
+3. مخزون جملة مرتبط: `GET /trader/wholesalers/{id}/stock`  
+4. كتالوج MG للطلب: `GET /trader/products`  
+5. منتجاته للعرض (مش MG): `GET /trader/my-products`  
+6. طلب من جملة: `POST /trader/orders`  
+7. سباكين شبكته: `GET/POST /trader/plumbers`  
+8. تنفيذ طلبات السباكين (`stock` / `items` / `apply-stock` / `fulfill`) + مرتجعات (`distributions`/`invoices` قوائم) + إشعارات  
 
 ### منتجات
 
@@ -124,10 +127,11 @@ Prefix: `/api/v1/mobile/trader` — Bearer + role `retail_trader`
 | POST | `/orders` | إلى الجملة — يحتاج `supplier_id` + `lines` |
 | GET | `/orders/{id}` | فيه `available_actions` |
 | POST | `/orders/{id}/receive` · `/cancel` | كمشتري من الجملة |
-| POST | `/orders/{id}/confirm\|ship\|reject\|fulfill` | لطلبات السباكين |
-| PUT | `/orders/{id}/items` | تعديل أصناف طلب سباك |
-| GET | `/orders/{id}/stock` | مخزون لطلب سباك |
-| POST | `/orders/{id}/apply-stock` | |
+| POST | `/orders/{id}/confirm\|ship\|reject` | لطلبات السباكين |
+| GET | `/orders/{id}/stock` | فحص مخزون طلب سباك |
+| PUT | `/orders/{id}/items` | `{ lines:[{product_id,quantity}] }` |
+| POST | `/orders/{id}/apply-stock` | لا body |
+| POST | `/orders/{id}/fulfill` | `{ note? }` |
 
 ```json
 POST /orders
@@ -138,22 +142,25 @@ POST /orders
 }
 ```
 
-### POS
+تفاصيل bodies: [MOBILE_NETWORK_ORDERS.md — Flow D](./MOBILE_NETWORK_ORDERS.md)
+
+### مخزون / POS
 
 | Method | Path |
 |--------|------|
-| GET | `/pos/stock` |
-| POST | `/pos/checkout` |
+| GET | `/wholesalers/{id}/stock` | مخزون الجملة المرتبطة |
+| GET | `/pos/stock` | مخزونك |
+| POST | `/pos/checkout` | `{ plumber_id, lines[] }` |
 
 ### مرتجعات
 
 | Method | Path |
 |--------|------|
+| GET | `/distributions` | قائمة اختيار tier 3 |
+| GET | `/invoices` | قائمة اختيار tier 2 |
 | GET | `/returns` |
-| GET | `/distributions/{id}/return-preview` |
-| POST | `/distributions/{id}/returns` | قطاعي→سباك |
-| GET | `/invoices/{id}/return-preview` |
-| POST | `/invoices/{id}/returns` | مرتجع شراء من الجملة |
+| GET/POST | `/distributions/{id}/return-preview` · `/returns` | قطاعي→سباك |
+| GET/POST | `/invoices/{id}/return-preview` · `/returns` | شراء من الجملة |
 
 **قاعدة:** مفيش مرتجع بعد صرف نقاط السباك من نفس التوزيع.
 
@@ -170,7 +177,7 @@ Prefix: `/api/v1/mobile/distributor` — Bearer + role `wholesale_distributor`
 
 ### تدفق التطبيق
 
-1. Login / register-store  
+1. **Login فقط** (حساب الجملة من الأدمن — لا `register-store` في التطبيق)  
 2. إضافة قطاعي لشبكته (تسجيل جديد أو ربط برقم موحّد)  
 3. إضافة سباكين **تحت** تاجر قطاعي مرتبط (مش ربط مباشر جملة↔سباك)  
 4. كتالوج + طلب من المصنع  
@@ -260,7 +267,7 @@ POST /orders
 | Area | Paths |
 |------|-------|
 | POS | `GET/POST /pos/stock` · `/pos/checkout` |
-| Returns | `GET /returns` · `GET/POST /invoices/{id}/return-preview|/returns` |
+| Returns | `GET /invoices` · `GET/POST /invoices/{id}/return-preview|/returns` · `GET /returns` |
 | Notifications | `/distributor/notifications…` |
 
 ---
@@ -341,13 +348,14 @@ Fields: `order_id`, `order_number`, `channel`, `order_status`, `title`, `body`, 
 ## 10. Quick cheat sheet
 
 ### Auth
-`POST /auth/login` · `register-retail` · `register-store` · `register-plumber` · `verify-otp`
+`POST /auth/login` · `register-retail` · `register-plumber` · `verify-otp`  
+(جملة = login فقط)
 
 ### Trader
-`/trader/products` · `/trader/my-products` · `/trader/orders*` · `/trader/plumbers*` · `/trader/pos*` · `/trader/returns*` · `/trader/notifications*`
+`/trader/products` · `/trader/wholesalers/{id}/stock` · `/trader/my-products` · `/trader/orders*` · `/trader/plumbers*` · `/trader/pos*` · `/trader/distributions` · `/trader/invoices` · `/trader/returns*` · `/trader/notifications*`
 
 ### Distributor
-`/distributor/products` · `/distributor/my-products` · `/distributor/retail-traders*` · `/distributor/plumbers*` · `/distributor/orders*` · `/distributor/pos*` · `/distributor/returns*` · `/distributor/notifications*`
+`/distributor/products` · `/distributor/my-products` · `/distributor/retail-traders*` · `/distributor/plumbers*` · `/distributor/orders*` · `/distributor/pos*` · `/distributor/invoices` · `/distributor/returns*` · `/distributor/notifications*`
 
 ### Shared
 `/mobile/me` · `/mobile/profile` · `/mobile/settings` · `/mobile/notifications*` · `/network-stores` · `/my-store*`

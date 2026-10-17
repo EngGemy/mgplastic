@@ -39,9 +39,10 @@ Envelope on success:
 }
 ```
 
-`points_per_unit` is always `null` for network apps — show **order / line totals only**.
+`points_per_unit` في **الكتالوج وموارد الطلبات** دائماً `null` — اعرض إجمالي النقاط على الطلب/السطر فقط.  
+استثناءات تشغيلية (رقم حقيقي): معاينة المرتجع، مخزون POS الخاص، وفحص مخزون طلب السباك.
 
-Related: [Plumber shop products](./PLUMBER_SHOP_PRODUCTS.md) · [Invoice returns](./MOBILE_INVOICE_RETURNS.md) · [General mobile API](./API_MOBILE.md)
+Related: [Plumber shop products](./PLUMBER_SHOP_PRODUCTS.md) · [Invoice returns](./MOBILE_INVOICE_RETURNS.md) · [Mobile handoff](./MOBILE_API_FOR_APP.md)
 
 ---
 
@@ -99,13 +100,21 @@ GET /api/v1/network-stores
 
 → shops with role `wholesale_distributor`. Use shop `id` as `supplier_id`.
 
-2. Catalog:
+2. Optional — مخزون الجملة المتاح لهذا الموزّع (مرتبط فقط):
+
+```http
+GET /api/v1/mobile/trader/wholesalers/{wholesaler_id}/stock
+```
+
+`points_per_unit` = `null` · استخدم `has_points` + `available_qty` / `available_quantity`.
+
+3. Catalog (كل منتجات MG — بدون كمية مخزون جملة):
 
 ```http
 GET /api/v1/mobile/trader/products?page=1&per_page=20&search=
 ```
 
-3. Place order:
+4. Place order:
 
 ```http
 POST /api/v1/mobile/trader/orders
@@ -124,7 +133,7 @@ POST /api/v1/mobile/trader/orders
 
 Alias: `wholesale_distributor_id` works instead of `supplier_id`.
 
-4. Track / act:
+5. Track / act:
 
 | Call | Meaning |
 |------|---------|
@@ -132,6 +141,79 @@ Alias: `wholesale_distributor_id` works instead of `supplier_id`.
 | `GET /api/v1/mobile/trader/orders/{id}` | Detail + `available_actions` |
 | `POST …/receive` | Confirm receipt → stock + points |
 | `POST …/cancel` | Cancel while `placed` / `confirmed` |
+
+---
+
+## App flow D — قطاعي ينفّذ طلب سباك من مخزونه
+
+فقط على `channel = retail_to_plumber` و`available_actions` تحتوي الإجراء.
+
+### 1) فحص المخزون مقابل بنود الطلب
+
+```http
+GET /api/v1/mobile/trader/orders/{id}/stock
+```
+
+لا body. الاستجابة:
+
+```json
+{
+  "order_id": 55,
+  "lines": [
+    {
+      "product_id": 42,
+      "name": "ماسورة",
+      "requested_qty": 10,
+      "available_qty": 7,
+      "fulfillable_qty": 7,
+      "is_available": false,
+      "points_per_unit": 10
+    }
+  ]
+}
+```
+
+هنا `points_per_unit` رقم تشغيلي (ليس كتالوج).
+
+### 2) تعديل أصناف الطلب (قبل التنفيذ)
+
+```http
+PUT /api/v1/mobile/trader/orders/{id}/items
+```
+
+```json
+{
+  "lines": [
+    { "product_id": 42, "quantity": 7 },
+    { "product_id": 9, "quantity": 2 }
+  ]
+}
+```
+
+مسموح فقط والحالة `placed` أو `confirmed`.
+
+### 3) قص الكميات للمتوفر تلقائياً
+
+```http
+POST /api/v1/mobile/trader/orders/{id}/apply-stock
+```
+
+لا body — يعدّل الكميات إلى `fulfillable_qty` ويحذف البنود بصفر.
+
+### 4) تنفيذ كامل من المخزون → فاتورة + تسليم
+
+```http
+POST /api/v1/mobile/trader/orders/{id}/fulfill
+```
+
+```json
+{ "note": "تم التنفيذ من المخزون" }
+```
+
+`note` اختياري. يفشل 422 لو أي بند `is_available=false`.  
+عند النجاح: تأكيد → شحن → توزيع tier 3 → `delivered` + منح نقاط السباك.
+
+بديل متدرج بدون fulfill: `confirm` → `ship` ثم السباك `receive`.
 
 ---
 

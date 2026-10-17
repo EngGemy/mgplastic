@@ -154,6 +154,51 @@ class InvoiceReturnEdgesTest extends TestCase
             ->assertJsonPath('message', 'بيانات المرتجع غير صالحة');
     }
 
+    public function test_trader_and_distributor_can_list_return_sources(): void
+    {
+        [$wholesale, $retail, $invoice] = $this->seedTier2Outgoing(qty: 3, ppu: 2);
+        [$retail2, $plumber, $distribution] = $this->seedTier3Awarded(pointsPerUnit: 5, qty: 2);
+
+        // Attach retail from tier2 so lists are under same users when needed
+        Sanctum::actingAs($wholesale);
+        $this->getJson('/api/v1/mobile/distributor/invoices')
+            ->assertOk()
+            ->assertJsonPath('data.items.0.invoice_id', $invoice->id)
+            ->assertJsonStructure(['data' => ['items' => [['can_return', 'returnable_quantity']]]]);
+
+        Sanctum::actingAs($retail);
+        $this->getJson('/api/v1/mobile/trader/invoices')
+            ->assertOk()
+            ->assertJsonPath('data.items.0.invoice_id', $invoice->id);
+
+        Sanctum::actingAs($retail2);
+        $this->getJson('/api/v1/mobile/trader/distributions')
+            ->assertOk()
+            ->assertJsonPath('data.items.0.distribution_id', $distribution->id);
+    }
+
+    public function test_trader_can_read_linked_wholesaler_stock(): void
+    {
+        [$wholesale, $retail] = $this->seedTier2Outgoing(qty: 2, ppu: 1);
+        $wholesale->linkedRetailTraders()->syncWithoutDetaching([
+            $retail->id => ['linked_by' => $wholesale->id, 'linked_at' => now()],
+        ]);
+
+        Sanctum::actingAs($retail);
+        $this->getJson('/api/v1/mobile/trader/wholesalers/'.$wholesale->id.'/stock')
+            ->assertOk()
+            ->assertJsonPath('data.wholesaler.id', $wholesale->id);
+
+        $stranger = User::factory()->create([
+            'role' => 'retail_trader',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($stranger);
+        $this->getJson('/api/v1/mobile/trader/wholesalers/'.$wholesale->id.'/stock')
+            ->assertForbidden();
+    }
+
     public function test_zero_point_product_orderable_with_zero_line_points(): void
     {
         $wholesale = User::factory()->create([

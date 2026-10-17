@@ -46,9 +46,17 @@ Content-Type: application/json
 | `mg_no_points` | true | false | MG **يُطلب بدون نقاط** |
 | `shop` | false | false | منتج عرض المحل (`my_products`) |
 
-3. في كتالوج الشبكة: `points_per_unit` دائماً `null` — اعرض إجمالي النقاط على الطلب/السطر فقط.
+3. **`points_per_unit`:**
+
+| سطح API | القيمة |
+|---------|--------|
+| كتالوج `/products` · مورد الطلب `OrderResource` · مخزون الجملة للقطاعي | دائماً `null` — اعرض `has_points` + إجمالي النقاط |
+| معاينة المرتجع `return-preview` | **رقم** (لحساب الاسترجاع) |
+| مخزون POS الخاص `/pos/stock` · `GET orders/{id}/stock` | **رقم** تشغيلي |
+
 4. الجملة **لا** يربط سباكاً مباشرة — يختار `retail_trader_id` من شبكته ثم يضيف السباك تحته.
 5. بعد صرف/تحويل نقاط السباك من نفس التوزيع → المرتجع **مرفوض 422** برسالة عربية واضحة.
+6. **تطبيق الجملة = دخول فقط** (`login`) — لا شاشة تسجيل جملة من الموبايل.
 
 ---
 
@@ -56,15 +64,16 @@ Content-Type: application/json
 
 | Method | Path | Notes |
 |--------|------|-------|
-| POST | `/api/v1/auth/login` | `{ phone, password }` → `token` أو OTP إن الهاتف غير موثّق |
+| POST | `/api/v1/auth/login` | كل الأدوار بما فيها **الجملة** |
 | POST | `/api/v1/auth/register-plumber` | سباك |
-| POST | `/api/v1/auth/register-retail` | قطاعي (alias: `register-trader`) |
-| POST | `/api/v1/auth/register-store` | جملة |
+| POST | `/api/v1/auth/register-retail` | قطاعي فقط (alias: `register-trader`) |
 | POST | `/api/v1/auth/verify-otp` | throttle 6/دقيقة |
 | POST | `/api/v1/auth/resend-otp` | throttle 3/دقيقة |
 | POST | `/api/v1/auth/forgot-password/send-otp` | |
 | POST | `/api/v1/auth/forgot-password/verify-otp` | |
 | POST | `/api/v1/auth/forgot-password/reset` | |
+
+> `register-store` موجود في الـ backend لإنشاء جملة من لوحة/أدوات داخلية — **لا تستخدمه في تطبيق الموبايل.** حسابات الجملة تُنشأ من الأدمن ويدخلون بـ `login` فقط.
 
 ### Session / بروفايل
 
@@ -152,11 +161,20 @@ POST /distributions/{id}/returns
 
 1. Login / register-retail  
 2. محلات الجملة: `GET /api/v1/network-stores`  
-3. كتالوج طلب: `GET /products`  
-4. منتجات عرض: `GET/POST/PUT/DELETE /my-products`  
-5. طلب من جملة: `POST /orders`  
-6. سباكين: `GET/POST /plumbers*`  
-7. POS + تنفيذ طلبات السباكين + مرتجعات  
+3. مخزون جملة مرتبط: `GET /wholesalers/{id}/stock`  
+4. كتالوج طلب: `GET /products`  
+5. منتجات عرض: `GET/POST/PUT/DELETE /my-products`  
+6. طلب من جملة: `POST /orders`  
+7. سباكين: `GET/POST /plumbers*`  
+8. POS + تنفيذ طلبات السباكين + مرتجعات  
+
+### مخزون
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/wholesalers/{id}/stock` | مخزون **الجملة المرتبطة** قبل الطلب — `points_per_unit: null` + `available_qty` |
+| GET | `/pos/stock` | مخزونك القطاعي (POS / تنفيذ طلبات السباك) — فيه `points_per_unit` رقمي |
+| POST | `/pos/checkout` | بيع لسباك `{ plumber_id, lines[] }` |
 
 ### شبكة السباكين
 
@@ -174,25 +192,60 @@ POST /distributions/{id}/returns
 | POST | `/orders` | `{ supplier_id, lines[], note? }` |
 | GET | `/orders/{id}` | |
 | POST | `/orders/{id}/receive` · `/cancel` | كمشتري من الجملة |
-| POST | `/orders/{id}/confirm\|ship\|reject\|fulfill` | لطلبات السباكين |
+| POST | `/orders/{id}/confirm\|ship\|reject` | لطلبات السباكين |
+| GET | `/orders/{id}/stock` | فحص مخزون مقابل بنود طلب سباك |
 | PUT | `/orders/{id}/items` | تعديل أصناف طلب سباك |
-| GET | `/orders/{id}/stock` | |
-| POST | `/orders/{id}/apply-stock` | |
+| POST | `/orders/{id}/apply-stock` | قص للمتوفر |
+| POST | `/orders/{id}/fulfill` | تنفيذ كامل → فاتورة + تسليم |
 
-### POS
+```json
+POST /orders
+{
+  "supplier_id": 15,
+  "lines": [{ "product_id": 42, "quantity": 10 }],
+  "note": "…"
+}
+```
 
-| Method | Path |
-|--------|------|
-| GET | `/pos/stock` |
-| POST | `/pos/checkout` |
+#### تنفيذ طلب سباك (bodies)
 
-### مرتجعات
+```http
+GET /orders/{id}/stock
+```
+
+لا body → `lines[].requested_qty|available_qty|fulfillable_qty|is_available` (+ `points_per_unit` رقمي هنا).
+
+```json
+PUT /orders/{id}/items
+{
+  "lines": [
+    { "product_id": 42, "quantity": 7 }
+  ]
+}
+```
+
+```http
+POST /orders/{id}/apply-stock
+```
+
+لا body.
+
+```json
+POST /orders/{id}/fulfill
+{ "note": "تم التنفيذ من المخزون" }
+```
+
+`note` اختياري. يفشل لو أي بند غير متوفر بالكامل.
+
+### مرتجعات — قائمة ثم preview
 
 | Method | Path | Hop |
 |--------|------|-----|
-| GET | `/returns` · `/returns/{id}` | الكل |
+| GET | `/distributions` | قائمة مبيعاتك للسباكين + `can_return` |
 | GET/POST | `/distributions/{id}/return-preview` · `/returns` | قطاعي→سباك |
+| GET | `/invoices` | قائمة فواتير الشراء من الجملة + `can_return` |
 | GET/POST | `/invoices/{id}/return-preview` · `/returns` | شراء من الجملة |
+| GET | `/returns` · `/returns/{id}` | سجل المرتجعات |
 
 ---
 
@@ -243,8 +296,8 @@ POST /retail-traders
 | Area | Paths |
 |------|-------|
 | Catalog | `GET /products` · `GET/POST/PUT/DELETE /my-products` |
-| POS | `GET/POST /pos/stock` · `/pos/checkout` |
-| Returns | `GET /returns` · `GET/POST /invoices/{id}/return-preview|/returns` |
+| POS | `GET /pos/stock` · `POST /pos/checkout` `{ retail_trader_id, lines[] }` |
+| Returns | `GET /invoices` (قائمة اختيار) · `GET/POST /invoices/{id}/return-preview|/returns` · `GET /returns` |
 
 ---
 
@@ -337,13 +390,17 @@ placed → confirmed → shipping → delivered
 ## 9) Checklist تكامل التطبيق
 
 - [ ] Login حسب الدور + حفظ Sanctum token  
+- [ ] جملة: login فقط — **بدون** register-store في التطبيق  
 - [ ] `Accept-Language: ar` دائماً  
 - [ ] عرض `product_kind` وفلترة `?has_points=`  
+- [ ] قطاعي: `GET /wholesalers/{id}/stock` لعرض مخزون الجملة المرتبطة  
 - [ ] طلبيات: أزرار من `available_actions` فقط  
 - [ ] جملة: زر **تم التسليم** = `POST …/deliver`  
-- [ ] مرتجع: دائماً `return-preview` قبل `POST`  
-- [ ] سباك: شاشة مرتجعات من `GET /plumber/distributions`  
+- [ ] طلب سباك: `stock` → (`items` أو `apply-stock`) → `fulfill` حسب الحاجة  
+- [ ] مرتجع: قائمة (`/distributions` أو `/invoices`) ثم `return-preview` ثم `POST`  
+- [ ] سباك/قطاعي/جملة: استخدم قوائم الاختيار المناسبة لكل دور  
 - [ ] منع المرتجع محلياً عند `can_return=false` وعرض `block_reason`  
+- [ ] `points_per_unit`: null في الكتالوج؛ رقم في preview المرتجع وPOS  
 - [ ] إشعارات: فتح الطلب بـ `order_id` من الـ payload  
 - [ ] منتجات `shop` للعرض فقط — الطلب من كتالوج MG  
 
@@ -352,10 +409,20 @@ placed → confirmed → shipping → delivered
 ## 10) Cheat sheet سريع
 
 ```
-Auth:     POST /api/v1/auth/login|register-*|verify-otp|forgot-password/*
+Auth:     POST /api/v1/auth/login|register-plumber|register-retail|verify-otp|forgot-password/*
+          (جملة = login فقط)
 Shared:   /api/v1/mobile/me|profile|settings|notifications*
 Stores:   /api/v1/network-stores* · /api/v1/my-store*
-Plumber:  /plumber/{dashboard,wallet*,withdrawals*,products,orders*,distributions,returns*}
-Trader:   /trader/{products,my-products,plumbers*,orders*,pos*,returns*,distributions*,invoices*}
-Distrib:  /distributor/{products,my-products,retail-traders*,plumbers*,orders*,pos*,returns*,invoices*}
+Plumber:  /plumber/{…,distributions,returns*}
+Trader:   /trader/{products,wholesalers/{id}/stock,pos*,plumbers*,orders*,distributions,invoices,returns*}
+Distrib:  /distributor/{products,retail-traders*,plumbers*,orders*,pos*,invoices,returns*}
 ```
+
+## 11) Checklist تكامل — تحديثات هذه الجولة
+
+- [ ] قطاعي: `GET /wholesalers/{id}/stock` قبل الطلب من جملة  
+- [ ] قطاعي: `GET /distributions` و`GET /invoices` قبل شاشة المرتجع  
+- [ ] جملة: `GET /invoices` قبل شاشة المرتجع  
+- [ ] تنفيذ طلب سباك: stock → (items|apply-stock) → fulfill مع الـ bodies أعلاه  
+- [ ] جملة: لا شاشة register — login فقط  
+- [ ] لا تفترض `points_per_unit=null` في معاينة المرتجع |

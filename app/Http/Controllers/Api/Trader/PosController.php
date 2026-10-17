@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\PlumberDistributionPosService;
+use App\Services\RetailNetworkLinkService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -18,13 +19,73 @@ class PosController extends Controller
     public function __construct(
         protected NetworkInventoryService $inventory,
         protected PlumberDistributionPosService $pos,
+        protected RetailNetworkLinkService $links,
     ) {}
 
+    /** Own retail stock (for POS / plumber fulfillment). */
     public function stock(Request $request): JsonResponse
     {
         $stock = $this->inventory->stockForRetailTrader($request->user());
 
-        return $this->success($stock->values());
+        return $this->success($stock->values()->map(fn (array $row) => $this->mapOwnStockRow($row))->values(), 'مخزونك القطاعي');
+    }
+
+    /**
+     * Linked wholesaler remaining stock — for placing supply orders.
+     * Catalog-style: points_per_unit is null; use has_points + available_qty.
+     */
+    public function wholesalerStock(Request $request, User $wholesaler): JsonResponse
+    {
+        if (! $wholesaler->isWholesaleDistributor()) {
+            return $this->error('هذا الحساب ليس موزّع جملة', 422);
+        }
+
+        if (! $this->links->isLinked($wholesaler, $request->user())) {
+            return $this->error('هذا الموزّع غير مرتبط بشبكتك', 403);
+        }
+
+        $stock = $this->inventory->stockForWholesaler($wholesaler);
+
+        $items = $stock->map(fn (array $row) => [
+            'product_id' => (int) $row['product_id'],
+            'name' => $row['name'],
+            'image' => $row['image'] ?? null,
+            'image_url' => $row['image'] ?? null,
+            'category_id' => $row['category_id'] ?? null,
+            'points_per_unit' => null,
+            'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
+            'available_qty' => (int) ($row['available_qty'] ?? 0),
+            'available_quantity' => (int) ($row['available_qty'] ?? 0),
+        ])->values();
+
+        return $this->success([
+            'wholesaler' => [
+                'id' => $wholesaler->id,
+                'name' => $wholesaler->brand_name ?: $wholesaler->name,
+                'phone' => $wholesaler->phone,
+            ],
+            'items' => $items,
+        ], 'مخزون الجملة المتاح');
+    }
+
+    /** @param  array<string, mixed>  $row */
+    protected function mapOwnStockRow(array $row): array
+    {
+        $ppu = (float) ($row['points_per_unit'] ?? 0);
+
+        return [
+            'product_id' => (int) $row['product_id'],
+            'name' => $row['name'],
+            'image' => $row['image'] ?? null,
+            'image_url' => $row['image'] ?? null,
+            'category_id' => $row['category_id'] ?? null,
+            // Own POS inventory exposes PPU for operational math; catalog stays null.
+            'points_per_unit' => $ppu,
+            'has_points' => $ppu > 0,
+            'available_qty' => (int) ($row['available_qty'] ?? 0),
+            'available_points' => (int) ($row['available_points'] ?? 0),
+            'slots' => $row['slots'] ?? [],
+        ];
     }
 
     public function checkout(Request $request): JsonResponse

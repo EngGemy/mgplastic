@@ -45,6 +45,62 @@ class InvoiceReturnController extends Controller
         return $this->success(InvoiceReturnResource::collection($returns), 'قائمة المرتجعات');
     }
 
+    /** Tier-3 sales to plumbers — pick a distribution to return. */
+    public function distributions(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $rows = InvoiceDistribution::query()
+            ->where('tier', 3)
+            ->where('from_user_id', $user->id)
+            ->whereIn('status', ['confirmed', 'points_awarded'])
+            ->with([
+                'toUser:id,name,brand_name,phone',
+                'fromUser:id,name,brand_name,phone',
+                'items.invoiceItem.product.translations',
+            ])
+            ->latest()
+            ->limit(100)
+            ->get()
+            ->map(fn (InvoiceDistribution $d) => $this->summarizeDistributionReturnRow($d, 'plumber', 'to'))
+            ->values()
+            ->all();
+
+        return $this->success(['items' => $rows], 'قائمة توزيعات القطاعي→سباك');
+    }
+
+    /** Tier-2 purchases from wholesale — pick an invoice to return. */
+    public function invoices(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $invoices = Invoice::query()
+            ->where('invoice_type', 'wholesale_pos')
+            ->where('invoice_flow', 'outgoing')
+            ->where(function ($q) use ($user) {
+                $q->where('counterparty_user_id', $user->id)
+                    ->orWhereHas('sourceDistribution', fn ($d) => $d
+                        ->where('tier', 2)
+                        ->where('to_user_id', $user->id));
+            })
+            ->with([
+                'sourceDistribution.fromUser:id,name,brand_name,phone',
+                'sourceDistribution.toUser:id,name,brand_name,phone',
+                'sourceDistribution.items.invoiceItem.product.translations',
+            ])
+            ->latest()
+            ->limit(100)
+            ->get();
+
+        $rows = $invoices
+            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'wholesale', 'from'))
+            ->filter()
+            ->values()
+            ->all();
+
+        return $this->success(['items' => $rows], 'قائمة فواتير الشراء من الجملة');
+    }
+
     /** Preview / return a plumber distribution (tier 3). */
     public function previewDistribution(Request $request, InvoiceDistribution $distribution): JsonResponse
     {

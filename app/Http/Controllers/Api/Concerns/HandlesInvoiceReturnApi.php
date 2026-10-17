@@ -113,4 +113,78 @@ trait HandlesInvoiceReturnApi
 
         return $dist ? $this->actorOwnsDistributionSide($dist, $user) : false;
     }
+
+    /**
+     * Compact row for return-picker lists (distributions).
+     *
+     * @param  'from'|'to'  $counterpartySide  Which side of the distribution is the "other party"
+     * @return array<string, mixed>
+     */
+    protected function summarizeDistributionReturnRow(
+        InvoiceDistribution $distribution,
+        string $counterpartyKey = 'counterparty',
+        string $counterpartySide = 'to',
+    ): array {
+        $distribution->loadMissing([
+            'fromUser:id,name,brand_name,phone',
+            'toUser:id,name,brand_name,phone',
+            'items.invoiceItem.product.translations',
+        ]);
+
+        $gate = $this->returns()->previewReturnGate($distribution);
+        $lines = $this->returns()->returnableLines($distribution);
+        $other = $counterpartySide === 'from' ? $distribution->fromUser : $distribution->toUser;
+
+        return [
+            'distribution_id' => (int) $distribution->id,
+            'invoice_id' => $distribution->invoice_id ? (int) $distribution->invoice_id : null,
+            'tier' => (int) $distribution->tier,
+            'status' => $distribution->status,
+            $counterpartyKey => [
+                'id' => $other?->id,
+                'name' => $other?->brand_name ?: $other?->name,
+                'phone' => $other?->phone,
+            ],
+            'sold_quantity' => (int) $distribution->items->sum('quantity'),
+            'returned_quantity' => (int) $distribution->items->sum(fn ($i) => (int) ($i->returned_quantity ?? 0)),
+            'returnable_quantity' => (int) collect($lines)->sum('returnable'),
+            'returnable_points_preview' => $this->returns()->maxReturnablePoints($distribution),
+            'can_return' => (bool) ($gate['can_return'] ?? false),
+            'block_reason' => $gate['block_reason'] ?? null,
+            'confirmed_at' => optional($distribution->confirmed_at)->toIso8601String(),
+            'created_at' => optional($distribution->created_at)->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Compact row for return-picker lists (outgoing invoices → tier-2 source distribution).
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function summarizeInvoiceReturnRow(
+        Invoice $invoice,
+        string $counterpartyKey = 'counterparty',
+        string $counterpartySide = 'to',
+    ): ?array {
+        $invoice->loadMissing([
+            'sourceDistribution.fromUser:id,name,brand_name,phone',
+            'sourceDistribution.toUser:id,name,brand_name,phone',
+            'sourceDistribution.items.invoiceItem.product.translations',
+            'wholesaleDistributor:id,name,brand_name,phone',
+            'counterparty:id,name,brand_name,phone',
+        ]);
+
+        $distribution = $invoice->sourceDistribution;
+        if (! $distribution || (int) $distribution->tier !== 2) {
+            return null;
+        }
+
+        $row = $this->summarizeDistributionReturnRow($distribution, $counterpartyKey, $counterpartySide);
+        $row['invoice_id'] = (int) $invoice->id;
+        $row['invoice_number'] = $invoice->number ?? null;
+        $row['invoice_status'] = $invoice->status;
+        $row['return_via'] = 'invoice'; // POST …/invoices/{invoice}/returns
+
+        return $row;
+    }
 }

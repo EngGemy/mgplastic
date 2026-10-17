@@ -25,7 +25,7 @@ Accept-Language: ar
 |------|----------|
 | سباك | `POST /api/v1/auth/register-plumber` |
 | قطاعي | `POST /api/v1/auth/register-retail` (alias `register-trader`) |
-| جملة | `POST /api/v1/auth/register-store` |
+| جملة | Login فقط (الحساب من الأدمن — لا `register-store` في التطبيق) |
 
 ### Login
 

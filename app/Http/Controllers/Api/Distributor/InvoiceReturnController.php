@@ -42,6 +42,34 @@ class InvoiceReturnController extends Controller
         return $this->success(InvoiceReturnResource::collection($returns), 'قائمة المرتجعات');
     }
 
+    /** Outgoing wholesale→retail invoices — pick one to return. */
+    public function invoices(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $invoices = Invoice::query()
+            ->where('invoice_type', 'wholesale_pos')
+            ->where('invoice_flow', 'outgoing')
+            ->where('wholesale_distributor_id', $user->id)
+            ->with([
+                'sourceDistribution.fromUser:id,name,brand_name,phone',
+                'sourceDistribution.toUser:id,name,brand_name,phone',
+                'sourceDistribution.items.invoiceItem.product.translations',
+                'counterparty:id,name,brand_name,phone',
+            ])
+            ->latest()
+            ->limit(100)
+            ->get();
+
+        $rows = $invoices
+            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'retail_trader', 'to'))
+            ->filter()
+            ->values()
+            ->all();
+
+        return $this->success(['items' => $rows], 'قائمة فواتير الصادر للجملة→قطاعي');
+    }
+
     public function preview(Request $request, Invoice $invoice): JsonResponse
     {
         if (! $this->actorOwnsInvoice($invoice, $request->user())) {

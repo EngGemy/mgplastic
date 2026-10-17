@@ -135,6 +135,10 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('pos/stock', [TraderPosController::class, 'stock']);
         Route::post('pos/checkout', [TraderPosController::class, 'checkout']);
 
+        // Linked wholesaler remaining stock (for supply orders)
+        Route::get('wholesalers/{wholesaler}/stock', [TraderPosController::class, 'wholesalerStock'])
+            ->whereNumber('wholesaler');
+
         // Notifications inbox (same DB notifications table)
         Route::prefix('notifications')->group(function () {
             Route::get('/', [NotificationController::class, 'index']);
@@ -177,8 +181,10 @@ Route::prefix('v1/mobile')->group(function () {
         // Invoice returns — retail→plumber (distributions) + retail←wholesale (invoices)
         Route::get('returns', [TraderInvoiceReturnController::class, 'index']);
         Route::get('returns/{return}', [TraderInvoiceReturnController::class, 'show']);
+        Route::get('distributions', [TraderInvoiceReturnController::class, 'distributions']);
         Route::get('distributions/{distribution}/return-preview', [TraderInvoiceReturnController::class, 'previewDistribution']);
         Route::post('distributions/{distribution}/returns', [TraderInvoiceReturnController::class, 'storeDistribution']);
+        Route::get('invoices', [TraderInvoiceReturnController::class, 'invoices']);
         Route::get('invoices/{invoice}/return-preview', [TraderInvoiceReturnController::class, 'previewInvoice']);
         Route::post('invoices/{invoice}/returns', [TraderInvoiceReturnController::class, 'storeInvoice']);
     });
@@ -241,6 +247,7 @@ Route::prefix('v1/mobile')->group(function () {
         // Invoice returns — wholesale→retail outgoing invoices
         Route::get('returns', [DistributorInvoiceReturnController::class, 'index']);
         Route::get('returns/{return}', [DistributorInvoiceReturnController::class, 'show']);
+        Route::get('invoices', [DistributorInvoiceReturnController::class, 'invoices']);
         Route::get('invoices/{invoice}/return-preview', [DistributorInvoiceReturnController::class, 'preview']);
         Route::post('invoices/{invoice}/returns', [DistributorInvoiceReturnController::class, 'store']);
     });

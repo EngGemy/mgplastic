@@ -38,19 +38,25 @@ Validation: `lines` مطلوبة، كل بند يحتاج `invoice_item_id` + `q
 ## Distributor (جملة)
 
 ```http
+GET  /api/v1/mobile/distributor/invoices
 GET  /api/v1/mobile/distributor/returns
 GET  /api/v1/mobile/distributor/returns/{return}
 GET  /api/v1/mobile/distributor/invoices/{invoice}/return-preview
 POST /api/v1/mobile/distributor/invoices/{invoice}/returns
 ```
 
-Preview includes `can_return`, `block_reason`, `lines[].returnable`, `returnable_points_preview`.
+`GET /invoices` → قائمة فواتير الصادر للجملة→قطاعي مع `can_return` / `block_reason` / `returnable_quantity` لاختيار الفاتورة قبل الـ preview.
+
+Preview includes `can_return`, `block_reason`, `lines[].returnable`, `returnable_points_preview`.  
+`lines[].points_per_unit` هنا **رقم** (مش null) — لحساب نقاط الاسترجاع.
 
 ---
 
 ## Trader (قطاعي)
 
 ```http
+GET  /api/v1/mobile/trader/distributions
+GET  /api/v1/mobile/trader/invoices
 GET  /api/v1/mobile/trader/returns
 GET  /api/v1/mobile/trader/returns/{return}
 GET  /api/v1/mobile/trader/distributions/{distribution}/return-preview
@@ -59,8 +65,12 @@ GET  /api/v1/mobile/trader/invoices/{invoice}/return-preview
 POST /api/v1/mobile/trader/invoices/{invoice}/returns
 ```
 
-Use **distributions** for plumber sales (tier 3).  
-Use **invoices** for purchases from wholesale (tier 2).
+| قائمة | استخدمها لـ |
+|-------|-------------|
+| `GET /distributions` | مبيعاتك للسباكين (tier 3) |
+| `GET /invoices` | مشترياتك من الجملة (tier 2) |
+
+ثم preview → POST على نفس الـ id.
 
 ---
 
@@ -112,6 +122,8 @@ Flow المقترح للتطبيق:
   }
 }
 ```
+
+> ملاحظة: `points_per_unit` في معاينة المرتجع **متعمد رقم**. في كتالوج `/products` ومخزون الجملة للقطاعي يكون `null` — لا تخلط بين السطحين.
 
 ---
 
