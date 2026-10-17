@@ -33,6 +33,8 @@ Error:
 
 Wrong role → **403**.
 
+**دليل التسليم للموبايل (مفضّل):** [MOBILE_API_FOR_APP.md](./MOBILE_API_FOR_APP.md)
+
 Guides مفصّلة: [Orders](./MOBILE_NETWORK_ORDERS.md) · [Returns](./MOBILE_INVOICE_RETURNS.md) · [Plumber stock](./PLUMBER_SHOP_PRODUCTS.md) · [Support](./MOBILE_SUPPORT.md)
 
 ---
@@ -273,6 +275,7 @@ Prefix: `/api/v1/mobile/plumber`
 | Shops | `GET /api/v1/network-stores` → retail shops |
 | Products | `GET /products?retail_trader_id=` (مخزون المحل) |
 | Orders | `GET/POST /orders` · `receive` · `cancel` |
+| Returns | `GET /distributions` · `…/return-preview` · `POST …/returns` · `GET /returns` |
 | Notifications | `/plumber/notifications…` |
 
 Full stock rules: [PLUMBER_SHOP_PRODUCTS.md](./PLUMBER_SHOP_PRODUCTS.md)
@@ -326,7 +329,7 @@ Fields: `order_id`, `order_number`, `channel`, `order_status`, `title`, `body`, 
 | Hop | API |
 |-----|-----|
 | جملة→قطاعي | Distributor/Trader `invoices/{id}/returns` |
-| قطاعي→سباك | Trader `distributions/{id}/returns` |
+| قطاعي→سباك | Trader / Plumber `distributions/{id}/returns` |
 
 - بعد تحويل/صرف نقاط السباك من نفس التوزيع → **422** برسالة عربية واضحة  
 - مرتجع المصنع غير مدعوم من هذا المسار  

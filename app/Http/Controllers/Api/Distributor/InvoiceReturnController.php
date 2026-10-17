@@ -39,7 +39,7 @@ class InvoiceReturnController extends Controller
             ->limit(100)
             ->get();
 
-        return $this->success(InvoiceReturnResource::collection($returns));
+        return $this->success(InvoiceReturnResource::collection($returns), 'قائمة المرتجعات');
     }
 
     public function preview(Request $request, Invoice $invoice): JsonResponse
@@ -92,8 +92,9 @@ class InvoiceReturnController extends Controller
             return $this->error('غير مصرّح', 403);
         }
 
-        return $this->success(new InvoiceReturnResource(
-            $return->load(['items.product.translations', 'fromUser', 'toUser'])
-        ));
+        return $this->success(
+            new InvoiceReturnResource($return->load(['items.product.translations', 'fromUser', 'toUser'])),
+            'تفاصيل المرتجع',
+        );
     }
 }

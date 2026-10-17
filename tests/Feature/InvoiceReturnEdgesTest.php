@@ -105,6 +105,55 @@ class InvoiceReturnEdgesTest extends TestCase
             ->assertJsonPath('data.total_quantity', 1);
     }
 
+    public function test_plumber_return_api_happy_path_and_rejects_outsider(): void
+    {
+        [$retail, $plumber, $distribution, $invoiceItem] = $this->seedTier3Awarded(pointsPerUnit: 10, qty: 4);
+
+        $plumber->wallet()->creditPoints(40, [
+            'reason' => 'points_awarded',
+            'distribution_id' => $distribution->id,
+        ], $retail, 'seed award');
+
+        Sanctum::actingAs($plumber);
+        $this->getJson('/api/v1/mobile/plumber/distributions')
+            ->assertOk()
+            ->assertJsonPath('data.items.0.distribution_id', $distribution->id)
+            ->assertJsonPath('data.items.0.can_return', true);
+
+        $this->getJson('/api/v1/mobile/plumber/distributions/'.$distribution->id.'/return-preview')
+            ->assertOk()
+            ->assertJsonPath('data.can_return', true);
+
+        $this->postJson('/api/v1/mobile/plumber/distributions/'.$distribution->id.'/returns', [
+            'lines' => [['invoice_item_id' => $invoiceItem->id, 'quantity' => 1]],
+            'note' => 'تالف',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.tier', 3)
+            ->assertJsonPath('data.total_quantity', 1);
+
+        $stranger = User::factory()->create([
+            'role' => 'plumber',
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($stranger);
+        $this->postJson('/api/v1/mobile/plumber/distributions/'.$distribution->id.'/returns', [
+            'lines' => [['invoice_item_id' => $invoiceItem->id, 'quantity' => 1]],
+        ])->assertForbidden();
+    }
+
+    public function test_return_validation_messages_are_arabic(): void
+    {
+        [$retail, $plumber, $distribution] = $this->seedTier3Awarded(pointsPerUnit: 5, qty: 2);
+
+        Sanctum::actingAs($retail);
+        $this->postJson('/api/v1/mobile/trader/distributions/'.$distribution->id.'/returns', [
+            'lines' => [],
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'بيانات المرتجع غير صالحة');
+    }
+
     public function test_zero_point_product_orderable_with_zero_line_points(): void
     {
         $wholesale = User::factory()->create([

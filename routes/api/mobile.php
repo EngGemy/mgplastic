@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
 use App\Http\Controllers\Api\Mobile\SettingsController;
 use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardController;
+use App\Http\Controllers\Api\Plumber\InvoiceReturnController as PlumberInvoiceReturnController;
 use App\Http\Controllers\Api\Plumber\OrderController as PlumberOrderController;
 use App\Http\Controllers\Api\Plumber\ProductCatalogController as PlumberProductCatalogController;
 use App\Http\Controllers\Api\Plumber\WalletApiController;
@@ -114,6 +115,13 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('orders/{order}', [PlumberOrderController::class, 'show']);
         Route::post('orders/{order}/receive', [PlumberOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [PlumberOrderController::class, 'cancel']);
+
+        // Invoice returns — retail→plumber distributions (buyer side)
+        Route::get('distributions', [PlumberInvoiceReturnController::class, 'distributions']);
+        Route::get('returns', [PlumberInvoiceReturnController::class, 'index']);
+        Route::get('returns/{return}', [PlumberInvoiceReturnController::class, 'show']);
+        Route::get('distributions/{distribution}/return-preview', [PlumberInvoiceReturnController::class, 'previewDistribution']);
+        Route::post('distributions/{distribution}/returns', [PlumberInvoiceReturnController::class, 'storeDistribution']);
     });
 
     // ── Retail trader (تاجر التجزئة) ───────────────────────────

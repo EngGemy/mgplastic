@@ -39,7 +39,7 @@ trait HandlesInvoiceReturnApi
             'returnable_points_preview' => $this->returns()->maxReturnablePoints($distribution),
             'can_return' => $canReturn,
             'block_reason' => $blockReason,
-        ]);
+        ], 'معاينة المرتجع');
     }
 
     /**
@@ -69,6 +69,11 @@ trait HandlesInvoiceReturnApi
             'lines.*.invoice_item_id' => ['required', 'integer', 'min:1'],
             'lines.*.quantity' => ['required', 'integer', 'min:1'],
             'note' => ['nullable', 'string', 'max:2000'],
+        ], [], [
+            'lines' => 'بنود المرتجع',
+            'lines.*.invoice_item_id' => 'معرّف بند الفاتورة',
+            'lines.*.quantity' => 'كمية المرتجع',
+            'note' => 'الملاحظة',
         ]);
 
         if ($v->fails()) {

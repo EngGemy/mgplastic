@@ -174,6 +174,16 @@ return [
         'retail_trader_id' => 'التاجر القطاعي',
         'plumber_id' => 'السباك',
         'lines' => 'المنتجات',
+        'lines.*.invoice_item_id' => 'معرّف بند الفاتورة',
+        'lines.*.quantity' => 'كمية المرتجع',
+        'lines.*.product_id' => 'المنتج',
+        'invoice_item_id' => 'معرّف بند الفاتورة',
+        'note' => 'الملاحظة',
+        'otp' => 'رمز التحقق',
+        'supplier_id' => 'المورّد',
+        'network_code' => 'الرقم الموحّد',
+        'method' => 'طريقة الصرف',
+        'amount_cents' => 'المبلغ',
     ],
 
 ];

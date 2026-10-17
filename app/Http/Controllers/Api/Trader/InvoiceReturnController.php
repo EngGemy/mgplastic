@@ -42,7 +42,7 @@ class InvoiceReturnController extends Controller
             ->limit(100)
             ->get();
 
-        return $this->success(InvoiceReturnResource::collection($returns));
+        return $this->success(InvoiceReturnResource::collection($returns), 'قائمة المرتجعات');
     }
 
     /** Preview / return a plumber distribution (tier 3). */
@@ -130,8 +130,9 @@ class InvoiceReturnController extends Controller
             return $this->error('غير مصرّح', 403);
         }
 
-        return $this->success(new InvoiceReturnResource(
-            $return->load(['items.product.translations', 'fromUser', 'toUser'])
-        ));
+        return $this->success(
+            new InvoiceReturnResource($return->load(['items.product.translations', 'fromUser', 'toUser'])),
+            'تفاصيل المرتجع',
+        );
     }
 }
