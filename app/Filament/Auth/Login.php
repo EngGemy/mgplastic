@@ -49,8 +49,8 @@ class Login extends BaseLogin
     protected function getEmailFormComponent(): Component
     {
         return TextInput::make('login')
-            ->label('البريد / الهاتف / رقم الحساب')
-            ->placeholder('email أو 09xxxxxxxx أو ID')
+            ->label('البريد أو الهاتف أو رقم الحساب')
+            ->placeholder('مثال: 0912345678 أو البريد')
             ->required()
             ->autocomplete('username')
             ->autofocus()
