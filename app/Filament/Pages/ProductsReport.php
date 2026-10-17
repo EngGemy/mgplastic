@@ -31,7 +31,7 @@ class ProductsReport extends Page implements HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'التقارير';
+        return 'صناعة القرار';
     }
 
     public static function getNavigationLabel(): string

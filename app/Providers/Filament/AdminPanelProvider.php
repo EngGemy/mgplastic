@@ -55,6 +55,15 @@ class AdminPanelProvider extends PanelProvider
             ->databaseNotifications()
             ->globalSearch()
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
+            ->navigationGroups([
+                'صناعة القرار',
+                'الطلبيات',
+                'نظام النقاط',
+                'المنتجات',
+                'المستخدمون',
+                'المحتوى',
+                'الإعدادات',
+            ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

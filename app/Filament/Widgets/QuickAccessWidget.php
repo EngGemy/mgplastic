@@ -298,9 +298,9 @@ class QuickAccessWidget extends Widget
 
                 DecisionReports::canAccess()
                     ? $this->link(
-                        'مركز القرارات',
-                        'تقارير + Gemini',
-                        'heroicon-o-chart-bar-square',
+                        'غرفة القرارات',
+                        'سكشن صناعة القرار',
+                        'heroicon-o-light-bulb',
                         'blue',
                         DecisionReports::getUrl(),
                     )

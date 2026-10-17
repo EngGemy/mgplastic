@@ -68,8 +68,8 @@ class DecisionReportsTest extends TestCase
 
         Livewire::test(DecisionReports::class)
             ->assertSuccessful()
-            ->assertSee('مركز صناعة القرار')
-            ->assertSee('اسأل Gemini');
+            ->assertSee('غرفة القرارات')
+            ->assertSee('برومبت صانع القرار');
     }
 
     public function test_decision_reports_route_is_reachable(): void
@@ -81,7 +81,7 @@ class DecisionReportsTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->get('/'.AdminPanelPath::segment().'/decision-reports')
+            ->get('/'.AdminPanelPath::segment().'/decision-hub')
             ->assertOk();
     }
 }
