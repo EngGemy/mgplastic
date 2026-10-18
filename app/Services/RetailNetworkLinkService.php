@@ -211,4 +211,111 @@ class RetailNetworkLinkService
             ->orderBy('name')
             ->get();
     }
+
+    /** @return \Illuminate\Database\Eloquent\Collection<int, User> */
+    public function linkedWholesalersFor(User $retailTrader)
+    {
+        if (! $retailTrader->isRetailTrader()) {
+            return User::query()->whereRaw('1 = 0')->get();
+        }
+
+        $ids = $retailTrader->linkedWholesalers()->pluck('users.id')
+            ->merge(
+                collect([(int) ($retailTrader->parent_distributor_id ?? 0)])->filter()
+            )
+            ->unique()
+            ->values()
+            ->all();
+
+        return User::query()
+            ->whereIn('id', $ids)
+            ->where('role', 'wholesale_distributor')
+            ->where('is_active', true)
+            ->orderBy('brand_name')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /** @return list<int> */
+    public function linkedWholesalerIds(User $retailTrader): array
+    {
+        return $this->linkedWholesalersFor($retailTrader)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Retail trader links themselves to a wholesaler by network code / phone.
+     * Multi-wholesaler: adds without removing other links.
+     *
+     * @return array{wholesaler: User, created_link: bool, message: string}
+     */
+    public function linkWholesalerByCode(User $retailTrader, string $codeOrPhone): array
+    {
+        if (! $retailTrader->isRetailTrader()) {
+            throw new \DomainException('هذه العملية متاحة لتاجر القطاعي فقط');
+        }
+
+        $needle = $this->codes->normalize($codeOrPhone);
+        if ($needle === '') {
+            throw new \DomainException('أدخل الرقم الموحّد أو رقم الهاتف لموزّع الجملة');
+        }
+
+        $wholesaler = $this->codes->findByCode($needle)
+            ?? User::findByPhone($codeOrPhone);
+
+        if (! $wholesaler || ! $wholesaler->isWholesaleDistributor()) {
+            throw new \DomainException('لم يُعثر على موزّع جملة بهذا الرقم — تأكد من الرقم الموحّد أو الهاتف');
+        }
+
+        if (! $wholesaler->is_active || ! $wholesaler->is_approved) {
+            throw new \DomainException('حساب هذا الموزّع غير مفعّل حالياً');
+        }
+
+        if ($this->isLinked($wholesaler, $retailTrader)) {
+            $this->attach($wholesaler, $retailTrader, $retailTrader);
+
+            return [
+                'wholesaler' => $wholesaler->fresh(),
+                'created_link' => false,
+                'message' => "الموزّع «".($wholesaler->brand_name ?: $wholesaler->name)."» مرتبط بشبكتك مسبقاً",
+            ];
+        }
+
+        $this->attach($wholesaler, $retailTrader, $retailTrader);
+
+        return [
+            'wholesaler' => $wholesaler->fresh(),
+            'created_link' => true,
+            'message' => "تم إضافة الموزّع «".($wholesaler->brand_name ?: $wholesaler->name)."» لشبكتك",
+        ];
+    }
+
+    /**
+     * Retail trader removes one wholesaler from their multi-wholesaler network.
+     *
+     * @return array{wholesaler: User, message: string}
+     */
+    public function unlinkWholesaler(User $retailTrader, User $wholesaler): array
+    {
+        if (! $retailTrader->isRetailTrader()) {
+            throw new \DomainException('هذه العملية متاحة لتاجر القطاعي فقط');
+        }
+
+        if (! $wholesaler->isWholesaleDistributor()) {
+            throw new \DomainException('هذا الحساب ليس موزّع جملة');
+        }
+
+        if (! $this->isLinked($wholesaler, $retailTrader)) {
+            throw new \DomainException('هذا الموزّع غير مرتبط بشبكتك');
+        }
+
+        $this->detach($wholesaler, $retailTrader);
+
+        return [
+            'wholesaler' => $wholesaler->fresh(),
+            'message' => "تم فك ربط الموزّع «".($wholesaler->brand_name ?: $wholesaler->name)."» من شبكتك",
+        ];
+    }
 }

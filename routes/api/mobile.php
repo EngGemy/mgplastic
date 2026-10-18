@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\Trader\InvoiceReturnController as TraderInvoiceRetu
 use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
 use App\Http\Controllers\Api\Trader\PosController as TraderPosController;
+use App\Http\Controllers\Api\Trader\WholesalerController as TraderWholesalerController;
 use App\Http\Controllers\Api\Trader\ProductCatalogController as TraderProductCatalogController;
 use Illuminate\Support\Facades\Route;
 
@@ -145,7 +146,11 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('pos/stock', [TraderPosController::class, 'stock']);
         Route::post('pos/checkout', [TraderPosController::class, 'checkout']);
 
-        // Linked wholesaler remaining stock (for supply orders)
+        // Multi wholesaler network (قطاعي ↔ أكثر من جملة)
+        Route::get('wholesalers', [TraderWholesalerController::class, 'index']);
+        Route::post('wholesalers/link', [TraderWholesalerController::class, 'link']);
+        Route::delete('wholesalers/{wholesaler}', [TraderWholesalerController::class, 'unlink'])->whereNumber('wholesaler');
+        Route::get('wholesalers/{wholesaler}', [TraderWholesalerController::class, 'show'])->whereNumber('wholesaler');
         Route::get('wholesalers/{wholesaler}/stock', [TraderPosController::class, 'wholesalerStock'])
             ->whereNumber('wholesaler');
 

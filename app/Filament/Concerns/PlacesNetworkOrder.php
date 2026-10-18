@@ -128,6 +128,9 @@ trait PlacesNetworkOrder
             return collect();
         }
 
+        $linkedIds = app(\App\Services\RetailNetworkLinkService::class)
+            ->linkedWholesalerIds(auth()->user());
+
         return User::query()
             ->where('role', 'wholesale_distributor')
             ->where('is_approved', true)
@@ -135,13 +138,16 @@ trait PlacesNetworkOrder
             ->orderBy('brand_name')
             ->orderBy('name')
             ->get(['id', 'name', 'brand_name', 'network_code'])
-            ->map(function (User $user) {
+            ->sortBy(fn (User $user) => in_array((int) $user->id, $linkedIds, true) ? 0 : 1)
+            ->map(function (User $user) use ($linkedIds) {
                 $title = trim((string) ($user->brand_name ?: $user->name));
                 $code = $user->network_code ? " — {$user->network_code}" : '';
+                $badge = in_array((int) $user->id, $linkedIds, true) ? ' ★' : '';
 
                 return [
                     'id' => (int) $user->id,
-                    'label' => $title.$code,
+                    'label' => $title.$code.$badge,
+                    'linked' => in_array((int) $user->id, $linkedIds, true),
                 ];
             })
             ->values();

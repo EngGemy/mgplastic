@@ -694,7 +694,15 @@ placed → confirmed → shipping → delivered
 **نعم — السباك يتعامل مع أكثر من محل قطاعي.**
 أول طلب لمحل يضيف ذلك المحل لشبكة السباك (بدون حذف الروابط الأخرى).
 الربط اليدوي `POST /trader/plumbers/link` يضيف المحل أيضاً لنفس السباك.
-القطاعي↔الجملة: many-to-many عبر `wholesaler_retail_trader` (تاجر قطاعي يتعامل مع أكثر من جملة).
+
+**نعم — القطاعي يتعامل مع أكثر من محل جملة:**
+| Method | Path |
+|--------|------|
+| GET | `/trader/wholesalers` |
+| POST | `/trader/wholesalers/link` `{ code \| network_code \| phone }` |
+| DELETE | `/trader/wholesalers/{id}` |
+| GET | `/trader/wholesalers/{id}/stock` |
+طلب توريد: `POST /trader/orders` مع `supplier_id` لأي جملة مرتبط (أو يُربط تلقائياً عند أول طلب).
 
 ### 6) كيف تُقرَّب النقاط في المرتجع؟
 

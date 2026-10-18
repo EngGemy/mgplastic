@@ -92,13 +92,20 @@ Possible action names:
 
 ## App flow A — قطاعي يطلب من الجملة
 
-1. List wholesalers (Bearer of retail trader):
+1. List **linked** wholesalers (multi-network) — or link a new one:
+
+```http
+GET  /api/v1/mobile/trader/wholesalers
+POST /api/v1/mobile/trader/wholesalers/link   { "code": "MG-W-…" }
+```
+
+Directory of all public shops (optional discovery):
 
 ```http
 GET /api/v1/network-stores
 ```
 
-→ shops with role `wholesale_distributor`. Use shop `id` as `supplier_id`.
+→ Use shop `id` as `supplier_id`. القطاعي يتعامل مع أكثر من جملة في نفس الوقت.
 
 2. Optional — مخزون الجملة المتاح لهذا الموزّع (مرتبط فقط):
 
