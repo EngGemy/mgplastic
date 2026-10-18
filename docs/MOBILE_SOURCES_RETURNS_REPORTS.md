@@ -128,13 +128,14 @@ POST /distributor/orders
 
 ### إنشاء مرتجع
 
-نفس المسارات السابقة — النتيجة الآن `pending` وليس فورياً:
+النتيجة `pending` — **الطرف الأدنى فقط يطلب** (الطرف الأعلى ينتظر ثم يقبل/يرفض):
 
-| دور | إنشاء |
-|-----|--------|
-| جملة | `POST /distributor/invoices/{invoice}/returns` |
-| قطاعي | `POST /trader/invoices/{invoice}/returns` أو `…/distributions/{id}/returns` |
-| سباك | `POST /plumber/distributions/{id}/returns` |
+| دور | إنشاء مرتجع؟ | المسار |
+|-----|-------------|--------|
+| سباك | نعم — مبيعاته من القطاعي | `POST /plumber/distributions/{id}/returns` |
+| قطاعي | نعم — مشترياته من الجملة فقط | `POST /trader/invoices/{invoice}/returns` |
+| قطاعي | لا — على مبيعات السباك | ينتظر طلب السباك ثم `approve`/`reject` |
+| جملة | لا — على فواتير الصادر | ينتظر طلب القطاعي ثم `approve`/`reject` |
 
 ```json
 {

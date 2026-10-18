@@ -94,11 +94,12 @@ class InvoiceReturnController extends Controller
             ->get();
 
         $rows = $invoices
-            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'retail_trader', 'to'))
+            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'retail_trader', 'to', $user))
             ->filter()
             ->values()
             ->all();
 
+        // جملة: قائمة للمراجعة/القبول — طلب المرتجع من القطاعي فقط (can_return=false للجملة)
         return $this->success(['items' => $rows], 'قائمة فواتير الصادر للجملة→قطاعي');
     }
 
@@ -123,8 +124,27 @@ class InvoiceReturnController extends Controller
 
     public function store(Request $request, Invoice $invoice): JsonResponse
     {
-        if (! $this->actorOwnsInvoice($invoice, $request->user())) {
+        $user = $request->user();
+
+        // Wholesale is the upper party — may approve incoming returns, never open one for retail.
+        if ($user && ! $user->isCentralWarehouse() && ! in_array($user->role, ['super_admin', 'admin'], true)) {
+            return $this->error(
+                'لا يمكن لتاجر الجملة إنشاء مرتجع على فاتورة القطاعي — الطلب من تاجر القطاعي فقط ثم تقبله من قائمة المرتجعات الواردة',
+                403,
+            );
+        }
+
+        if (! $this->actorOwnsInvoice($invoice, $user)) {
             return $this->error('غير مصرّح بعمل مرتجع على هذه الفاتورة', 403);
+        }
+
+        $invoice->loadMissing('sourceDistribution');
+        if ($invoice->sourceDistribution
+            && ! $this->returns()->actorCanRequestReturn($invoice->sourceDistribution, $user)) {
+            return $this->error(
+                'طلب المرتجع متاح لتاجر القطاعي فقط — تاجر الجملة ينتظر الطلب ثم يقبله أو يرفضه',
+                403,
+            );
         }
 
         $payload = $this->validatedReturnPayload($request);
@@ -136,7 +156,7 @@ class InvoiceReturnController extends Controller
             fn () => $this->returns()->returnOutgoingInvoice(
                 $invoice,
                 $payload['lines'],
-                $request->user(),
+                $user,
                 $payload['note'],
             ),
             'تم إرسال المرتجع وبانتظار موافقة الطرف المستلم',

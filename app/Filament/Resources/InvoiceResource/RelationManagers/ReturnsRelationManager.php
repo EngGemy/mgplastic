@@ -97,8 +97,12 @@ class ReturnsRelationManager extends RelationManager
                     ->label('قبول')
                     ->icon('heroicon-o-check')
                     ->color('success')
-                    ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status))
+                    ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status)
+                        && auth()->user()
+                        && app(InvoiceReturnService::class)->actorCanDecide($record, auth()->user()))
                     ->requiresConfirmation()
+                    ->modalHeading('قبول المرتجع — البائع الأصلي فقط')
+                    ->modalDescription('يُسجَّل القرار في سجل التدقيق. لا يمكن لمن طلب المرتجع قبوله.')
                     ->action(function (InvoiceReturn $record) {
                         try {
                             app(InvoiceReturnService::class)->approve($record, auth()->user());
@@ -111,7 +115,9 @@ class ReturnsRelationManager extends RelationManager
                     ->label('رفض')
                     ->icon('heroicon-o-x-mark')
                     ->color('danger')
-                    ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status))
+                    ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status)
+                        && auth()->user()
+                        && app(InvoiceReturnService::class)->actorCanDecide($record, auth()->user()))
                     ->requiresConfirmation()
                     ->action(function (InvoiceReturn $record) {
                         try {

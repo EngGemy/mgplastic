@@ -20,6 +20,9 @@ class InvoiceReturn extends Model
         'total_points',
         'note',
         'created_by',
+        'decided_by',
+        'decided_at',
+        'decision_audit',
         'confirmed_at',
     ];
 
@@ -30,6 +33,8 @@ class InvoiceReturn extends Model
             'total_quantity' => 'integer',
             'total_points' => 'integer',
             'confirmed_at' => 'datetime',
+            'decided_at' => 'datetime',
+            'decision_audit' => 'array',
         ];
     }
 
@@ -56,6 +61,11 @@ class InvoiceReturn extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function decidedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'decided_by');
     }
 
     public function items(): HasMany

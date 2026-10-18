@@ -50,8 +50,14 @@ class InvoiceReturnResource extends JsonResource
                 'product_id' => $item->product_id ? (int) $item->product_id : null,
                 'product_name' => localized_name($item->product, 'name', $item->product?->name ?? 'منتج'),
                 'quantity' => (int) $item->quantity,
-                'points_value' => (int) $item->points_value,
+                // Per-line product points hidden — use total_points on the return.
+                'points_value' => null,
             ])->values()),
+            'decided_by' => $this->when($this->relationLoaded('decidedBy') && $this->decidedBy, fn () => [
+                'id' => $this->decidedBy->id,
+                'name' => $this->decidedBy->brand_name ?: $this->decidedBy->name,
+            ]),
+            'decided_at' => $this->decided_at?->toIso8601String(),
             'confirmed_at' => $this->confirmed_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
@@ -68,25 +74,23 @@ class InvoiceReturnResource extends JsonResource
         }
 
         $status = InvoiceReturnStatus::normalize($this->status);
-        $isReceiver = (int) $this->to_user_id === (int) $user->id
-            || in_array($user->role, ['super_admin', 'admin'], true);
-        $isRequester = (int) $this->from_user_id === (int) $user->id
-            || (int) ($this->created_by ?? 0) === (int) $user->id;
+        $isReturner = (int) $this->from_user_id === (int) $user->id;
+        $canDecide = app(\App\Services\InvoiceReturnService::class)->actorCanDecide($this->resource, $user);
 
         $actions = [];
         $blocked = [];
 
         if ($status === InvoiceReturnStatus::PENDING) {
-            if ($isReceiver) {
+            if ($canDecide) {
                 $actions[] = 'approve';
                 $actions[] = 'reject';
+            } elseif ($isReturner) {
+                $blocked[] = ['action' => 'approve', 'reason' => 'لا يمكن لمن طلب المرتجع أن يقبله — الموافقة للبائع الأصلي فقط'];
+                $blocked[] = ['action' => 'reject', 'reason' => 'لا يمكن لمن طلب المرتجع أن يرفضه — الرفض للبائع الأصلي فقط'];
+                $blocked[] = ['action' => 'cancel', 'reason' => 'إلغاء المرتجع غير متاح حالياً — انتظر رد البائع الأصلي'];
             } else {
-                $blocked[] = ['action' => 'approve', 'reason' => 'قبول المرتجع متاح للمستلم (البائع الأصلي) فقط'];
-                $blocked[] = ['action' => 'reject', 'reason' => 'رفض المرتجع متاح للمستلم (البائع الأصلي) فقط'];
-            }
-
-            if ($isRequester && ! $isReceiver) {
-                $blocked[] = ['action' => 'cancel', 'reason' => 'إلغاء المرتجع غير متاح حالياً — انتظر رد المستلم'];
+                $blocked[] = ['action' => 'approve', 'reason' => 'قبول المرتجع متاح للبائع الأصلي فقط'];
+                $blocked[] = ['action' => 'reject', 'reason' => 'رفض المرتجع متاح للبائع الأصلي فقط'];
             }
         }
 

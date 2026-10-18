@@ -23,7 +23,7 @@ class TraderInvoiceResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
 
-    protected static ?string $navigationLabel = 'الفواتير';
+    protected static ?string $navigationLabel = 'كل الفواتير';
 
     protected static ?int $navigationSort = 10;
 

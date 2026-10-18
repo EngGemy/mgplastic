@@ -14,6 +14,7 @@ use App\Models\SystemLabel;
 use App\Support\AdminPermissions;
 use App\Support\StorePermissions;
 use App\Services\InvoiceAdjustmentService;
+use App\Services\InvoiceReuseService;
 use Filament\Forms;
 use Filament\Infolists;
 use Filament\Notifications\Notification;
@@ -38,7 +39,7 @@ class InvoiceResource extends Resource
 
     public static function getNavigationLabel(): string
     {
-        return SystemLabel::get('invoices', 'الفواتير');
+        return SystemLabel::get('invoices', 'كل الفواتير');
     }
 
     public static function getModelLabel(): string
@@ -295,6 +296,30 @@ class InvoiceResource extends Resource
                     }),
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make()->label('عرض'),
+                    Tables\Actions\Action::make('reuse_invoice')
+                        ->label('استخدام نفس الفاتورة')
+                        ->icon('heroicon-o-document-duplicate')
+                        ->color('info')
+                        ->visible(fn (Invoice $record) => static::userCanAccessInvoice($record)
+                            && $record->items()->exists())
+                        ->requiresConfirmation()
+                        ->modalHeading('إعادة استخدام الفاتورة')
+                        ->modalDescription('تُنشأ فاتورة جديدة بنفس البنود والأطراف — يمكنك تعديل الكميات وإضافة أصناف.')
+                        ->modalSubmitActionLabel('إنشاء نسخة قابلة للتعديل')
+                        ->action(function (Invoice $record) {
+                            try {
+                                $clone = app(InvoiceReuseService::class)->reuse($record, auth()->user());
+                                Notification::make()
+                                    ->success()
+                                    ->title('تم إنشاء فاتورة من النسخة')
+                                    ->body('عدّل البنود أو أضف منتجات من صفحة الفاتورة')
+                                    ->send();
+
+                                return redirect(static::getUrl('view', ['record' => $clone]));
+                            } catch (\Throwable $e) {
+                                Notification::make()->danger()->title('تعذّر النسخ')->body($e->getMessage())->send();
+                            }
+                        }),
                     Tables\Actions\Action::make('print')
                         ->label('طباعة')
                         ->icon('heroicon-o-printer')

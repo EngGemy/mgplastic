@@ -21,7 +21,7 @@ trait HandlesInvoiceReturnApi
     protected function respondReturnPreview(InvoiceDistribution $distribution, ?User $actor = null): JsonResponse
     {
         $lines = $this->returns()->returnableLines($distribution);
-        $gate = $this->returns()->previewReturnGate($distribution);
+        $gate = $this->returns()->previewReturnGate($distribution, $actor);
 
         $canReturn = (bool) ($gate['can_return'] ?? false);
         $blockReason = $gate['block_reason'] ?? null;
@@ -29,6 +29,10 @@ trait HandlesInvoiceReturnApi
         if ($actor && ! $this->actorOwnsDistributionSide($distribution, $actor)) {
             $canReturn = false;
             $blockReason = 'غير مصرّح لك بعمل مرتجع على هذا التوزيع';
+        } elseif ($actor && $canReturn && ! $this->returns()->actorCanRequestReturn($distribution, $actor)) {
+            $canReturn = false;
+            $blockReason = $gate['block_reason']
+                ?? 'طلب المرتجع متاح للمستلم (الطرف الأدنى) فقط';
         }
 
         $tier = (int) $distribution->tier;
@@ -160,6 +164,7 @@ trait HandlesInvoiceReturnApi
         InvoiceDistribution $distribution,
         string $counterpartyKey = 'counterparty',
         string $counterpartySide = 'to',
+        ?User $actor = null,
     ): array {
         $distribution->loadMissing([
             'fromUser:id,name,brand_name,phone',
@@ -167,7 +172,7 @@ trait HandlesInvoiceReturnApi
             'items.invoiceItem.product.translations',
         ]);
 
-        $gate = $this->returns()->previewReturnGate($distribution);
+        $gate = $this->returns()->previewReturnGate($distribution, $actor);
         $lines = $this->returns()->returnableLines($distribution);
         $other = $counterpartySide === 'from' ? $distribution->fromUser : $distribution->toUser;
         $tier = (int) $distribution->tier;
@@ -209,6 +214,7 @@ trait HandlesInvoiceReturnApi
         Invoice $invoice,
         string $counterpartyKey = 'counterparty',
         string $counterpartySide = 'to',
+        ?User $actor = null,
     ): ?array {
         $invoice->loadMissing([
             'sourceDistribution.fromUser:id,name,brand_name,phone',
@@ -223,7 +229,7 @@ trait HandlesInvoiceReturnApi
             return null;
         }
 
-        $row = $this->summarizeDistributionReturnRow($distribution, $counterpartyKey, $counterpartySide);
+        $row = $this->summarizeDistributionReturnRow($distribution, $counterpartyKey, $counterpartySide, $actor);
         // For invoice lists, `id` is the invoice id expected by …/invoices/{id}/…
         $row['id'] = (int) $invoice->id;
         $row['invoice_id'] = (int) $invoice->id;

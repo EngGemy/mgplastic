@@ -41,8 +41,8 @@ class InvoiceReturnController extends Controller
             ->latest()
             ->limit(100)
             ->get()
-            ->map(function (InvoiceDistribution $d) {
-                $gate = $this->returns()->previewReturnGate($d);
+            ->map(function (InvoiceDistribution $d) use ($user) {
+                $gate = $this->returns()->previewReturnGate($d, $user);
                 $lines = $this->returns()->returnableLines($d);
 
                 $distributionId = (int) $d->id;
@@ -103,25 +103,18 @@ class InvoiceReturnController extends Controller
 
     public function approve(Request $request, InvoiceReturn $return): JsonResponse
     {
-        if ($denied = $this->assertCanViewReturn($return, $request->user())) {
-            return $denied;
-        }
-
-        return $this->runReturnDecision(
-            fn () => $this->returns()->approve($return, $request->user(), $request->input('note')),
-            'تم قبول المرتجع',
+        // Plumber is always the lower party / requester on tier-3 — never the approver.
+        return $this->error(
+            'قبول المرتجع متاح لتاجر القطاعي فقط — السباك يطلب المرتجع وينتظر الرد',
+            403,
         );
     }
 
     public function reject(Request $request, InvoiceReturn $return): JsonResponse
     {
-        if ($denied = $this->assertCanViewReturn($return, $request->user())) {
-            return $denied;
-        }
-
-        return $this->runReturnDecision(
-            fn () => $this->returns()->reject($return, $request->user(), $request->input('reason') ?? $request->input('note')),
-            'تم رفض المرتجع',
+        return $this->error(
+            'رفض المرتجع متاح لتاجر القطاعي فقط — السباك يطلب المرتجع وينتظر الرد',
+            403,
         );
     }
 

@@ -24,6 +24,7 @@ class TraderDashboard extends BaseDashboard
     protected function getHeaderWidgets(): array
     {
         return [
+            \App\Filament\Widgets\LowStockAlertWidget::class,
             \App\Filament\Widgets\MgCrmDashboardWidget::class,
             \App\Filament\Widgets\QuickAccessWidget::class,
         ];

@@ -35,6 +35,7 @@ class WarehouseDashboard extends BaseDashboard
     protected function getHeaderWidgets(): array
     {
         return [
+            \App\Filament\Widgets\LowStockAlertWidget::class,
             \App\Filament\Warehouse\Widgets\WarehousePointsPanelWidget::class,
             \App\Filament\Widgets\MgCrmDashboardWidget::class,
             \App\Filament\Warehouse\Widgets\WarehouseQuickLinksWidget::class,

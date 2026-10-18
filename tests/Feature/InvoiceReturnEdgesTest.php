@@ -53,7 +53,7 @@ class InvoiceReturnEdgesTest extends TestCase
 
         app(InvoiceReturnService::class)->returnPlumberDistribution($distribution->fresh(['items.invoiceItem']), [
             ['invoice_item_id' => $invoiceItem->id, 'quantity' => 5],
-        ], $retail);
+        ], $plumber);
     }
 
     public function test_tier2_return_does_not_mint_wallet_points(): void
@@ -63,9 +63,10 @@ class InvoiceReturnEdgesTest extends TestCase
         $beforeWholesale = (int) $wholesale->wallet()->balance_points;
         $beforeRetail = (int) $retail->wallet()->balance_points;
 
+        // الطرف الأدنى (القطاعي) يطلب المرتجع — ليس الجملة
         $return = app(InvoiceReturnService::class)->returnOutgoingInvoice($invoice, [
             ['invoice_item_id' => $invoiceItem->id, 'quantity' => 2],
-        ], $wholesale);
+        ], $retail);
 
         $this->assertSame(2, (int) $return->total_quantity);
         $this->assertSame($beforeWholesale, (int) $wholesale->wallet()->fresh()->balance_points);
@@ -87,16 +88,26 @@ class InvoiceReturnEdgesTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_distributor_return_api_happy_path(): void
+    public function test_wholesale_cannot_request_return_retail_can(): void
     {
         [$wholesale, $retail, $invoice, $invoiceItem] = $this->seedTier2Outgoing(qty: 3, ppu: 1);
 
         Sanctum::actingAs($wholesale);
         $this->getJson('/api/v1/mobile/distributor/invoices/'.$invoice->id.'/return-preview')
             ->assertOk()
-            ->assertJsonPath('data.can_return', true);
+            ->assertJsonPath('data.can_return', false);
 
         $this->postJson('/api/v1/mobile/distributor/invoices/'.$invoice->id.'/returns', [
+            'lines' => [['invoice_item_id' => $invoiceItem->id, 'quantity' => 1]],
+            'note' => 'تالف',
+        ])->assertForbidden();
+
+        Sanctum::actingAs($retail);
+        $this->getJson('/api/v1/mobile/trader/invoices/'.$invoice->id.'/return-preview')
+            ->assertOk()
+            ->assertJsonPath('data.can_return', true);
+
+        $this->postJson('/api/v1/mobile/trader/invoices/'.$invoice->id.'/returns', [
             'lines' => [['invoice_item_id' => $invoiceItem->id, 'quantity' => 1]],
             'note' => 'تالف',
         ])
@@ -144,14 +155,25 @@ class InvoiceReturnEdgesTest extends TestCase
 
     public function test_return_validation_messages_are_arabic(): void
     {
-        [$retail, $plumber, $distribution] = $this->seedTier3Awarded(pointsPerUnit: 5, qty: 2);
+        [$wholesale, $retail, $invoice] = $this->seedTier2Outgoing(qty: 2, ppu: 1);
 
+        // Retail requesting tier-2 return — validation runs before create.
         Sanctum::actingAs($retail);
-        $this->postJson('/api/v1/mobile/trader/distributions/'.$distribution->id.'/returns', [
+        $this->postJson('/api/v1/mobile/trader/invoices/'.$invoice->id.'/returns', [
             'lines' => [],
         ])
             ->assertStatus(422)
             ->assertJsonPath('message', 'بيانات المرتجع غير صالحة');
+    }
+
+    public function test_trader_cannot_open_plumber_return_endpoint(): void
+    {
+        [$retail, $plumber, $distribution] = $this->seedTier3Awarded(pointsPerUnit: 5, qty: 2);
+
+        Sanctum::actingAs($retail);
+        $this->postJson('/api/v1/mobile/trader/distributions/'.$distribution->id.'/returns', [
+            'lines' => [['invoice_item_id' => 1, 'quantity' => 1]],
+        ])->assertForbidden();
     }
 
     public function test_trader_and_distributor_can_list_return_sources(): void

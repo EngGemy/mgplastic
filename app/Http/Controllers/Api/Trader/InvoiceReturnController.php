@@ -94,10 +94,11 @@ class InvoiceReturnController extends Controller
             ->latest()
             ->limit(100)
             ->get()
-            ->map(fn (InvoiceDistribution $d) => $this->summarizeDistributionReturnRow($d, 'plumber', 'to'))
+            ->map(fn (InvoiceDistribution $d) => $this->summarizeDistributionReturnRow($d, 'plumber', 'to', $user))
             ->values()
             ->all();
 
+        // قطاعي: قائمة للمراجعة/القبول — طلب المرتجع من السباك فقط (can_return=false للقطاعي على tier 3)
         return $this->success(['items' => $rows], 'قائمة توزيعات القطاعي→سباك');
     }
 
@@ -125,7 +126,7 @@ class InvoiceReturnController extends Controller
             ->get();
 
         $rows = $invoices
-            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'wholesale', 'from'))
+            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'wholesale', 'from', $user))
             ->filter()
             ->values()
             ->all();
@@ -133,7 +134,7 @@ class InvoiceReturnController extends Controller
         return $this->success(['items' => $rows], 'قائمة فواتير الشراء من الجملة');
     }
 
-    /** Preview / return a plumber distribution (tier 3). */
+    /** Preview a plumber distribution (tier 3) — retail may view, but cannot request. */
     public function previewDistribution(Request $request, InvoiceDistribution $distribution): JsonResponse
     {
         if (! $this->actorOwnsDistributionSide($distribution, $request->user())) {
@@ -146,28 +147,16 @@ class InvoiceReturnController extends Controller
 
         $distribution->loadMissing(['items.invoiceItem.product', 'invoice']);
 
+        // Always pass actor so can_return stays false for retail (upper party).
         return $this->respondReturnPreview($distribution, $request->user());
     }
 
     public function storeDistribution(Request $request, InvoiceDistribution $distribution): JsonResponse
     {
-        if (! $this->actorOwnsDistributionSide($distribution, $request->user())) {
-            return $this->error('غير مصرّح بعمل مرتجع على هذا التوزيع', 403);
-        }
-
-        $payload = $this->validatedReturnPayload($request);
-        if ($payload instanceof JsonResponse) {
-            return $payload;
-        }
-
-        return $this->runReturn(
-            fn () => $this->returns()->returnPlumberDistribution(
-                $distribution,
-                $payload['lines'],
-                $request->user(),
-                $payload['note'],
-            ),
-            'تم إرسال المرتجع وبانتظار موافقة الطرف المستلم',
+        // Tier 3: only the plumber (lower party) may request — retail must wait then approve.
+        return $this->error(
+            'لا يمكن لتاجر القطاعي إنشاء مرتجع على مبيعات السباك — الطلب من السباك فقط ثم تقبله من قائمة المرتجعات الواردة',
+            403,
         );
     }
 
@@ -189,8 +178,24 @@ class InvoiceReturnController extends Controller
 
     public function storeInvoice(Request $request, Invoice $invoice): JsonResponse
     {
-        if (! $this->actorOwnsInvoice($invoice, $request->user())) {
+        $user = $request->user();
+
+        if (! $this->actorOwnsInvoice($invoice, $user)) {
             return $this->error('غير مصرّح بعمل مرتجع على هذه الفاتورة', 403);
+        }
+
+        $invoice->loadMissing('sourceDistribution');
+        $distribution = $invoice->sourceDistribution;
+        if (! $distribution || (int) $distribution->tier !== 2) {
+            return $this->error('مرتجع الشراء من الجملة يتطلب فاتورة صادر جملة→قطاعي', 422);
+        }
+
+        // Retail must be the buyer (to_user) on the tier-2 distribution.
+        if (! $this->returns()->actorCanRequestReturn($distribution, $user)) {
+            return $this->error(
+                'طلب مرتجع الشراء من الجملة متاح لتاجر القطاعي المستلم فقط',
+                403,
+            );
         }
 
         $payload = $this->validatedReturnPayload($request);
@@ -202,7 +207,7 @@ class InvoiceReturnController extends Controller
             fn () => $this->returns()->returnOutgoingInvoice(
                 $invoice,
                 $payload['lines'],
-                $request->user(),
+                $user,
                 $payload['note'],
             ),
             'تم إرسال المرتجع وبانتظار موافقة موزّع الجملة',

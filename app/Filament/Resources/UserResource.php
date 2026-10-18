@@ -329,6 +329,19 @@ class UserResource extends Resource
                                     ->helperText('عند الإيقاف تُخفى حسابات السوشيال ميديا.')
                                     ->default(true)
                                     ->inline(false),
+
+                                Forms\Components\Toggle::make('is_featured_wholesaler')
+                                    ->label('أهم الموزعين')
+                                    ->helperText('يظهر في سكشن أهم الموزعين بالتطبيق مع الشعار.')
+                                    ->visible(fn (Get $get) => $get('role') === 'wholesale_distributor')
+                                    ->inline(false),
+
+                                Forms\Components\TextInput::make('featured_sort')
+                                    ->label('ترتيب الظهور')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->visible(fn (Get $get) => $get('role') === 'wholesale_distributor'
+                                        && (bool) $get('is_featured_wholesaler')),
                             ]),
                     ]),
             ]);

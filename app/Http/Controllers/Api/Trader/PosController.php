@@ -72,6 +72,11 @@ class PosController extends Controller
     protected function mapOwnStockRow(array $row): array
     {
         $ppu = (float) ($row['points_per_unit'] ?? 0);
+        $slots = collect($row['slots'] ?? [])->map(function (array $slot) {
+            unset($slot['points_per_unit']);
+
+            return $slot + ['points_per_unit' => null];
+        })->values()->all();
 
         return [
             'product_id' => (int) $row['product_id'],
@@ -79,12 +84,12 @@ class PosController extends Controller
             'image' => $row['image'] ?? null,
             'image_url' => $row['image'] ?? null,
             'category_id' => $row['category_id'] ?? null,
-            // Own POS inventory exposes PPU for operational math; catalog stays null.
-            'points_per_unit' => $ppu,
+            // Per-unit points hidden — apps show cart/order totals only.
+            'points_per_unit' => null,
             'has_points' => $ppu > 0,
             'available_qty' => (int) ($row['available_qty'] ?? 0),
-            'available_points' => (int) ($row['available_points'] ?? 0),
-            'slots' => $row['slots'] ?? [],
+            'available_points' => null,
+            'slots' => $slots,
         ];
     }
 

@@ -124,14 +124,8 @@ trait HandlesInvoiceReturns
             return false;
         }
 
-        if (in_array($user->role, ['super_admin', 'admin'], true)) {
-            return true;
-        }
-
-        return in_array((int) $user->id, [
-            (int) $distribution->from_user_id,
-            (int) $distribution->to_user_id,
-        ], true);
+        // طلب المرتجع للمستلم فقط (القطاعي على فاتورة الجملة→قطاعي). الطرف الأعلى ينتظر الطلب.
+        return app(InvoiceReturnService::class)->actorCanRequestReturn($distribution, $user);
     }
 
     protected function returnFormSchema(): array

@@ -168,17 +168,13 @@ class InvoiceReturnService
                 );
             }
 
-            $lockedReturn->update([
-                'status' => InvoiceReturnStatus::APPROVED,
-                'confirmed_at' => now(),
-                'note' => $note ?: $lockedReturn->note,
-            ]);
+            $this->recordDecision($lockedReturn, $actor, InvoiceReturnStatus::APPROVED, $note);
 
             if ($lockedReturn->invoice) {
                 $this->syncOutgoingInvoiceTotals($lockedReturn->invoice->fresh(['sourceDistribution.items', 'returns']));
             }
 
-            return $lockedReturn->fresh(['items.product.translations', 'fromUser', 'toUser']);
+            return $lockedReturn->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
         });
     }
 
@@ -191,30 +187,98 @@ class InvoiceReturnService
 
         $this->assertActorCanDecide($return, $actor);
 
-        $return->update([
-            'status' => InvoiceReturnStatus::REJECTED,
-            'note' => $reason
-                ? trim(($return->note ? $return->note."\n" : '').'رفض: '.$reason)
-                : $return->note,
-        ]);
+        $this->recordDecision($return, $actor, InvoiceReturnStatus::REJECTED, $reason);
 
-        return $return->fresh(['items.product.translations', 'fromUser', 'toUser']);
+        return $return->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
     }
 
+    /**
+     * Approver must be the original seller (to_user) and must NOT be the requester.
+     * Blocks: from_user (buyer), created_by (whoever submitted the request).
+     * This closes the loophole where an upper party creates a return "on behalf"
+     * of the buyer (becoming to_user) then rubber-stamps approve.
+     */
     public function assertActorCanDecide(InvoiceReturn $return, User $actor): void
     {
+        $actorId = (int) $actor->id;
+
+        if ((int) $return->from_user_id === $actorId) {
+            throw new \DomainException(
+                'لا يمكن لمن طلب المرتجع أن يقبله أو يرفضه — الموافقة للبائع الأصلي فقط (مع تسجيل تدقيق)'
+            );
+        }
+
+        if ((int) ($return->created_by ?? 0) === $actorId) {
+            throw new \DomainException(
+                'لا يمكن لمن أنشأ طلب المرتجع أن يقبله أو يرفضه — يلزم موافقة طرف مستقل (البائع الأصلي)'
+            );
+        }
+
+        if ((int) $return->to_user_id === $actorId) {
+            return;
+        }
+
         if (in_array($actor->role, ['super_admin', 'admin'], true)) {
+            // Admin override only if they did not create the request themselves.
             return;
         }
 
-        // Central warehouse oversees network returns.
-        if ($actor->isCentralWarehouse()) {
-            return;
+        throw new \DomainException(
+            'قبول/رفض المرتجع متاح للبائع الأصلي فقط (محل القطاعي للسباك، أو محل الجملة للقطاعي) أو المشرف'
+        );
+    }
+
+    public function actorCanDecide(InvoiceReturn $return, User $actor): bool
+    {
+        try {
+            $this->assertActorCanDecide($return, $actor);
+
+            return true;
+        } catch (\DomainException) {
+            return false;
+        }
+    }
+
+    protected function recordDecision(InvoiceReturn $return, User $actor, string $status, ?string $note = null): void
+    {
+        $isAdminOverride = in_array($actor->role, ['super_admin', 'admin'], true)
+            && (int) $return->to_user_id !== (int) $actor->id;
+
+        $audit = [
+            'decision' => $status,
+            'actor_id' => $actor->id,
+            'actor_role' => $actor->role,
+            'actor_name' => $actor->brand_name ?: $actor->name,
+            'is_admin_override' => $isAdminOverride,
+            'to_user_id' => (int) $return->to_user_id,
+            'from_user_id' => (int) $return->from_user_id,
+            'created_by' => $return->created_by ? (int) $return->created_by : null,
+            'note' => $note,
+            'at' => now()->toIso8601String(),
+        ];
+
+        $update = [
+            'status' => $status,
+            'decided_by' => $actor->id,
+            'decided_at' => now(),
+            'decision_audit' => $audit,
+            'confirmed_at' => $status === InvoiceReturnStatus::APPROVED ? now() : $return->confirmed_at,
+        ];
+
+        if ($status === InvoiceReturnStatus::APPROVED && $note) {
+            $update['note'] = $note;
+        } elseif ($status === InvoiceReturnStatus::REJECTED && $note) {
+            $update['note'] = trim(($return->note ? $return->note."\n" : '').'رفض: '.$note);
         }
 
-        if ((int) $return->to_user_id !== (int) $actor->id) {
-            throw new \DomainException('قبول/رفض المرتجع متاح للطرف المستلم (البائع الأصلي) أو المشرف فقط');
-        }
+        $return->update($update);
+
+        app(SecurityAuditService::class)->record(
+            action: 'invoice_return.'.$status,
+            actor: $actor,
+            subject: $return,
+            meta: $audit,
+        );
     }
 
     /**
@@ -257,7 +321,7 @@ class InvoiceReturnService
     }
 
     /**
-     * @return array<int, array{invoice_item_id:int, product_name:string, returnable:int, points_per_unit:float, sold:int, returned:int, has_points:bool}>
+     * @return array<int, array{invoice_item_id:int, product_name:string, returnable:int, points_per_unit:null, sold:int, returned:int, has_points:bool}>
      */
     public function returnableLines(InvoiceDistribution $distribution): array
     {
@@ -281,7 +345,8 @@ class InvoiceReturnService
                 'sold' => (int) $distItem->quantity,
                 'returned' => (int) ($distItem->returned_quantity ?? 0),
                 'returnable' => $returnable,
-                'points_per_unit' => $ppu,
+                // Per-unit rate is admin-only — mobile APIs expose totals only.
+                'points_per_unit' => null,
                 'has_points' => $ppu > 0,
             ];
         }
@@ -347,15 +412,22 @@ class InvoiceReturnService
 
     public function maxReturnablePoints(InvoiceDistribution $distribution): int
     {
-        return (int) collect($this->returnableLines($distribution))->sum(
-            fn (array $line) => (int) floor(($line['returnable'] ?? 0) * ($line['points_per_unit'] ?? 0))
-        );
+        $distribution->loadMissing(['items.invoiceItem']);
+
+        $sum = 0;
+        foreach ($distribution->items as $distItem) {
+            $returnable = $this->returnableQtyForItem($distribution, $distItem);
+            $ppu = (float) ($distItem->invoiceItem?->points_per_unit ?? 0);
+            $sum += (int) floor($returnable * $ppu);
+        }
+
+        return $sum;
     }
 
     /**
      * @return array{can_return:bool, block_reason:?string}
      */
-    public function previewReturnGate(InvoiceDistribution $distribution): array
+    public function previewReturnGate(InvoiceDistribution $distribution, ?User $actor = null): array
     {
         try {
             if (! in_array($distribution->status, ['confirmed', 'points_awarded'], true)) {
@@ -375,6 +447,17 @@ class InvoiceReturnService
             }
 
             $this->assertPointsCanBeReturned($distribution, $this->maxReturnablePoints($distribution));
+
+            if ($actor && ! $this->actorCanRequestReturn($distribution, $actor)) {
+                return [
+                    'can_return' => false,
+                    'block_reason' => match ((int) $distribution->tier) {
+                        3 => 'طلب المرتجع متاح للسباك فقط — الطرف الأعلى ينتظر الطلب ثم يقبله',
+                        2 => 'طلب المرتجع متاح لتاجر القطاعي فقط — الطرف الأعلى ينتظر الطلب ثم يقبله',
+                        default => 'طلب المرتجع متاح للمستلم (الطرف الأدنى) فقط',
+                    },
+                ];
+            }
 
             return ['can_return' => true, 'block_reason' => null];
         } catch (\DomainException $e) {
@@ -502,19 +585,44 @@ class InvoiceReturnService
         return $prepared;
     }
 
+    /**
+     * Only the lower party (goods recipient) may request a return:
+     * - plumber requests retail→plumber return (tier 3)
+     * - retail trader requests wholesale→retail return (tier 2)
+     * Upper parties (retail / wholesale) must not open a return on behalf of the buyer.
+     * Exception: factory (admin) and central warehouse may initiate.
+     */
     protected function assertActorCanReturn(InvoiceDistribution $distribution, User $actor): void
     {
         if (in_array($actor->role, ['super_admin', 'admin'], true)) {
             return;
         }
 
-        $allowed = [
-            (int) $distribution->from_user_id,
-            (int) $distribution->to_user_id,
-        ];
+        if ($actor->isCentralWarehouse()) {
+            return;
+        }
 
-        if (! in_array((int) $actor->id, $allowed, true)) {
-            throw new \DomainException('غير مصرّح لك بعمل مرتجع على هذا التوزيع — يجب أن تكون البائع أو المشتري أو مشرفاً');
+        if ((int) $distribution->to_user_id === (int) $actor->id) {
+            return;
+        }
+
+        throw new \DomainException(
+            match ((int) $distribution->tier) {
+                3 => 'طلب مرتجع البيع للسباك متاح للسباك فقط — لا يمكن لتاجر القطاعي إنشاء مرتجع دون طلب من السباك',
+                2 => 'طلب مرتجع الشراء من الجملة متاح لتاجر القطاعي فقط — لا يمكن لتاجر الجملة إنشاء مرتجع دون طلب من القطاعي',
+                default => 'طلب المرتجع متاح للمستلم (الطرف الأدنى) فقط — الطرف الأعلى ينتظر الطلب ثم يقبله أو يرفضه',
+            }
+        );
+    }
+
+    public function actorCanRequestReturn(InvoiceDistribution $distribution, User $actor): bool
+    {
+        try {
+            $this->assertActorCanReturn($distribution, $actor);
+
+            return true;
+        } catch (\DomainException) {
+            return false;
         }
     }
 

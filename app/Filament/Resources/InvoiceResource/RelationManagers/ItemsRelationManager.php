@@ -100,8 +100,17 @@ class ItemsRelationManager extends RelationManager
 
                         return $data;
                     })
-                    ->visible(fn () => $this->getOwnerRecord()->status === 'pending_review'
-                        && ! $this->getOwnerRecord()->isWholesalePos()),
+                    ->visible(fn () => ($this->getOwnerRecord()->status === 'pending_review'
+                            && ! $this->getOwnerRecord()->isWholesalePos())
+                        || InvoiceResource::canAdjustInvoiceQuantities($this->getOwnerRecord()))
+                    ->using(function (array $data) {
+                        return app(InvoiceAdjustmentService::class)->addLine(
+                            $this->getOwnerRecord(),
+                            (int) $data['product_id'],
+                            (int) $data['quantity'],
+                            isset($data['points_per_unit']) ? (float) $data['points_per_unit'] : null,
+                        );
+                    }),
             ])
             ->actions([
                 Tables\Actions\Action::make('editQuantity')

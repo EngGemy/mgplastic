@@ -7,10 +7,13 @@
 
 Returns are allowed on:
 
-| Hop | Who | Endpoint |
-|-----|-----|----------|
-| جملة → قطاعي (tier 2) | جملة أو قطاعي (طرف الفاتورة) | Distributor / Trader invoice returns |
-| قطاعي → سباك (tier 3) | قطاعي أو سباك (طرف التوزيع) | Trader / Plumber distribution returns |
+| Hop | Who requests | Who approves | Endpoint |
+|-----|--------------|--------------|----------|
+| جملة → قطاعي (tier 2) | **قطاعي فقط** | جملة | Trader invoice returns → Distributor approve |
+| قطاعي → سباك (tier 3) | **سباك فقط** | قطاعي | Plumber distribution returns → Trader approve |
+
+**مهم:** الطرف الأعلى (جملة / قطاعي) **لا ينشئ** مرتجعاً نيابةً عن الأدنى. يستقبل الطلب ثم `approve` / `reject`.  
+استثناء: المخزن المركزي والمصنع (admin) يمكنهم إنشاء مرتجع.
 
 **حالات المرتجع:** `pending` → `approved` | `rejected`  
 قبول/رفض: `POST …/returns/{id}/approve` و `…/reject` + `available_actions`  

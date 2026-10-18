@@ -176,9 +176,10 @@ class WarehouseReturnResource extends Resource
                     ->icon('heroicon-o-check')
                     ->color('success')
                     ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status)
-                        && ((int) $record->to_user_id === (int) auth()->id()
-                            || auth()->user()?->isCentralWarehouse()))
+                        && auth()->user()
+                        && app(InvoiceReturnService::class)->actorCanDecide($record, auth()->user()))
                     ->requiresConfirmation()
+                    ->modalDescription('الموافقة للبائع الأصلي فقط — يُسجَّل القرار في التدقيق.')
                     ->action(function (InvoiceReturn $record) {
                         try {
                             app(InvoiceReturnService::class)->approve($record, auth()->user());
@@ -192,8 +193,8 @@ class WarehouseReturnResource extends Resource
                     ->icon('heroicon-o-x-mark')
                     ->color('danger')
                     ->visible(fn (InvoiceReturn $record) => InvoiceReturnStatus::isPending($record->status)
-                        && ((int) $record->to_user_id === (int) auth()->id()
-                            || auth()->user()?->isCentralWarehouse()))
+                        && auth()->user()
+                        && app(InvoiceReturnService::class)->actorCanDecide($record, auth()->user()))
                     ->requiresConfirmation()
                     ->action(function (InvoiceReturn $record) {
                         try {

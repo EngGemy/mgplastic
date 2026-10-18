@@ -16,8 +16,10 @@ use App\Http\Controllers\Api\Distributor\PosController as DistributorPosControll
 use App\Http\Controllers\Api\Distributor\RetailTraderController;
 use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
+use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
+use App\Http\Controllers\Api\Mobile\ProductPromotionController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
 use App\Http\Controllers\Api\Mobile\SettingsController;
 use App\Http\Controllers\Api\Mobile\SuggestController;
@@ -41,6 +43,11 @@ Route::prefix('v1/mobile')->group(function () {
 
     // ── Public app settings ─────────────────────────────────────
     Route::get('settings', [SettingsController::class, 'app']);
+
+    // أهم الموزعين + دعاية منتجات MG (عامة للتطبيق)
+    Route::get('featured-wholesalers', [FeaturedWholesalerController::class, 'index']);
+    Route::get('product-promotions', [ProductPromotionController::class, 'index']);
+    Route::get('product-promotions/{promotion}', [ProductPromotionController::class, 'show'])->whereNumber('promotion');
 
     // Wallet visibility — apps read this to hide/show the wallet UI
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);

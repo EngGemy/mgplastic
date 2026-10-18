@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\CustomerWhatsAppNotifier;
 use App\Services\DistributionService;
 use App\Services\InvoiceAdjustmentService;
+use App\Services\InvoiceReuseService;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
@@ -111,6 +112,25 @@ class ViewInvoice extends ViewRecord
                         $this->redirect(InvoiceDistributionResource::getUrl('view', ['record' => $distribution]));
                     } catch (\DomainException $e) {
                         Notification::make()->danger()->title('خطأ')->body($e->getMessage())->send();
+                    }
+                }),
+
+            Actions\Action::make('reuse_invoice')
+                ->label('استخدام نفس الفاتورة')
+                ->icon('heroicon-o-document-duplicate')
+                ->color('info')
+                ->visible(fn () => $this->record->items->isNotEmpty())
+                ->requiresConfirmation()
+                ->modalHeading('إعادة استخدام الفاتورة')
+                ->modalDescription('تُنشأ فاتورة جديدة بنفس البنود — ثم عدّل الكميات أو أضف أصنافاً.')
+                ->modalSubmitActionLabel('إنشاء نسخة')
+                ->action(function () {
+                    try {
+                        $clone = app(InvoiceReuseService::class)->reuse($this->record, auth()->user());
+                        Notification::make()->success()->title('تم إنشاء نسخة قابلة للتعديل')->send();
+                        $this->redirect(InvoiceResource::getUrl('view', ['record' => $clone]));
+                    } catch (\Throwable $e) {
+                        Notification::make()->danger()->title('تعذّر النسخ')->body($e->getMessage())->send();
                     }
                 }),
 

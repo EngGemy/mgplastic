@@ -24,6 +24,38 @@ class InvoiceAdjustmentService
         return $sentToRetail > 0 ? $sentToRetail : $sumTier(3);
     }
 
+    /**
+     * Append a product line to an existing invoice (reuse / edit flow).
+     */
+    public function addLine(Invoice $invoice, int $productId, int $quantity, ?float $pointsPerUnit = null): InvoiceItem
+    {
+        if ($quantity < 1) {
+            throw new \DomainException('الكمية يجب أن تكون 1 على الأقل');
+        }
+
+        $product = \App\Models\Product::query()->findOrFail($productId);
+        $ppu = $pointsPerUnit !== null ? (float) $pointsPerUnit : (float) ($product->points_per_unit ?? 0);
+
+        $item = InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'product_id' => $productId,
+            'quantity' => $quantity,
+            'unit_price_cents' => 0,
+            'points_per_unit' => $ppu,
+            'total_points' => (int) floor($quantity * $ppu),
+        ]);
+
+        if ($invoice->isWholesalePos() && $invoice->invoice_flow === 'incoming') {
+            $wholesalerId = (int) ($invoice->wholesale_distributor_id ?? 0);
+            $wholesaler = $wholesalerId > 0 ? User::query()->find($wholesalerId) : null;
+            if ($wholesaler?->isWholesaleDistributor()) {
+                app(WholesalerPointsSyncService::class)->ensureIncomingReceipt($invoice->fresh('items'), $wholesaler);
+            }
+        }
+
+        return $item->fresh(['product.translations']);
+    }
+
     public function updateQuantity(InvoiceItem $item, int $quantity): InvoiceItem
     {
         if ($quantity < 1) {
