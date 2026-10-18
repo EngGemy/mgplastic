@@ -70,15 +70,8 @@ class SuggestController extends Controller
             ->where('is_active', true)
             ->where($this->matchClause($q));
 
-        // Retail trader: prefer unlinked + own network (for link UX)
-        if ($actor->isRetailTrader()) {
-            $query->where(function (Builder $b) use ($actor) {
-                $b->whereNull('parent_distributor_id')
-                    ->orWhere('parent_distributor_id', $actor->id);
-            });
-        }
-
-        // Wholesaler: plumbers under linked retail shops
+        // Multi-shop: any active plumber is linkable by code/search (not exclusive to one retail).
+        // Wholesaler: prefer plumbers already under linked retail shops, still allow free plumbers.
         if ($actor->isWholesaleDistributor()) {
             $retailIds = app(RetailNetworkLinkService::class)->linkedRetailerIds($actor);
             if ($retailIds === []) {
@@ -86,7 +79,12 @@ class SuggestController extends Controller
             }
             $query->where(function (Builder $b) use ($retailIds) {
                 $b->whereNull('parent_distributor_id')
-                    ->orWhereIn('parent_distributor_id', $retailIds);
+                    ->orWhereIn('parent_distributor_id', $retailIds)
+                    ->orWhereIn('id', function ($sub) use ($retailIds) {
+                        $sub->select('plumber_id')
+                            ->from('retail_trader_plumber')
+                            ->whereIn('retail_trader_id', $retailIds);
+                    });
             });
         }
 

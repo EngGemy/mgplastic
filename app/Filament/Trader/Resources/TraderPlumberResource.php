@@ -42,7 +42,7 @@ class TraderPlumberResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('role', User::ROLE_PLUMBER)
-            ->where('parent_distributor_id', auth()->id());
+            ->visibleToRetailTrader((int) auth()->id());
     }
 
     public static function canViewAny(): bool

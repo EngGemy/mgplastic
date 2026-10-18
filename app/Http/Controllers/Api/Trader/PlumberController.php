@@ -20,7 +20,7 @@ class PlumberController extends Controller
         $query = User::query()
             ->where('role', 'plumber')
             ->where('is_active', true)
-            ->where('parent_distributor_id', $request->user()->id)
+            ->visibleToRetailTrader((int) $request->user()->id)
             ->with([
                 'country',
                 'city',
@@ -103,7 +103,8 @@ class PlumberController extends Controller
 
     public function show(Request $request, User $plumber): JsonResponse
     {
-        if ($plumber->role !== 'plumber' || ! $plumber->is_active || (int) $plumber->parent_distributor_id !== (int) $request->user()->id) {
+        if ($plumber->role !== 'plumber' || ! $plumber->is_active
+            || ! app(PlumberRetailLinkService::class)->isLinked($request->user(), $plumber)) {
             return $this->error('السباك غير موجود في شبكتك', 404);
         }
 

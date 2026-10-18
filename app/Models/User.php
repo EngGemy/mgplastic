@@ -326,10 +326,46 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         return app(\App\Services\RetailNetworkLinkService::class)->isLinked($wholesaler, $this);
     }
 
-    public function plumbers(): HasMany
+    /** Many-to-many: retail trader ↔ plumbers (a plumber may join many shops). */
+    public function linkedPlumbers(): BelongsToMany
     {
-        return $this->hasMany(User::class, 'parent_distributor_id')
-            ->where('role', self::ROLE_PLUMBER);
+        return $this->belongsToMany(
+            User::class,
+            'retail_trader_plumber',
+            'retail_trader_id',
+            'plumber_id'
+        )->withPivot(['linked_by', 'linked_at'])->withTimestamps();
+    }
+
+    public function linkedRetailShops(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            User::class,
+            'retail_trader_plumber',
+            'plumber_id',
+            'retail_trader_id'
+        )->withPivot(['linked_by', 'linked_at'])->withTimestamps();
+    }
+
+    /**
+     * Plumbers in this retail shop's network (pivot + legacy parent_distributor_id).
+     * Prefer linkedPlumbers() for attach/detach; this helper is for listing/counts.
+     */
+    public function plumbers(): BelongsToMany
+    {
+        return $this->linkedPlumbers();
+    }
+
+    public function scopeVisibleToRetailTrader(Builder $query, int $retailTraderId): Builder
+    {
+        return $query->where(function (Builder $inner) use ($retailTraderId) {
+            $inner->where('users.parent_distributor_id', $retailTraderId)
+                ->orWhereIn('users.id', function ($sub) use ($retailTraderId) {
+                    $sub->select('plumber_id')
+                        ->from('retail_trader_plumber')
+                        ->where('retail_trader_id', $retailTraderId);
+                });
+        });
     }
 
     public function hasMapLocation(): bool

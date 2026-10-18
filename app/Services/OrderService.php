@@ -75,7 +75,13 @@ class OrderService
             }
 
             if ($channel === OrderStatus::CHANNEL_RETAIL_TO_PLUMBER && $supplier && $requester->isPlumber()) {
-                app(PlumberRetailLinkService::class)->linkIfUnassigned($supplier, $requester);
+                // Attach this shop to the plumber's multi-shop network (no-op if already linked).
+                app(PlumberRetailLinkService::class)->link($supplier, $requester);
+            }
+
+            if ($channel === OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL && $supplier && $requester->isRetailTrader()) {
+                // Attach this wholesaler to the retailer's multi-wholesaler network.
+                app(RetailNetworkLinkService::class)->attach($supplier, $requester, $requester);
             }
 
             return $order;
@@ -424,16 +430,8 @@ class OrderService
                 throw new \DomainException('هذا التاجر القطاعي غير مفعّل حالياً');
             }
 
-            // Plumber may order only from their linked retail shop.
-            // Unassigned plumbers may order from any shop (first order claims the link).
-            $links = app(PlumberRetailLinkService::class);
-            $parent = $links->retailParent($requester);
-            if ($parent && (int) $parent->id !== (int) $supplier->id) {
-                $shop = $parent->brand_name ?: $parent->name;
-                throw new \DomainException(
-                    "يمكنك الطلب فقط من محل القطاعي المرتبط بك («{$shop}») — فك الارتباط من المحل الحالي أولاً إن أردت التبديل"
-                );
-            }
+            // Plumber may order from any retail shop; first order to a shop adds it to their network.
+            // (Multi-shop: no exclusive lock to a single retail trader.)
 
             return $supplier;
         }

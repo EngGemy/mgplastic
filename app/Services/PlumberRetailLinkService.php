@@ -13,15 +13,20 @@ class PlumberRetailLinkService
 
     public function isLinked(User $retailTrader, User $plumber): bool
     {
-        return $retailTrader->isRetailTrader()
-            && $plumber->isPlumber()
-            && (int) $plumber->parent_distributor_id === (int) $retailTrader->id;
+        if (! $retailTrader->isRetailTrader() || ! $plumber->isPlumber()) {
+            return false;
+        }
+
+        if ((int) $plumber->parent_distributor_id === (int) $retailTrader->id) {
+            return true;
+        }
+
+        return $retailTrader->linkedPlumbers()->whereKey($plumber->id)->exists();
     }
 
     /**
      * Link an already-registered plumber by network code or phone.
-     * Explicit link (by code/phone) may transfer the plumber from another retail shop.
-     * Passive orders still use linkIfUnassigned — they never steal an existing link.
+     * Multi-shop: adds this retail shop without removing other links.
      *
      * @return array{plumber: User, created_link: bool, transferred: bool, message: string}
      */
@@ -47,7 +52,7 @@ class PlumberRetailLinkService
             throw new \DomainException('حساب هذا السباك موقوف حالياً');
         }
 
-        return $this->link($retailTrader, $plumber, allowTransfer: true);
+        return $this->link($retailTrader, $plumber);
     }
 
     /**
@@ -63,11 +68,12 @@ class PlumberRetailLinkService
             throw new \DomainException('هذا الحساب ليس سباكاً');
         }
 
-        return DB::transaction(function () use ($retailTrader, $plumber, $allowTransfer) {
+        return DB::transaction(function () use ($retailTrader, $plumber) {
             $locked = User::query()->whereKey($plumber->id)->lockForUpdate()->firstOrFail();
-            $parent = $this->retailParent($locked);
 
-            if ($parent && (int) $parent->id === (int) $retailTrader->id) {
+            if ($this->isLinked($retailTrader, $locked)) {
+                $this->attach($retailTrader, $locked, $retailTrader);
+
                 return [
                     'plumber' => $locked->fresh(),
                     'created_link' => false,
@@ -76,29 +82,19 @@ class PlumberRetailLinkService
                 ];
             }
 
-            if ($parent && ! $allowTransfer) {
-                $shop = $parent->brand_name ?: $parent->name;
-                throw new \DomainException("السباك «{$locked->name}» مرتبط بتاجر قطاعي آخر".($shop ? " («{$shop}»)" : ''));
-            }
-
-            $transferred = $parent !== null;
-            $this->assign($locked, $retailTrader);
-
-            $message = $transferred
-                ? "تم نقل السباك «{$locked->name}» إلى شبكتك"
-                : "تم إضافة السباك «{$locked->name}» لشبكتك";
+            $this->attach($retailTrader, $locked, $retailTrader);
 
             return [
                 'plumber' => $locked->fresh(),
                 'created_link' => true,
-                'transferred' => $transferred,
-                'message' => $message,
+                'transferred' => false,
+                'message' => "تم إضافة السباك «{$locked->name}» لشبكتك",
             ];
         });
     }
 
     /**
-     * Owning retail trader releases a plumber back to the free pool.
+     * Retail trader releases this plumber from their shop only (other shops stay).
      *
      * @return array{plumber: User, message: string}
      */
@@ -115,14 +111,11 @@ class PlumberRetailLinkService
         return DB::transaction(function () use ($retailTrader, $plumber) {
             $locked = User::query()->whereKey($plumber->id)->lockForUpdate()->firstOrFail();
 
-            if ((int) $locked->parent_distributor_id !== (int) $retailTrader->id) {
+            if (! $this->isLinked($retailTrader, $locked)) {
                 throw new \DomainException('هذا السباك ليس في شبكتك');
             }
 
-            $locked->forceFill([
-                'parent_distributor_id' => null,
-                'is_independent' => true,
-            ])->save();
+            $this->detach($retailTrader, $locked);
 
             return [
                 'plumber' => $locked->fresh(),
@@ -132,8 +125,7 @@ class PlumberRetailLinkService
     }
 
     /**
-     * First supply order claims an unassigned plumber.
-     * A plumber already linked to a shop is left where he is.
+     * On first order to a shop: add that shop to the plumber's network (does not remove others).
      */
     public function linkIfUnassigned(User $retailTrader, User $plumber): bool
     {
@@ -144,12 +136,15 @@ class PlumberRetailLinkService
         return DB::transaction(function () use ($retailTrader, $plumber) {
             $locked = User::query()->whereKey($plumber->id)->lockForUpdate()->first();
 
-            if (! $locked || ! $locked->isPlumber() || $this->retailParent($locked)) {
+            if (! $locked || ! $locked->isPlumber()) {
                 return false;
             }
 
-            $this->assign($locked, $retailTrader);
-            $plumber->parent_distributor_id = $retailTrader->id;
+            if ($this->isLinked($retailTrader, $locked)) {
+                return false;
+            }
+
+            $this->attach($retailTrader, $locked, $retailTrader);
 
             return true;
         });
@@ -161,29 +156,77 @@ class PlumberRetailLinkService
             return;
         }
 
-        if ($this->retailParent($plumber)) {
-            throw new \DomainException('هذا السباك مرتبط بتاجر قطاعي آخر');
-        }
-
         throw new \DomainException('هذا السباك ليس في شبكتك — أضفه بالرقم الموحّد، أو ينضم عند أول طلب يرسله إليك');
     }
 
+    /** Preferred / primary retail shop (legacy parent, else earliest pivot link). */
     public function retailParent(User $plumber): ?User
     {
-        if (! $plumber->parent_distributor_id) {
-            return null;
+        if ($plumber->parent_distributor_id) {
+            $parent = User::query()->find($plumber->parent_distributor_id);
+            if ($parent && $parent->isRetailTrader()) {
+                return $parent;
+            }
         }
 
-        $parent = User::query()->find($plumber->parent_distributor_id);
-
-        return ($parent && $parent->isRetailTrader()) ? $parent : null;
+        return $plumber->linkedRetailShops()
+            ->where('users.role', 'retail_trader')
+            ->orderByPivot('linked_at')
+            ->first();
     }
 
-    protected function assign(User $plumber, User $retailTrader): void
+    /** @return list<int> */
+    public function linkedRetailShopIds(User $plumber): array
     {
-        $plumber->forceFill([
-            'parent_distributor_id' => $retailTrader->id,
-            'is_independent' => false,
-        ])->save();
+        $ids = $plumber->linkedRetailShops()->pluck('users.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($plumber->parent_distributor_id) {
+            $parent = User::query()->find($plumber->parent_distributor_id);
+            if ($parent?->isRetailTrader()) {
+                $ids[] = (int) $parent->id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    public function attach(User $retailTrader, User $plumber, ?User $linkedBy = null): void
+    {
+        $retailTrader->linkedPlumbers()->syncWithoutDetaching([
+            $plumber->id => [
+                'linked_by' => $linkedBy?->id,
+                'linked_at' => now(),
+            ],
+        ]);
+
+        // Keep legacy primary parent for older UI — set only if empty or invalid.
+        $parent = $plumber->parent_distributor_id
+            ? User::query()->find($plumber->parent_distributor_id)
+            : null;
+
+        if (! $parent || ! $parent->isRetailTrader()) {
+            $plumber->forceFill([
+                'parent_distributor_id' => $retailTrader->id,
+                'is_independent' => false,
+            ])->save();
+        }
+    }
+
+    public function detach(User $retailTrader, User $plumber): void
+    {
+        $retailTrader->linkedPlumbers()->detach($plumber->id);
+
+        if ((int) $plumber->parent_distributor_id === (int) $retailTrader->id) {
+            $nextId = $plumber->linkedRetailShops()
+                ->orderByPivot('linked_at')
+                ->value('users.id');
+
+            $plumber->forceFill([
+                'parent_distributor_id' => $nextId,
+                'is_independent' => $nextId === null,
+            ])->save();
+        }
     }
 }

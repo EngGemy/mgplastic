@@ -62,7 +62,14 @@ class PlumbersRelationManager extends RelationManager
                         'role' => User::ROLE_PLUMBER,
                         'parent_distributor_id' => $this->getOwnerRecord()->id,
                         'is_independent' => false,
-                    ])),
+                    ]))
+                    ->after(function (User $record): void {
+                        app(PlumberRetailLinkService::class)->attach(
+                            $this->getOwnerRecord(),
+                            $record,
+                            auth()->user(),
+                        );
+                    }),
                 Tables\Actions\Action::make('linkExisting')
                     ->label('ربط سباك مسجّل')
                     ->icon('heroicon-o-link')

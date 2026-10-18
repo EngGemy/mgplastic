@@ -49,7 +49,14 @@ class NetworkPlumberController extends Controller
         $query = User::query()
             ->where('role', 'plumber')
             ->where('is_active', true)
-            ->whereIn('parent_distributor_id', $retailIds)
+            ->where(function ($q) use ($retailIds) {
+                $q->whereIn('parent_distributor_id', $retailIds)
+                    ->orWhereIn('id', function ($sub) use ($retailIds) {
+                        $sub->select('plumber_id')
+                            ->from('retail_trader_plumber')
+                            ->whereIn('retail_trader_id', $retailIds);
+                    });
+            })
             ->with([
                 'country',
                 'city',
@@ -174,6 +181,7 @@ class NetworkPlumberController extends Controller
         ]);
         $plumber->save();
         app(\App\Services\NetworkCodeService::class)->ensure($plumber);
+        app(PlumberRetailLinkService::class)->attach($retail, $plumber, $request->user());
 
         $plumber->load([
             'country',
@@ -195,7 +203,8 @@ class NetworkPlumberController extends Controller
         }
 
         $retailIds = app(RetailNetworkLinkService::class)->linkedRetailerIds($request->user());
-        if (! in_array((int) $plumber->parent_distributor_id, $retailIds, true)) {
+        $shopIds = app(PlumberRetailLinkService::class)->linkedRetailShopIds($plumber);
+        if ($retailIds === [] || count(array_intersect($retailIds, $shopIds)) === 0) {
             return $this->error('السباك ليس ضمن شبكة تجّارك القطاعيين', 403);
         }
 
