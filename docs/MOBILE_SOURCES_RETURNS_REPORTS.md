@@ -37,7 +37,7 @@ GET /distributor/order-sources
         "warehouse_id": 91,
         "name": "مخزن الدعوة",
         "label": "مخزن الدعوة — MG-W-000091",
-        "phone": "0910000001",
+        "phone": "0910000091",
         "network_code": "MG-W-000091",
         "requires_warehouse_id": true,
         "stock_url": "https://…/api/v1/mobile/distributor/warehouses/91/stock"

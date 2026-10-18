@@ -11,15 +11,16 @@ class CentralWarehouseSeeder extends Seeder
 {
     public function run(): void
     {
-        $phone = '0910000001';
+        // Dedicated phone — must NOT collide with super_admin (0910000001 in UserSeeder).
+        $phone = '0910000091';
         $email = 'warehouse@mg-plastic.com';
 
         $user = User::query()->updateOrCreate(
-            ['phone' => $phone],
+            ['email' => $email],
             [
                 'name' => 'مخزن الدعوة',
                 'brand_name' => 'مخزن الدعوة',
-                'email' => $email,
+                'phone' => $phone,
                 'password' => Hash::make('Warehouse@2026'),
                 'role' => 'wholesale_distributor',
                 'is_central_warehouse' => true,
@@ -33,7 +34,15 @@ class CentralWarehouseSeeder extends Seeder
             ],
         );
 
-        // Also promote any existing "مخزن الدعوة" account created manually.
+        // Never leave a stolen phone on a former admin account if an old seeder clobbered it.
+        User::query()
+            ->where('phone', '0910000001')
+            ->where('role', 'wholesale_distributor')
+            ->where('email', $email)
+            ->whereKey($user->id)
+            ->update(['phone' => $phone]);
+
+        // Also promote any existing "مخزن الدعوة" account created manually (do not touch admins).
         User::query()
             ->where(function ($q) {
                 $q->where('brand_name', 'مخزن الدعوة')

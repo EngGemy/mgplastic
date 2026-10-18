@@ -62,6 +62,8 @@ APP_DEBUG=false
 APP_URL=https://mg-plastic.com
 
 # Obscure admin login — save this URL privately; /admin will return 404
+# Super admin: superadmin@mgplastic.com / password  (phone 0910000001)
+# After warehouse seeder: php artisan db:seed --class=RestoreSuperAdminSeeder
 ADMIN_PANEL_PATH=mg-cp-change-me
 
 DB_CONNECTION=mysql
