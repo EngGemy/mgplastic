@@ -139,6 +139,7 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('plumbers', [TraderPlumberController::class, 'index']);
         Route::post('plumbers/link', [TraderPlumberController::class, 'link']);
+        Route::delete('plumbers/{plumber}', [TraderPlumberController::class, 'unlink'])->whereNumber('plumber');
         Route::get('plumbers/{plumber}', [TraderPlumberController::class, 'show']);
 
         Route::get('pos/stock', [TraderPosController::class, 'stock']);

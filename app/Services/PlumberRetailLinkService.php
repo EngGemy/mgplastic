@@ -20,9 +20,10 @@ class PlumberRetailLinkService
 
     /**
      * Link an already-registered plumber by network code or phone.
-     * A plumber stays with the first retail trader who claimed them.
+     * Explicit link (by code/phone) may transfer the plumber from another retail shop.
+     * Passive orders still use linkIfUnassigned — they never steal an existing link.
      *
-     * @return array{plumber: User, created_link: bool, message: string}
+     * @return array{plumber: User, created_link: bool, transferred: bool, message: string}
      */
     public function linkByCode(User $retailTrader, string $codeOrPhone): array
     {
@@ -46,13 +47,62 @@ class PlumberRetailLinkService
             throw new \DomainException('حساب هذا السباك موقوف حالياً');
         }
 
-        return $this->link($retailTrader, $plumber);
+        return $this->link($retailTrader, $plumber, allowTransfer: true);
     }
 
     /**
-     * @return array{plumber: User, created_link: bool, message: string}
+     * @return array{plumber: User, created_link: bool, transferred: bool, message: string}
      */
-    public function link(User $retailTrader, User $plumber): array
+    public function link(User $retailTrader, User $plumber, bool $allowTransfer = true): array
+    {
+        if (! $retailTrader->isRetailTrader()) {
+            throw new \DomainException('هذه العملية متاحة لتاجر القطاعي فقط');
+        }
+
+        if (! $plumber->isPlumber()) {
+            throw new \DomainException('هذا الحساب ليس سباكاً');
+        }
+
+        return DB::transaction(function () use ($retailTrader, $plumber, $allowTransfer) {
+            $locked = User::query()->whereKey($plumber->id)->lockForUpdate()->firstOrFail();
+            $parent = $this->retailParent($locked);
+
+            if ($parent && (int) $parent->id === (int) $retailTrader->id) {
+                return [
+                    'plumber' => $locked->fresh(),
+                    'created_link' => false,
+                    'transferred' => false,
+                    'message' => "السباك «{$locked->name}» موجود في شبكتك مسبقاً",
+                ];
+            }
+
+            if ($parent && ! $allowTransfer) {
+                $shop = $parent->brand_name ?: $parent->name;
+                throw new \DomainException("السباك «{$locked->name}» مرتبط بتاجر قطاعي آخر".($shop ? " («{$shop}»)" : ''));
+            }
+
+            $transferred = $parent !== null;
+            $this->assign($locked, $retailTrader);
+
+            $message = $transferred
+                ? "تم نقل السباك «{$locked->name}» إلى شبكتك"
+                : "تم إضافة السباك «{$locked->name}» لشبكتك";
+
+            return [
+                'plumber' => $locked->fresh(),
+                'created_link' => true,
+                'transferred' => $transferred,
+                'message' => $message,
+            ];
+        });
+    }
+
+    /**
+     * Owning retail trader releases a plumber back to the free pool.
+     *
+     * @return array{plumber: User, message: string}
+     */
+    public function unlink(User $retailTrader, User $plumber): array
     {
         if (! $retailTrader->isRetailTrader()) {
             throw new \DomainException('هذه العملية متاحة لتاجر القطاعي فقط');
@@ -64,26 +114,19 @@ class PlumberRetailLinkService
 
         return DB::transaction(function () use ($retailTrader, $plumber) {
             $locked = User::query()->whereKey($plumber->id)->lockForUpdate()->firstOrFail();
-            $parent = $this->retailParent($locked);
 
-            if ($parent && (int) $parent->id === (int) $retailTrader->id) {
-                return [
-                    'plumber' => $locked->fresh(),
-                    'created_link' => false,
-                    'message' => "السباك «{$locked->name}» موجود في شبكتك مسبقاً",
-                ];
+            if ((int) $locked->parent_distributor_id !== (int) $retailTrader->id) {
+                throw new \DomainException('هذا السباك ليس في شبكتك');
             }
 
-            if ($parent) {
-                throw new \DomainException("السباك «{$locked->name}» مرتبط بتاجر قطاعي آخر");
-            }
-
-            $this->assign($locked, $retailTrader);
+            $locked->forceFill([
+                'parent_distributor_id' => null,
+                'is_independent' => true,
+            ])->save();
 
             return [
                 'plumber' => $locked->fresh(),
-                'created_link' => true,
-                'message' => "تم إضافة السباك «{$locked->name}» لشبكتك",
+                'message' => "تم فك ربط السباك «{$locked->name}» من شبكتك",
             ];
         });
     }

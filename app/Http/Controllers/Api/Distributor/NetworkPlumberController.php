@@ -121,6 +121,7 @@ class NetworkPlumberController extends Controller
 
             return $this->success([
                 'created_link' => $result['created_link'],
+                'transferred' => (bool) ($result['transferred'] ?? false),
                 'retail_trader_id' => $retail->id,
                 'plumber' => new UserProfileResource($result['plumber']),
             ], $result['message'], $result['created_link'] ? 201 : 200);

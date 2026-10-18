@@ -83,8 +83,22 @@ class PlumberController extends Controller
 
         return $this->success([
             'created_link' => $result['created_link'],
+            'transferred' => (bool) ($result['transferred'] ?? false),
             'plumber' => new UserProfileResource($result['plumber']),
         ], $result['message'], $result['created_link'] ? 201 : 200);
+    }
+
+    public function unlink(Request $request, User $plumber, PlumberRetailLinkService $links): JsonResponse
+    {
+        try {
+            $result = $links->unlink($request->user(), $plumber);
+        } catch (\DomainException $e) {
+            return $this->error($e->getMessage(), 422);
+        }
+
+        return $this->success([
+            'plumber' => new UserProfileResource($result['plumber']),
+        ], $result['message']);
     }
 
     public function show(Request $request, User $plumber): JsonResponse

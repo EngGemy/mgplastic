@@ -63,7 +63,7 @@ class PlumberRetailLinkTest extends TestCase
         ], ['retail_trader_id' => $shop->id]);
     }
 
-    public function test_link_by_code_claims_a_free_plumber_and_refuses_one_already_taken(): void
+    public function test_link_by_code_claims_free_plumber_and_can_transfer_taken_one(): void
     {
         $shop = User::factory()->create([
             'role' => 'retail_trader',
@@ -74,6 +74,7 @@ class PlumberRetailLinkTest extends TestCase
             'role' => 'retail_trader',
             'is_approved' => true,
             'is_active' => true,
+            'brand_name' => 'محل سابق',
         ]);
         $free = User::factory()->create([
             'role' => 'plumber',
@@ -84,6 +85,7 @@ class PlumberRetailLinkTest extends TestCase
         $taken = User::factory()->create([
             'role' => 'plumber',
             'is_active' => true,
+            'name' => 'TEST سباك',
             'parent_distributor_id' => $other->id,
             'network_code' => 'MG-P-000099',
         ]);
@@ -92,13 +94,17 @@ class PlumberRetailLinkTest extends TestCase
         $result = $links->linkByCode($shop, 'MG-P-000088');
 
         $this->assertTrue($result['created_link']);
+        $this->assertFalse($result['transferred']);
         $this->assertSame($shop->id, $free->fresh()->parent_distributor_id);
 
         $again = $links->linkByCode($shop, '0916111000');
         $this->assertFalse($again['created_link']);
 
-        $this->expectException(\DomainException::class);
-        $links->linkByCode($shop, $taken->network_code);
+        $moved = $links->linkByCode($shop, $taken->network_code);
+        $this->assertTrue($moved['created_link']);
+        $this->assertTrue($moved['transferred']);
+        $this->assertSame($shop->id, $taken->fresh()->parent_distributor_id);
+        $this->assertStringContainsString('نقل', $moved['message']);
     }
 
     public function test_trader_api_lists_only_his_plumbers_and_can_link_one(): void
