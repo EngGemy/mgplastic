@@ -144,7 +144,7 @@ class WhatsAppBrandCard
      */
     protected function ensureCard(string $themeKey, array $theme, array $payload): string
     {
-        $hash = substr(md5($themeKey.'|'.json_encode($payload, JSON_UNESCAPED_UNICODE).'|v5-theme'), 0, 12);
+        $hash = substr(md5($themeKey.'|'.json_encode($payload, JSON_UNESCAPED_UNICODE).'|v6-rtl'), 0, 12);
         $relative = "whatsapp-cards/mg-{$themeKey}-{$hash}.jpg";
 
         if (Storage::disk('public')->exists($relative)) {
@@ -212,8 +212,12 @@ class WhatsAppBrandCard
             $y = $cardY + 470;
 
             if ($hero !== '') {
-                // Latin digits — draw as LTR text
-                $this->centerText($img, $font, 52, $y, $hero, $accentCol);
+                // Shape Arabic heroes; keep Latin digits/currency as-is
+                if ($this->containsArabic($hero)) {
+                    $this->centerArabic($img, $font, 52, $y, $hero, $accentCol);
+                } else {
+                    $this->centerText($img, $font, 52, $y, $hero, $accentCol);
+                }
                 $y += 50;
                 if ($heroLabel !== '') {
                     $this->centerArabic($img, $font, 18, $y, $heroLabel, $muted);
@@ -298,6 +302,10 @@ class WhatsAppBrandCard
         imagettftext($img, 18, 0, $tx, $by + 28, $fg, $font, $shaped);
     }
 
+    /**
+     * RTL data row: label on the RIGHT, value on the LEFT.
+     * Arabic strings are shaped via ArPHP so GD (LTR) renders them correctly.
+     */
     protected function drawRow(
         \GdImage $img,
         string $font,
@@ -310,14 +318,18 @@ class WhatsAppBrandCard
         int $ink
     ): void {
         $labelShaped = $this->shapeArabic($label);
-        imagettftext($img, 16, 0, $left, $y, $muted, $font, $labelShaped);
+        $valueDraw = $this->containsArabic($value) ? $this->shapeArabic($value) : $value;
 
-        // Value on the right (Latin-friendly)
-        $valueBox = imagettfbbox(18, 0, $font, $value);
-        $vw = $valueBox ? abs($valueBox[2] - $valueBox[0]) : 40;
-        imagettftext($img, 18, 0, (int) ($right - $vw), $y, $ink, $font, $value);
+        $labelBox = imagettfbbox(16, 0, $font, $labelShaped);
+        $lw = $labelBox ? abs($labelBox[2] - $labelBox[0]) : 40;
+        imagettftext($img, 16, 0, (int) ($right - $lw), $y, $muted, $font, $labelShaped);
+
+        imagettftext($img, 18, 0, $left, $y, $ink, $font, $valueDraw);
     }
 
+    /**
+     * Progress bar in RTL: step 0 (مراجعة) on the RIGHT → مكتمل on the LEFT.
+     */
     protected function drawProgress(
         \GdImage $img,
         string $font,
@@ -338,11 +350,15 @@ class WhatsAppBrandCard
         imageline($img, $x, $y + 12, $x + $w, $y + 12, $line);
         if ($activeIndex > 0) {
             $done = imagecolorallocate($img, 40, 160, 90);
-            imageline($img, $x, $y + 12, (int) ($x + $step * $activeIndex), $y + 12, $done);
+            // Fill from the right toward the left
+            $fromX = (int) ($x + $w);
+            $toX = (int) ($x + $w - $step * $activeIndex);
+            imageline($img, $toX, $y + 12, $fromX, $y + 12, $done);
         }
 
         for ($i = 0; $i < $n; $i++) {
-            $cx = (int) ($x + $step * $i);
+            // Visual index from the right
+            $cx = (int) ($x + $w - $step * $i);
             $filled = $i <= $activeIndex;
             $col = $filled ? $accent : $line;
             imagefilledellipse($img, $cx, $y + 12, 22, 22, $col);
@@ -354,6 +370,11 @@ class WhatsAppBrandCard
             $tw = $box ? abs($box[2] - $box[0]) : 20;
             imagettftext($img, 11, 0, (int) ($cx - $tw / 2), $y + 48, $i === $activeIndex ? $accent : $muted, $font, $label);
         }
+    }
+
+    protected function containsArabic(string $text): bool
+    {
+        return (bool) preg_match('/\p{Arabic}/u', $text);
     }
 
     protected function drawIcon(\GdImage $img, string $icon, int $cx, int $cy, int $accent, int $white): void

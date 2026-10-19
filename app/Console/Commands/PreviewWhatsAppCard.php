@@ -68,7 +68,16 @@ class PreviewWhatsAppCard extends Command
             $key === 'invoice_created' => [
                 'hero' => '1,250.00 د.ل',
                 'hero_label' => 'الإجمالي',
-                'rows' => [['رقم', 'INV-55'], ['من', 'جملة'], ['إلى', 'قطاعي']],
+                'rows' => [['رقم', 'INV-55'], ['من', 'جملة تجريبي'], ['إلى', 'قطاعي تجريبي']],
+            ],
+            $key === 'order_created' => [
+                'hero' => '24',
+                'hero_label' => 'نقطة',
+                'rows' => [
+                    ['رقم', '#36'],
+                    ['حالة', 'بانتظار التأكيد'],
+                    ['عميل', 'محل عماد قطاعي'],
+                ],
             ],
             $key === 'return_rejected' => [
                 'hero' => '✗',
