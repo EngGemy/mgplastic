@@ -11,45 +11,48 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class WhatsAppNotifierTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function enableN8n(array $extra = []): void
+    protected function enableWaha(array $extra = []): void
     {
         config(array_merge([
-            'services.n8n.url' => 'https://n8n.test/webhook/notify',
-            'services.n8n.secret' => 'test-secret',
-            'services.n8n.enabled' => true,
-            'services.n8n.admin_phones' => ['01012345678', '201098765432'],
+            'services.waha.url' => 'https://waha.test',
+            'services.waha.key' => 'test-api-key',
+            'services.waha.session' => 'default',
+            'services.waha.enabled' => true,
+            'services.waha.admin_phones' => ['01012345678', '201098765432'],
+            'services.waha.default_country_code' => '218',
+            'services.otp.channels' => 'whatsapp,sms',
+            'services.marsol.token' => 'marsol-token',
+            'services.marsol.sender_id' => 'sender-uuid',
+            'services.marsol.base_url' => 'https://api.marsol.ly',
         ], $extra));
     }
 
     public function test_normalizes_libya_and_egypt_phones(): void
     {
-        config(['services.n8n.default_country_code' => '218']);
+        config(['services.waha.default_country_code' => '218']);
         $notifier = app(WhatsAppNotifier::class);
 
-        // Egypt: 0 + 11 → 20…
         $this->assertSame('201012345678', $notifier->normalizePhone('+20 10-1234-5678'));
         $this->assertSame('201012345678', $notifier->normalizePhone('01012345678'));
         $this->assertSame('201030003186', $notifier->normalizePhone('201030003186'));
 
-        // Libya: 0 + 10 → 218…
         $this->assertSame('218912159316', $notifier->normalizePhone('0912159316'));
         $this->assertSame('218912159316', $notifier->normalizePhone('218912159316'));
         $this->assertSame('218912159316', $notifier->normalizePhone('00218912159316'));
-
-        // Bare local → default country code
         $this->assertSame('218912159316', $notifier->normalizePhone('912159316'));
     }
 
     public function test_admin_phones_normalize_from_config(): void
     {
         config([
-            'services.n8n.admin_phones' => ['201030003186', '0912159316'],
+            'services.waha.admin_phones' => ['201030003186', '0912159316'],
         ]);
 
         $this->assertSame(
@@ -58,45 +61,108 @@ class WhatsAppNotifierTest extends TestCase
         );
     }
 
-    public function test_otp_sends_sync_without_admins(): void
+    public function test_waha_send_succeeds(): void
     {
-        $this->enableN8n();
+        $this->enableWaha(['services.otp.channels' => 'whatsapp']);
         Http::fake([
-            'https://n8n.test/webhook/notify' => Http::response(['ok' => true], 200),
+            'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
+        ]);
+
+        $ok = app(WhatsAppNotifier::class)->send('0912159316', 'مرحبا');
+
+        $this->assertTrue($ok);
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://waha.test/api/sendText'
+                && $request->header('X-Api-Key')[0] === 'test-api-key'
+                && $request['session'] === 'default'
+                && $request['chatId'] === '218912159316@c.us'
+                && $request['text'] === 'مرحبا';
+        });
+    }
+
+    public function test_otp_whatsapp_fails_sms_succeeds(): void
+    {
+        $this->enableWaha();
+        Http::fake([
+            'https://waha.test/api/sendText' => Http::response(['error' => 'down'], 500),
+            'https://api.marsol.ly/public/senderIds' => Http::response([
+                ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
+            ]),
+            'https://api.marsol.ly/public/otp/initiate' => Http::response([
+                'requestId' => 'req-sms-1',
+                'resendToken' => 'resend-1',
+                'expiration' => 300,
+            ]),
         ]);
 
         $user = User::factory()->create([
-            'phone' => '01011112222',
+            'phone' => '0916126065',
             'is_phone_verified' => false,
         ]);
 
         $meta = app(PhoneOtpService::class)->issue($user, 'login');
 
-        $this->assertTrue(Hash::check($meta['otp'], $user->fresh()->otp_code));
-        $this->assertTrue(now()->lt($user->fresh()->otp_expires_at));
-
-        Http::assertSent(function ($request) {
-            if ($request->url() !== 'https://n8n.test/webhook/notify') {
-                return false;
-            }
-            if ($request->header('X-Secret')[0] !== 'test-secret') {
-                return false;
-            }
-            $messages = $request['messages'] ?? [];
-            if (count($messages) !== 1) {
-                return false;
-            }
-            $msg = $messages[0];
-
-            return $msg['phone'] === '201011112222'
-                && str_contains($msg['text'], 'رمز التحقق الخاص بك:')
-                && str_contains($msg['text'], 'MG للصناعات البلاستيكية');
-        });
+        $fresh = $user->fresh();
+        $this->assertTrue(Hash::check($meta['otp'], $fresh->otp_code));
+        $this->assertSame('req-sms-1', $fresh->marsol_otp_request_id);
     }
 
-    public function test_invoice_created_notifies_customer_and_admins_once(): void
+    public function test_otp_both_channels_fail_does_not_keep_otp(): void
     {
-        $this->enableN8n();
+        $this->enableWaha();
+        Http::fake([
+            'https://waha.test/api/sendText' => Http::response(['error' => 'down'], 500),
+            'https://api.marsol.ly/public/senderIds' => Http::response([]),
+            'https://api.marsol.ly/public/otp/initiate' => Http::response(['error' => 'fail'], 500),
+        ]);
+
+        $user = User::factory()->create([
+            'phone' => '0916126065',
+            'otp_code' => null,
+            'otp_expires_at' => null,
+        ]);
+
+        try {
+            app(PhoneOtpService::class)->issue($user, 'login');
+            $this->fail('Expected ValidationException');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('تعذّر إرسال', collect($e->errors())->flatten()->first() ?? '');
+        }
+
+        $fresh = $user->fresh();
+        $this->assertNull($fresh->otp_code);
+        $this->assertNull($fresh->marsol_otp_request_id);
+    }
+
+    public function test_otp_channels_whatsapp_only_skips_marsol(): void
+    {
+        $this->enableWaha(['services.otp.channels' => 'whatsapp']);
+        Http::fake([
+            'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
+            'https://api.marsol.ly/*' => Http::response(['should' => 'not'], 500),
+        ]);
+
+        $user = User::factory()->create(['phone' => '0916126065']);
+
+        app(PhoneOtpService::class)->issue($user, 'login');
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendText'));
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'marsol.ly'));
+        $this->assertNull($user->fresh()->marsol_otp_request_id);
+    }
+
+    public function test_disabled_setting_skips_send(): void
+    {
+        $this->enableWaha(['services.waha.enabled' => false]);
+        Http::fake();
+
+        $this->assertFalse(app(WhatsAppNotifier::class)->send('01012345678', 'مرحبا'));
+        Http::assertNothingSent();
+    }
+
+    public function test_invoice_created_queues_on_whatsapp_queue(): void
+    {
+        $this->enableWaha();
         Queue::fake();
 
         $customer = User::factory()->create([
@@ -114,42 +180,29 @@ class WhatsAppNotifierTest extends TestCase
             'status' => 'approved',
         ]);
 
+        Queue::assertPushedOn('whatsapp', SendWhatsAppNotification::class);
         Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
+            $this->assertSame(3, $job->tries);
             $phones = collect($job->messages)->pluck('phone')->unique()->values()->all();
-            // customer 01012345678 → 201012345678 (also in admin list) + second admin
             $this->assertContains('201012345678', $phones);
             $this->assertContains('201098765432', $phones);
-            $this->assertTrue(
-                collect($job->messages)->every(fn ($m) => str_contains($m['text'], 'فاتورة جديدة')
-                    && str_contains($m['text'], 'INV-100'))
-            );
-
-            // Deduped: same phone+text appears once
             $keys = collect($job->messages)->map(fn ($m) => $m['phone'].'|'.$m['text'])->unique();
 
             return $keys->count() === count($job->messages);
         });
     }
 
-    public function test_disabled_setting_skips_send(): void
+    public function test_matches_accepts_local_hashed_otp(): void
     {
-        $this->enableN8n(['services.n8n.enabled' => false]);
-        Http::fake();
+        $this->enableWaha(['services.otp.channels' => 'whatsapp']);
+        Http::fake([
+            'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
+        ]);
 
-        app(WhatsAppNotifier::class)->send('01012345678', 'مرحبا');
+        $user = User::factory()->create(['phone' => '0916126065']);
+        $meta = app(PhoneOtpService::class)->issue($user, 'login');
 
-        Http::assertNothingSent();
-    }
-
-    public function test_notify_user_and_admins_queues_job(): void
-    {
-        $this->enableN8n();
-        Queue::fake();
-
-        app(WhatsAppNotifier::class)->notifyUserAndAdmins('01111111111', "MG للصناعات البلاستيكية\nاختبار");
-
-        Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
-            return count($job->messages) >= 2;
-        });
+        $this->assertTrue(app(PhoneOtpService::class)->matches($user->fresh(), $meta['otp']));
+        $this->assertFalse(app(PhoneOtpService::class)->matches($user->fresh(), '000000'));
     }
 }

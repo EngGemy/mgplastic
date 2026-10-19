@@ -15,14 +15,16 @@ class ForgotPasswordOtpTest extends TestCase
     public function test_forgot_password_sends_otp_via_whatsapp_when_phone_format_differs(): void
     {
         config([
-            'services.n8n.url' => 'https://n8n.test/webhook/notify',
-            'services.n8n.secret' => 'secret',
-            'services.n8n.enabled' => true,
-            'services.n8n.admin_phones' => [],
+            'services.waha.url' => 'https://waha.test',
+            'services.waha.key' => 'secret',
+            'services.waha.session' => 'default',
+            'services.waha.enabled' => true,
+            'services.waha.admin_phones' => [],
+            'services.otp.channels' => 'whatsapp',
         ]);
 
         Http::fake([
-            'https://n8n.test/webhook/notify' => Http::response(['ok' => true], 200),
+            'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
         ]);
 
         $user = User::factory()->create([
@@ -42,7 +44,8 @@ class ForgotPasswordOtpTest extends TestCase
         $this->assertNull($fresh->marsol_otp_request_id);
         $this->assertTrue(str_starts_with((string) $fresh->otp_code, '$2y$') || Hash::info($fresh->otp_code)['algo'] !== null);
 
-        Http::assertSent(fn ($request) => $request->url() === 'https://n8n.test/webhook/notify'
-            && str_contains($request['messages'][0]['text'] ?? '', 'رمز التحقق الخاص بك:'));
+        Http::assertSent(fn ($request) => $request->url() === 'https://waha.test/api/sendText'
+            && ($request['chatId'] ?? '') === '218916126065@c.us'
+            && str_contains($request['text'] ?? '', 'رمز التحقق الخاص بك:'));
     }
 }

@@ -9,12 +9,11 @@ use Illuminate\Support\Facades\Log;
 class WhatsAppNotifier
 {
     /**
-     * Send one message immediately (OTP / sync).
-     * Never notifies admins — caller must not pass admin fan-out here for OTP.
+     * Send one message immediately (OTP / sync). Never fans out to admins.
      */
-    public function send(string $phone, string $text): void
+    public function send(string $phone, string $text): bool
     {
-        $this->deliver([['phone' => $phone, 'text' => $text]]);
+        return $this->deliver([['phone' => $phone, 'text' => $text]]);
     }
 
     /**
@@ -62,65 +61,57 @@ class WhatsAppNotifier
     }
 
     /**
-     * Actual HTTP delivery — used by the queued Job and by sync `send()`.
+     * Deliver via WAHA sendText. Returns true only if every message succeeds.
      *
      * @param  list<array{phone:string,text:string}>  $messages
      */
-    public function deliver(array $messages): void
+    public function deliver(array $messages): bool
     {
         if (! $this->enabled()) {
-            return;
+            return false;
         }
 
         $prepared = $this->prepareMessages($messages);
         if ($prepared === []) {
-            return;
+            return false;
         }
 
-        $url = trim((string) config('services.n8n.url'));
+        $url = rtrim(trim((string) config('services.waha.url')), '/');
         if ($url === '') {
-            Log::error('[WhatsAppNotifier] N8N_NOTIFY_URL is empty');
+            Log::error('[WhatsAppNotifier] WAHA_URL is empty');
 
-            return;
+            return false;
         }
 
-        try {
-            $response = Http::timeout(10)
-                ->retry(2, 300)
-                ->withHeaders([
-                    'X-Secret' => (string) config('services.n8n.secret'),
-                    'Accept' => 'application/json',
-                    'Content-Type' => 'application/json',
-                ])
-                ->post($url, ['messages' => $prepared]);
+        $allOk = true;
+        $isFirst = true;
 
-            if (! $response->successful()) {
-                Log::error('[WhatsAppNotifier] webhook failed', [
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                    'count' => count($prepared),
-                ]);
+        foreach ($prepared as $message) {
+            if (! $isFirst) {
+                usleep(1_000_000);
             }
-        } catch (\Throwable $e) {
-            Log::error('[WhatsAppNotifier] webhook exception', [
-                'error' => $e->getMessage(),
-                'count' => count($prepared),
-            ]);
+            $isFirst = false;
+
+            if (! $this->sendText($url, $message['phone'], $message['text'])) {
+                $allOk = false;
+            }
         }
+
+        return $allOk;
     }
 
     public function enabled(): bool
     {
-        return (bool) config('services.n8n.enabled');
+        return (bool) config('services.waha.enabled');
     }
 
     /**
-     * Normalize phone for WhatsApp / n8n:
+     * Normalize phone:
      * - strip non-digits and leading 00
      * - 0 + 10 digits → 218… (Libya)
      * - 0 + 11 digits → 20… (Egypt)
      * - already starts with 218 or 20 → leave as-is
-     * - otherwise optionally prefix default_country_code from config
+     * - bare local → prefix default_country_code
      */
     public function normalizePhone(?string $raw): ?string
     {
@@ -141,25 +132,21 @@ class WhatsAppNotifier
             return null;
         }
 
-        // Already international Egypt / Libya
         if (str_starts_with($digits, '218') || str_starts_with($digits, '20')) {
             return $digits;
         }
 
         $len = strlen($digits);
 
-        // Libya local: 09xxxxxxxx (10 digits)
         if (str_starts_with($digits, '0') && $len === 10) {
             return '218'.substr($digits, 1);
         }
 
-        // Egypt local: 01xxxxxxxxx (11 digits)
         if (str_starts_with($digits, '0') && $len === 11) {
             return '20'.substr($digits, 1);
         }
 
-        // Bare local without trunk 0 — prefix configurable default (usually 218)
-        $defaultCc = preg_replace('/\D+/', '', (string) config('services.n8n.default_country_code', '218')) ?: '218';
+        $defaultCc = preg_replace('/\D+/', '', (string) config('services.waha.default_country_code', '218')) ?: '218';
         if (! str_starts_with($digits, '0') && $len >= 8 && $len <= 10) {
             return $defaultCc.$digits;
         }
@@ -173,7 +160,7 @@ class WhatsAppNotifier
     public function adminPhones(): array
     {
         $phones = [];
-        foreach ((array) config('services.n8n.admin_phones', []) as $phone) {
+        foreach ((array) config('services.waha.admin_phones', []) as $phone) {
             $normalized = $this->normalizePhone((string) $phone);
             if ($normalized) {
                 $phones[$normalized] = $normalized;
@@ -210,5 +197,46 @@ class WhatsAppNotifier
         }
 
         return $out;
+    }
+
+    protected function sendText(string $baseUrl, string $phone, string $text): bool
+    {
+        $endpoint = $baseUrl.'/api/sendText';
+        $session = (string) config('services.waha.session', 'default');
+        $apiKey = (string) config('services.waha.key');
+
+        try {
+            $response = Http::timeout(8)
+                ->retry(2, 200, throw: false)
+                ->withHeaders([
+                    'X-Api-Key' => $apiKey,
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($endpoint, [
+                    'session' => $session,
+                    'chatId' => $phone.'@c.us',
+                    'text' => $text,
+                ]);
+
+            if ($response->successful()) {
+                return true;
+            }
+
+            Log::error('[WhatsAppNotifier] WAHA sendText failed', [
+                'status' => $response->status(),
+                'phone' => $phone,
+                'session' => $session,
+            ]);
+
+            return false;
+        } catch (\Throwable $e) {
+            Log::error('[WhatsAppNotifier] WAHA sendText exception', [
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 }

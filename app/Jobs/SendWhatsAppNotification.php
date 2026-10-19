@@ -16,12 +16,16 @@ class SendWhatsAppNotification implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public int $tries = 3;
+
     /**
      * @param  list<array{phone:string,text:string}>  $messages
      */
     public function __construct(
         public array $messages,
-    ) {}
+    ) {
+        $this->onQueue('whatsapp');
+    }
 
     public function handle(WhatsAppNotifier $notifier): void
     {

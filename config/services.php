@@ -76,19 +76,28 @@ return [
     ],
 
     /*
-    | n8n WhatsApp notify webhook (OTP + business alerts).
-    | POST {messages:[{phone,text}]} with Header X-Secret.
+    | WAHA WhatsApp HTTP API (OTP sync + queued business alerts).
+    | POST {url}/api/sendText  Header X-Api-Key  Body {session,chatId,text}
     */
-    'n8n' => [
-        'url' => env('N8N_NOTIFY_URL'),
-        'secret' => env('N8N_NOTIFY_SECRET'),
+    'waha' => [
+        'url' => env('WAHA_URL'),
+        'key' => env('WAHA_API_KEY'),
+        'session' => env('WAHA_SESSION', 'default'),
+        'enabled' => filter_var(env('WHATSAPP_NOTIFY_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'admin_phones' => array_values(array_filter(array_map(
             'trim',
             explode(',', (string) env('WHATSAPP_ADMIN_PHONES', '201030003186,218912159316'))
         ))),
-        'enabled' => filter_var(env('WHATSAPP_NOTIFY_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
-        // Used only when local number has no clear length rule (fallback).
         'default_country_code' => preg_replace('/\D+/', '', (string) env('WHATSAPP_DEFAULT_COUNTRY_CODE', '218')) ?: '218',
+    ],
+
+    /*
+    | OTP delivery channels: whatsapp, sms, or both (comma-separated).
+    | WhatsApp uses local hashed OTP. SMS uses Marsol OTP API (own code) —
+    | verify accepts either channel via PhoneOtpService::matches().
+    */
+    'otp' => [
+        'channels' => env('OTP_CHANNELS', 'whatsapp,sms'),
     ],
 
     'ffmpeg' => [

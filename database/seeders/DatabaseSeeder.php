@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
             ProductCatalogSeeder::class,
             SystemLabelSeeder::class,
             PointsSystemDemoSeeder::class,
+            MobileFeaturedAndPromosSeeder::class,
 
         ]);
 
