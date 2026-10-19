@@ -46,6 +46,8 @@ class ForgotPasswordOtpTest extends TestCase
 
         Http::assertSent(fn ($request) => $request->url() === 'https://waha.test/api/sendText'
             && ($request['chatId'] ?? '') === '218916126065@c.us'
-            && str_contains($request['text'] ?? '', 'رمز التحقق الخاص بك:'));
+            && str_starts_with($request['text'] ?? '', "\u{200F}")
+            && str_contains($request['text'] ?? '', 'رمز التحقق')
+            && ! isset($request['file']));
     }
 }

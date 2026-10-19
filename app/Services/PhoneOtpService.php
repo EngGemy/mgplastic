@@ -50,6 +50,7 @@ class PhoneOtpService
 
         $otp = (string) random_int(100000, 999999);
         $expiresAt = Carbon::now()->addMinutes(5);
+        // Fast text-only OTP (no brand card image). RLM applied inside WhatsAppNotifier::send.
         $text = "╔══════════════════════╗\n"
             ."║  🏭 *MG للصناعات البلاستيكية*\n"
             ."╚══════════════════════╝\n\n"
@@ -65,11 +66,10 @@ class PhoneOtpService
         $marsolRequestId = null;
         $marsolResendToken = null;
         $marsolExpiration = 300;
-        $otpCard = app(WhatsAppBrandCard::class)->urlFor('otp', 'رمز التحقق');
 
         if (in_array('whatsapp', $channels, true)) {
             try {
-                $whatsappOk = $this->whatsapp->send((string) $user->phone, $text, $otpCard);
+                $whatsappOk = $this->whatsapp->send((string) $user->phone, $text, null);
             } catch (\Throwable $e) {
                 Log::error('[OTP] WhatsApp channel failed', [
                     'reason' => $reason,

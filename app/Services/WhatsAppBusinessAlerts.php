@@ -51,7 +51,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$user->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('welcome', 'مرحباً بك في عائلة MG')
+            $this->brandCard->assetFor('welcome', 'مرحباً بك في عائلة MG')
         );
     }
 
@@ -105,7 +105,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$buyer?->phone, $seller?->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('invoice', 'فاتورة '.$number)
+            $this->brandCard->assetFor('invoice', 'فاتورة '.$number)
         );
     }
 
@@ -160,7 +160,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$distribution->toUser?->phone, $distribution->fromUser?->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('invoice', 'تأكيد توريد')
+            $this->brandCard->assetFor('invoice', 'تأكيد توريد')
         );
     }
 
@@ -192,7 +192,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$plumber?->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('points', number_format($points).' نقطة')
+            $this->brandCard->assetFor('points', number_format($points).' نقطة')
         );
     }
 
@@ -213,7 +213,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$plumber->phone, $retailTrader->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('points', 'توريد بضاعة')
+            $this->brandCard->assetFor('points', 'توريد بضاعة')
         );
     }
 
@@ -252,7 +252,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$customer?->phone, $supplier?->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('order', 'طلب '.$number)
+            $this->brandCard->assetFor('order', 'طلب '.$number)
         );
     }
 
@@ -275,7 +275,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$order->requester?->phone, $order->supplier?->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('status', OrderStatus::label($to))
+            $this->brandCard->assetFor('status', OrderStatus::label($to))
         );
     }
 
@@ -310,7 +310,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$return->fromUser?->phone, $return->toUser?->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('return', 'طلب مرتجع')
+            $this->brandCard->assetFor('return', 'طلب مرتجع')
         );
     }
 
@@ -333,7 +333,7 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUsersAndAdmins(
             array_filter([$return->fromUser?->phone, $return->toUser?->phone]),
             $msg->toString(),
-            $this->brandCard->urlFor('return', InvoiceReturnStatus::label($to))
+            $this->brandCard->assetFor('return', InvoiceReturnStatus::label($to))
         );
     }
 

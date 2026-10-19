@@ -25,6 +25,7 @@ class WhatsAppInvoiceAlertTest extends TestCase
         ]);
 
         Http::fake([
+            'https://waha.test/api/sendImage' => Http::response(['ok' => true], 200),
             'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
         ]);
 
@@ -59,17 +60,55 @@ class WhatsAppInvoiceAlertTest extends TestCase
         ]);
 
         Http::assertSent(function ($request) {
-            $body = $request['text'] ?? $request['caption'] ?? '';
-            $url = $request->url();
+            if (! str_contains($request->url(), '/api/sendImage')) {
+                return false;
+            }
+            $caption = $request['caption'] ?? '';
+            $file = $request['file'] ?? [];
 
-            return (str_contains($url, '/api/sendText') || str_contains($url, '/api/sendImage'))
-                && str_contains($body, 'فاتورة جديدة')
-                && str_contains($body, 'OUT-55')
+            return str_contains($caption, 'فاتورة جديدة')
+                && str_contains($caption, 'OUT-55')
+                && str_starts_with($caption, "\u{200F}")
+                && filled($file['data'] ?? null)
+                && ($file['mimetype'] ?? '') === 'image/png'
                 && in_array($request['chatId'] ?? '', [
-                    '218912002002@c.us', // retailer
-                    '218912002001@c.us', // wholesaler
-                    '201030003186@c.us', // admin
+                    '218912002002@c.us',
+                    '218912002001@c.us',
+                    '201030003186@c.us',
                 ], true);
         });
+    }
+
+    public function test_send_image_falls_back_to_text_when_image_fails(): void
+    {
+        config([
+            'services.waha.url' => 'https://waha.test',
+            'services.waha.key' => 'key',
+            'services.waha.session' => 'default',
+            'services.waha.enabled' => true,
+            'services.waha.sync_alerts' => true,
+            'services.waha.admin_phones' => [],
+        ]);
+
+        Http::fake([
+            'https://waha.test/api/sendImage' => Http::response(['error' => 'bad file'], 400),
+            'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
+        ]);
+
+        $ok = app(\App\Services\WhatsAppNotifier::class)->send(
+            '0912002002',
+            "MG للصناعات البلاستيكية\nاختبار",
+            [
+                'base64' => base64_encode('fakepng'),
+                'mimetype' => 'image/png',
+                'filename' => 'x.png',
+                'url' => 'http://localhost/storage/x.png',
+            ]
+        );
+
+        $this->assertTrue($ok);
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendImage'));
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendText')
+            && str_starts_with($r['text'] ?? '', "\u{200F}"));
     }
 }

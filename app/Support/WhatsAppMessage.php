@@ -2,13 +2,17 @@
 
 namespace App\Support;
 
-use App\Models\WebsiteSetting;
-
 /**
- * Premium Arabic WhatsApp captions (paired with MG brand card image).
+ * Premium Arabic WhatsApp captions.
+ * Every non-empty line is prefixed with RLM (U+200F) so mixed Latin/Arabic
+ * (e.g. "MG للصناعات البلاستيكية") keeps correct RTL order.
  */
 class WhatsAppMessage
 {
+    public const RLM = "\u{200F}";
+
+    public const COMPANY = 'MG للصناعات البلاستيكية';
+
     /** @var list<string> */
     protected array $lines = [];
 
@@ -17,14 +21,37 @@ class WhatsAppMessage
         return new self;
     }
 
+    /** Prefix a single line with RLM (idempotent). */
+    public static function rtl(string $line): string
+    {
+        if ($line === '') {
+            return '';
+        }
+
+        if (str_starts_with($line, self::RLM)) {
+            return $line;
+        }
+
+        return self::RLM.$line;
+    }
+
+    /** Apply RLM to every non-empty line of a multi-line string. */
+    public static function rtlBlock(string $text): string
+    {
+        $parts = preg_split("/\r\n|\n|\r/", $text) ?: [];
+
+        return implode("\n", array_map(
+            fn (string $line) => $line === '' ? '' : self::rtl($line),
+            $parts
+        ));
+    }
+
     public function brandHeader(string $emoji = '🏭'): self
     {
-        $site = WebsiteSetting::instance()->site_name ?: 'MG Plastic';
-
-        $this->lines[] = "╔══════════════════════╗";
-        $this->lines[] = "║  {$emoji} *{$site}*";
-        $this->lines[] = "║  _الجودة الليبية… ثقة السباكين_";
-        $this->lines[] = "╚══════════════════════╝";
+        $this->lines[] = '╔══════════════════════╗';
+        $this->lines[] = "║  {$emoji} *".self::COMPANY.'*';
+        $this->lines[] = '║  _الجودة الليبية… ثقة السباكين_';
+        $this->lines[] = '╚══════════════════════╝';
 
         return $this;
     }
@@ -96,6 +123,7 @@ class WhatsAppMessage
 
         $this->lines[] = '';
         $this->lines[] = "🔗 *{$label}*";
+        // URLs stay LTR — still prefix RLM so the label line stays RTL in context
         $this->lines[] = $url;
 
         return $this;
@@ -120,12 +148,12 @@ class WhatsAppMessage
 
     public function footer(): self
     {
-        $settings = WebsiteSetting::instance();
+        $settings = \App\Models\WebsiteSetting::instance();
         $support = trim((string) ($settings->contact_whatsapp ?: $settings->contact_phone));
 
         $this->lines[] = '';
         $this->lines[] = '════════════════════';
-        $this->lines[] = '💙 *شكراً لثقتك في MG*';
+        $this->lines[] = '💙 *شكراً لثقتك في '.self::COMPANY.'*';
         if ($support !== '') {
             $this->lines[] = "💬 خدمة العملاء: {$support}";
         }
@@ -136,6 +164,9 @@ class WhatsAppMessage
 
     public function toString(): string
     {
-        return implode("\n", $this->lines);
+        return implode("\n", array_map(
+            fn (string $line) => $line === '' ? '' : self::rtl($line),
+            $this->lines
+        ));
     }
 }

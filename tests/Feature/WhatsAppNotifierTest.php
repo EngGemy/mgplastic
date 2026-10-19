@@ -78,7 +78,7 @@ class WhatsAppNotifierTest extends TestCase
                 && $request->header('X-Api-Key')[0] === 'test-api-key'
                 && $request['session'] === 'default'
                 && $request['chatId'] === '218912159316@c.us'
-                && $request['text'] === 'مرحبا';
+                && $request['text'] === "\u{200F}مرحبا";
         });
     }
 
