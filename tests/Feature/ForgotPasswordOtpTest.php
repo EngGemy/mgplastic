@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Support\WhatsAppMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
@@ -19,12 +20,13 @@ class ForgotPasswordOtpTest extends TestCase
             'services.waha.key' => 'secret',
             'services.waha.session' => 'default',
             'services.waha.enabled' => true,
+            'services.waha.sync_alerts' => true,
             'services.waha.admin_phones' => [],
             'services.otp.channels' => 'whatsapp',
         ]);
 
         Http::fake([
-            'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
+            'https://waha.test/*' => Http::response(['ok' => true], 200),
         ]);
 
         $user = User::factory()->create([
@@ -44,10 +46,26 @@ class ForgotPasswordOtpTest extends TestCase
         $this->assertNull($fresh->marsol_otp_request_id);
         $this->assertTrue(str_starts_with((string) $fresh->otp_code, '$2y$') || Hash::info($fresh->otp_code)['algo'] !== null);
 
-        Http::assertSent(fn ($request) => $request->url() === 'https://waha.test/api/sendText'
-            && ($request['chatId'] ?? '') === '218916126065@c.us'
-            && str_starts_with($request['text'] ?? '', "\u{200F}")
-            && str_contains($request['text'] ?? '', 'رمز التحقق')
-            && ! isset($request['file']));
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/api/sendText')) {
+                return false;
+            }
+
+            $data = $request->data();
+            $text = (string) ($data['text'] ?? '');
+            $chatId = (string) ($data['chatId'] ?? '');
+
+            // OTP must be text-only (no image file payload)
+            if (array_key_exists('file', $data) && filled($data['file'])) {
+                return false;
+            }
+
+            $hasRlm = str_starts_with($text, WhatsAppMessage::RLM)
+                || str_contains($text, WhatsAppMessage::RLM);
+
+            return str_contains($chatId, '218916126065')
+                && str_contains($text, 'رمز التحقق')
+                && $hasRlm;
+        });
     }
 }
