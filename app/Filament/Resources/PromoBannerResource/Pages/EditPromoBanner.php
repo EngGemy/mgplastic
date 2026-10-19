@@ -10,10 +10,30 @@ class EditPromoBanner extends EditRecord
 {
     protected static string $resource = PromoBannerResource::class;
 
+    public function getTitle(): string
+    {
+        return 'تعديل بانر دعائي';
+    }
+
+    public function getHeading(): string
+    {
+        return 'تعديل: '.$this->record->title;
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'سكشن: بين السباكين والمتاجر';
+    }
+
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()->label('حذف البانر'),
         ];
+    }
+
+    protected function getSavedNotificationTitle(): ?string
+    {
+        return 'تم تحديث البانر';
     }
 }
