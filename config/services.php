@@ -75,6 +75,20 @@ return [
         ],
     ],
 
+    /*
+    | n8n WhatsApp notify webhook (OTP + business alerts).
+    | POST {messages:[{phone,text}]} with Header X-Secret.
+    */
+    'n8n' => [
+        'url' => env('N8N_NOTIFY_URL'),
+        'secret' => env('N8N_NOTIFY_SECRET'),
+        'admin_phones' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('WHATSAPP_ADMIN_PHONES', ''))
+        ))),
+        'enabled' => filter_var(env('WHATSAPP_NOTIFY_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+    ],
+
     'ffmpeg' => [
         'ffmpeg_binaries' => env('FFMPEG_BINARIES', PHP_OS_FAMILY === 'Windows' ? 'ffmpeg.exe' : 'ffmpeg'),
         'ffprobe_binaries' => env('FFPROBE_BINARIES', PHP_OS_FAMILY === 'Windows' ? 'ffprobe.exe' : 'ffprobe'),

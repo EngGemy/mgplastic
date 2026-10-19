@@ -4,13 +4,12 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Traits\SendsMarsolSmsOtp;
+use App\Services\PhoneOtpService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class VerifyOtpController extends Controller
 {
-    use SendsMarsolSmsOtp;
-
     public function verify(Request $request)
     {
         $request->validate([
@@ -18,31 +17,19 @@ class VerifyOtpController extends Controller
             'otp' => 'required|string',
         ]);
 
-        $user = User::where('phone', $request->phone)->first();
+        $user = User::findByPhone((string) $request->phone)
+            ?? User::where('phone', $request->phone)->first();
+
         if (! $user) {
             return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
 
-        if ($user->marsol_otp_request_id) {
-            $resp = $this->verifyMarsolOtp(
-                $user->marsol_otp_request_id,
-                $request->otp,
-                'CODE'
-            );
-
-            if (! $resp || ($resp['status'] ?? null) !== 'SUCCESS') {
-                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
-            }
-        } else {
-            if (! $user->otp_code || ! $user->otp_expires_at || now()->gt($user->otp_expires_at)) {
-                return response()->json(['status' => false, 'message' => 'انتهت صلاحية الرمز — اطلب رمزاً جديداً'], 422);
-            }
-
-            if ($user->otp_code !== $request->otp) {
+        if (! app(PhoneOtpService::class)->matches($user, (string) $request->otp)) {
+            if ($user->otp_code) {
                 $user->increment('otp_attempts');
-
-                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح'], 422);
             }
+
+            return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
         }
 
         $user->update([
@@ -85,7 +72,9 @@ class VerifyOtpController extends Controller
     {
         $request->validate(['phone' => 'required|string']);
 
-        $user = User::where('phone', $request->phone)->first();
+        $user = User::findByPhone((string) $request->phone)
+            ?? User::where('phone', $request->phone)->first();
+
         if (! $user) {
             return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
@@ -97,49 +86,13 @@ class VerifyOtpController extends Controller
             ], 429);
         }
 
-        $lang = 'AR';
-
-        if ($user->marsol_otp_request_id && $user->marsol_otp_resend_token) {
-            $resp = $this->resendMarsolOtp(
-                $user->marsol_otp_request_id,
-                $user->marsol_otp_resend_token,
-                'CODE'
-            );
-
-            if (! $resp || empty($resp['requestId'])) {
-                $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', $lang, 'CODE');
-                if (! $issued) {
-                    return response()->json([
-                        'status' => false,
-                        'message' => 'تعذّر إعادة إرسال رمز التحقق — حاول لاحقاً',
-                        'error' => $this->lastMarsolError,
-                    ], 500);
-                }
-                $this->applyMarsolOtpToUser($user, $issued);
-            } else {
-                $exp = max(60, min((int) ($resp['expiration'] ?? 300), 86400));
-                $user->update([
-                    'marsol_otp_request_id' => $resp['requestId'],
-                    'marsol_otp_resend_token' => $resp['resendToken'] ?? $user->marsol_otp_resend_token,
-                    'marsol_otp_expires_at' => now()->addSeconds($exp),
-                    'otp_last_sent_at' => now(),
-                    'otp_attempts' => 0,
-                    'otp_code' => null,
-                    'otp_expires_at' => null,
-                ]);
-            }
-        } else {
-            $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', $lang, 'CODE');
-
-            if (! $issued) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'تعذّر إرسال رمز التحقق — حاول لاحقاً',
-                    'error' => $this->lastMarsolError,
-                ], 500);
-            }
-
-            $this->applyMarsolOtpToUser($user, $issued);
+        try {
+            app(PhoneOtpService::class)->issue($user, reason: 'resend');
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => false,
+                'message' => collect($e->errors())->flatten()->first() ?: 'تعذّر إرسال رمز التحقق',
+            ], 429);
         }
 
         return response()->json([

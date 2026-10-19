@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\Distributor\PosController as DistributorPosControll
 use App\Http\Controllers\Api\Distributor\RetailTraderController;
 use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
+use App\Http\Controllers\Api\Mobile\BiometricController;
 use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
@@ -57,6 +58,10 @@ Route::prefix('v1/mobile')->group(function () {
     // Wallet visibility — apps read this to hide/show the wallet UI
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);
 
+    // Biometric unlock (public challenge + verify)
+    Route::post('biometric/challenge', [BiometricController::class, 'challenge'])->middleware('throttle:20,1');
+    Route::post('biometric/verify', [BiometricController::class, 'verify'])->middleware('throttle:20,1');
+
     // Admin-only toggle (Bearer token of super_admin / admin)
     Route::middleware(['auth:sanctum'])->prefix('admin')->group(function () {
         Route::match(['put', 'post'], 'wallet-visibility', [IosWalletVisibilityController::class, 'update']);
@@ -71,6 +76,12 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('profile', [ProfileController::class, 'show']);
         Route::match(['put', 'patch', 'post'], 'profile', [ProfileController::class, 'update']);
+
+        // Biometric device management
+        Route::post('biometric/register', [BiometricController::class, 'register']);
+        Route::get('biometric/devices', [BiometricController::class, 'devices']);
+        Route::delete('biometric/devices/{deviceId}', [BiometricController::class, 'revoke']);
+        Route::post('biometric/revoke-all', [BiometricController::class, 'revokeAll']);
 
         // Fast typeahead suggestions (link plumbers / retail / stores)
         Route::get('suggest', SuggestController::class);

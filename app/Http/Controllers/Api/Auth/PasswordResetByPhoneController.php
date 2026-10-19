@@ -4,14 +4,13 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Traits\SendsMarsolSmsOtp;
+use App\Services\PhoneOtpService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class PasswordResetByPhoneController extends Controller
 {
-    use SendsMarsolSmsOtp;
-
     public function sendOtp(Request $request)
     {
         $request->validate(['phone' => 'required|string']);
@@ -33,16 +32,14 @@ class PasswordResetByPhoneController extends Controller
             ], 429);
         }
 
-        $issued = $this->issueMarsolPhoneOtp($user->phone, 6, 300, 'WEB', 'AR', 'CODE');
-
-        if (! $issued) {
+        try {
+            app(PhoneOtpService::class)->issue($user, reason: 'forgot');
+        } catch (ValidationException $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'تعذّر إرسال رمز التحقق — حاول لاحقاً',
-            ], 500);
+                'message' => collect($e->errors())->flatten()->first() ?: 'تعذّر إرسال رمز التحقق',
+            ], 429);
         }
-
-        $this->applyMarsolOtpToUser($user, $issued);
 
         return response()->json([
             'status' => true,
@@ -62,28 +59,12 @@ class PasswordResetByPhoneController extends Controller
             return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
 
-        $isLibya = $this->isLibyaPhone($user->phone);
-
-        if ($isLibya && $user->marsol_otp_request_id) {
-            $resp = $this->verifyMarsolOtp(
-                $user->marsol_otp_request_id,
-                $request->otp,
-                'CODE'
-            );
-
-            if (! $resp || ($resp['status'] ?? null) !== 'SUCCESS') {
-                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
-            }
-        } else {
-            if (! $user->otp_code || ! $user->otp_expires_at || now()->gt($user->otp_expires_at)) {
-                return response()->json(['status' => false, 'message' => 'انتهت صلاحية الرمز — اطلب رمزاً جديداً'], 422);
-            }
-
-            if ($user->otp_code !== $request->otp) {
+        if (! app(PhoneOtpService::class)->matches($user, (string) $request->otp)) {
+            if ($user->otp_code) {
                 $user->increment('otp_attempts');
-
-                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح'], 422);
             }
+
+            return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
         }
 
         return response()->json([
@@ -106,28 +87,12 @@ class PasswordResetByPhoneController extends Controller
             return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
 
-        $isLibya = $this->isLibyaPhone($user->phone);
-
-        if ($isLibya && $user->marsol_otp_request_id) {
-            $resp = $this->verifyMarsolOtp(
-                $user->marsol_otp_request_id,
-                $request->otp,
-                'CODE'
-            );
-
-            if (! $resp || ($resp['status'] ?? null) !== 'SUCCESS') {
-                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
-            }
-        } else {
-            if (! $user->otp_code || ! $user->otp_expires_at || now()->gt($user->otp_expires_at)) {
-                return response()->json(['status' => false, 'message' => 'انتهت صلاحية الرمز'], 422);
-            }
-
-            if ($user->otp_code !== $request->otp) {
+        if (! app(PhoneOtpService::class)->matches($user, (string) $request->otp)) {
+            if ($user->otp_code) {
                 $user->increment('otp_attempts');
-
-                return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح'], 422);
             }
+
+            return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
         }
 
         $user->password = Hash::make($request->password);

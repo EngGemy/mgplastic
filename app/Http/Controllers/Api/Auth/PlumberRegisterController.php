@@ -9,11 +9,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\City;
-use App\Traits\SendsMarsolSmsOtp;
+use App\Services\PhoneOtpService;
+use Illuminate\Validation\ValidationException;
 
 class PlumberRegisterController extends Controller
 {
-    use SendsMarsolSmsOtp;
 
     public function register(Request $request)
     {
@@ -60,7 +60,6 @@ class PlumberRegisterController extends Controller
             : null;
 
         $phone = $request->phone;
-        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
 
         // Create user
         $user = DB::transaction(function () use ($request, $imagePath) {
@@ -83,17 +82,15 @@ class PlumberRegisterController extends Controller
         $user->load(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']);
         $nameCol = app()->getLocale() === 'ar' ? 'name_ar' : 'name_en';
 
-        $issued = $this->issueMarsolPhoneOtp($phone, 6, 300, 'WEB', $lang, 'CODE');
-
-        if (! $issued) {
+        try {
+            app(PhoneOtpService::class)->issue($user, reason: 'register');
+        } catch (ValidationException $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق — حاول لاحقاً',
-                'error' => $this->lastMarsolError,
-            ], 500);
+                'message' => collect($e->errors())->flatten()->first()
+                    ?: 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق — حاول لاحقاً',
+            ], 429);
         }
-
-        $this->applyMarsolOtpToUser($user, $issued);
 
         $roleLabel = $request->role === 'plumber' ? 'السباك' : 'البائع';
 

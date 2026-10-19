@@ -3,15 +3,11 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SendOtpSms;
 use App\Models\User;
 use App\Models\WalletAccount;
-use App\Support\ArabicWait;
-use Carbon\Carbon;
+use App\Services\PhoneOtpService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Validation\ValidationException;
 
 class LoginController extends Controller
 {
@@ -49,7 +45,7 @@ class LoginController extends Controller
 
         // If phone not verified -> SAME RESPONSE SHAPE + OTP
         if (! $this->isPhoneVerified($user)) {
-            $otpMeta = $this->issueOtp($user, reason: 'login');
+            $otpMeta = app(PhoneOtpService::class)->issue($user, reason: 'login');
 
             $user->is_phone_verified = false;
 
@@ -58,7 +54,7 @@ class LoginController extends Controller
                 'message' => 'الهاتف غير موثّق — تم إرسال رمز التحقق',
                 'token' => null,
                 'user' => $this->userPayload($user),
-                'otp' => $otpMeta['otp'], // DEV ONLY
+                'otp' => $otpMeta['otp'], // DEV ONLY — never log / forward to admins
                 'otp_expires_at' => $otpMeta['expires_at']->toIso8601String(),
             ], 200);
         }
@@ -85,10 +81,10 @@ class LoginController extends Controller
         }
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => $message,
-            'token'   => $token,
-            'user'    => $this->userPayload($user),
+            'token' => $token,
+            'user' => $this->userPayload($user),
         ], 200);
     }
 
@@ -115,39 +111,7 @@ class LoginController extends Controller
         if (isset($user->phone_verified_at)) {
             return ! is_null($user->phone_verified_at);
         }
+
         return false;
-    }
-
-    protected function issueOtp(User $user, string $reason = 'login'): array
-    {
-        $limiterKey = "otp:$reason:".$user->phone;
-
-        // Allow up to 5 OTPs per hour per phone for this reason
-        if (RateLimiter::tooManyAttempts($limiterKey, 5)) {
-            $seconds = RateLimiter::availableIn($limiterKey);
-            throw ValidationException::withMessages([
-                'phone' => [ArabicWait::message($seconds, 'طلب رمز تحقق جديد')],
-            ]);
-        }
-
-        RateLimiter::hit($limiterKey, 3600);
-
-        $otp       = random_int(100000, 999999);
-        $expiresAt = Carbon::now()->addMinutes(5);
-
-        $user->forceFill([
-            'otp_code'          => $otp,
-            'otp_expires_at'    => $expiresAt,
-            'is_phone_verified' => false,
-        ])->save();
-
-        if (class_exists(SendOtpSms::class)) {
-            SendOtpSms::dispatch($user->phone, $otp);
-        }
-
-        return [
-            'otp'        => $otp,
-            'expires_at' => $expiresAt,
-        ];
     }
 }

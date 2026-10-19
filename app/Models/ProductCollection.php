@@ -31,18 +31,24 @@ class ProductCollection extends Model
     protected static function booted(): void
     {
         static::saving(function (self $collection) {
-            if (! filled($collection->slug) && filled($collection->title)) {
-                $base = Str::slug($collection->title) ?: 'collection';
-                $slug = $base;
-                $i = 1;
-                while (static::query()
-                    ->where('slug', $slug)
-                    ->when($collection->exists, fn ($q) => $q->whereKeyNot($collection->id))
-                    ->exists()) {
-                    $slug = $base.'-'.$i++;
-                }
-                $collection->slug = $slug;
+            if (filled($collection->slug)) {
+                return;
             }
+
+            $base = filled($collection->title)
+                ? (Str::slug($collection->title) ?: null)
+                : null;
+            $base = $base ?: 'collection-'.Str::lower(Str::random(6));
+
+            $slug = $base;
+            $i = 1;
+            while (static::query()
+                ->where('slug', $slug)
+                ->when($collection->exists, fn ($q) => $q->whereKeyNot($collection->id))
+                ->exists()) {
+                $slug = $base.'-'.$i++;
+            }
+            $collection->slug = $slug;
         });
     }
 
@@ -63,10 +69,10 @@ class ProductCollection extends Model
     public function kindLabel(): string
     {
         return match ($this->kind) {
-            'featured' => 'منتجات مميزة',
-            'new' => 'منتجات حديثة',
-            'important' => 'أهم المنتجات',
-            default => 'مجموعة',
+            'featured' => 'مميزة',
+            'new' => 'حديثة',
+            'important' => 'مهمة',
+            default => 'مخصّصة',
         };
     }
 }

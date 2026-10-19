@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -11,21 +12,17 @@ class ForgotPasswordOtpTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_forgot_password_sends_otp_when_the_phone_format_differs(): void
+    public function test_forgot_password_sends_otp_via_whatsapp_when_phone_format_differs(): void
     {
         config([
-            'services.marsol.token' => 'test-token',
-            'services.marsol.sender_id' => 'sender-uuid',
-            'services.marsol.base_url' => 'https://api.marsol.ly',
+            'services.n8n.url' => 'https://n8n.test/webhook/notify',
+            'services.n8n.secret' => 'secret',
+            'services.n8n.enabled' => true,
+            'services.n8n.admin_phones' => [],
         ]);
 
         Http::fake([
-            'https://api.marsol.ly/public/senderIds' => Http::response([]),
-            'https://api.marsol.ly/public/otp/initiate' => Http::response([
-                'requestId' => 'req-1',
-                'resendToken' => 'resend-1',
-                'expiration' => 300,
-            ]),
+            'https://n8n.test/webhook/notify' => Http::response(['ok' => true], 200),
         ]);
 
         $user = User::factory()->create([
@@ -40,8 +37,12 @@ class ForgotPasswordOtpTest extends TestCase
             ->assertJsonPath('status', true)
             ->assertJsonPath('message', 'تم إرسال رمز التحقق');
 
-        $this->assertSame('req-1', $user->fresh()->marsol_otp_request_id);
-        Http::assertSent(fn ($request) => $request->url() === 'https://api.marsol.ly/public/otp/initiate'
-            && $request['phoneNumber'] === '218916126065');
+        $fresh = $user->fresh();
+        $this->assertNotNull($fresh->otp_code);
+        $this->assertNull($fresh->marsol_otp_request_id);
+        $this->assertTrue(str_starts_with((string) $fresh->otp_code, '$2y$') || Hash::info($fresh->otp_code)['algo'] !== null);
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://n8n.test/webhook/notify'
+            && str_contains($request['messages'][0]['text'] ?? '', 'رمز التحقق الخاص بك:'));
     }
 }

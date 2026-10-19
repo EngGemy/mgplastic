@@ -53,6 +53,17 @@ class SettingsController extends Controller
             'ios_wallet_visibility' => [
                 'show_wallet' => AppFlag::getBool('ios_wallet_enabled', true),
             ],
+            'biometric' => [
+                'enabled' => true,
+                'challenge_ttl_seconds' => 120,
+                'methods' => ['unlock_token', 'public_key_signature'],
+                'endpoints' => [
+                    'register' => url('/api/v1/mobile/biometric/register'),
+                    'challenge' => url('/api/v1/mobile/biometric/challenge'),
+                    'verify' => url('/api/v1/mobile/biometric/verify'),
+                    'devices' => url('/api/v1/mobile/biometric/devices'),
+                ],
+            ],
         ]);
     }
 }

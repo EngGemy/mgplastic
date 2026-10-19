@@ -5,17 +5,15 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\User;
-use App\Traits\SendsMarsolSmsOtp;
+use App\Services\PhoneOtpService;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class RegisterController extends Controller
 {
-    use SendsMarsolSmsOtp;
-
     public function register(RegisterRequest $request)
     {
         $phone = $request->phone;
-        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
 
         $user = User::create([
             'name' => $request->name,
@@ -27,16 +25,15 @@ class RegisterController extends Controller
             'otp_expires_at' => null,
         ]);
 
-        $issued = $this->issueMarsolPhoneOtp($phone, 6, 300, 'WEB', $lang, 'CODE');
-
-        if (! $issued) {
+        try {
+            app(PhoneOtpService::class)->issue($user, reason: 'register');
+        } catch (ValidationException $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق',
-            ], 500);
+                'message' => collect($e->errors())->flatten()->first()
+                    ?: 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق',
+            ], 429);
         }
-
-        $this->applyMarsolOtpToUser($user, $issued);
 
         return response()->json([
             'status' => true,

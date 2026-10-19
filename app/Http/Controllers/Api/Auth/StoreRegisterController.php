@@ -6,12 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\NetworkStoreResource;
 use App\Models\User;
 use App\Services\AdminNotificationService;
+use App\Services\PhoneOtpService;
 use App\Support\AdminPanelPath;
-use App\Traits\SendsMarsolSmsOtp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Store self-registration (network stores).
@@ -24,7 +25,6 @@ use Illuminate\Support\Facades\Hash;
  */
 class StoreRegisterController extends Controller
 {
-    use SendsMarsolSmsOtp;
 
     /**
      * Mobile store registration: تاجر تجزئة / قطاعي فقط.
@@ -69,9 +69,6 @@ class StoreRegisterController extends Controller
             'social_links.*.url'           => ['required_with:social_links', 'url', 'max:500'],
             'social_links.*.sort_order'    => ['nullable', 'integer', 'min:0'],
         ]);
-
-        $phone = $data['phone'];
-        $lang = app()->getLocale() === 'ar' ? 'AR' : 'EN';
 
         $user = DB::transaction(function () use ($request, $data, $role) {
             $user = new User();
@@ -122,9 +119,10 @@ class StoreRegisterController extends Controller
             return $user;
         });
 
-        $issued = $this->issueMarsolPhoneOtp($phone, 6, 300, 'WEB', $lang, 'CODE');
-        if ($issued) {
-            $this->applyMarsolOtpToUser($user, $issued);
+        try {
+            app(PhoneOtpService::class)->issue($user, reason: 'register');
+        } catch (ValidationException) {
+            // Account created — OTP can be resent via /auth/resend-otp
         }
 
         $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);

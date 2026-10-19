@@ -66,5 +66,9 @@ class AppServiceProvider extends ServiceProvider
 
         \App\Models\Product::observe(\App\Observers\ProductObserver::class);
         \App\Models\User::observe(\App\Observers\UserObserver::class);
+        \App\Models\Invoice::observe(\App\Observers\InvoiceObserver::class);
+        \App\Models\Order::observe(\App\Observers\OrderObserver::class);
+        \App\Models\InvoiceReturn::observe(\App\Observers\InvoiceReturnObserver::class);
+        \App\Models\WithdrawalRequest::observe(\App\Observers\WithdrawalRequestObserver::class);
     }
 }
