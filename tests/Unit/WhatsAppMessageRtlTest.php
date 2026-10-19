@@ -45,6 +45,7 @@ class WhatsAppMessageRtlTest extends TestCase
         $this->assertStringContainsString('*123456*', $text);
         $this->assertStringContainsString('*'.WhatsAppMessage::COMPANY.'*', $text);
         $this->assertStringContainsString('شكرًا لتعاملكم مع', $text);
+        $this->assertStringNotContainsString('/open/', $text);
 
         foreach (explode("\n", $text) as $line) {
             if ($line === '') {
@@ -52,5 +53,18 @@ class WhatsAppMessageRtlTest extends TestCase
             }
             $this->assertStringStartsWith(WhatsAppMessage::RLM, $line);
         }
+    }
+
+    public function test_open_in_app_deep_link_line(): void
+    {
+        $text = WhatsAppMessage::make()
+            ->header(WhatsAppMessage::ICON_ORDER)
+            ->param('رقم الطلب', '1')
+            ->openInApp('https://mg-plastic.com/open/order/1')
+            ->footer()
+            ->toString();
+
+        $this->assertStringContainsString('افتح في التطبيق', $text);
+        $this->assertStringContainsString('https://mg-plastic.com/open/order/1', $text);
     }
 }

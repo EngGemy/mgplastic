@@ -28,8 +28,12 @@ class WhatsAppMessage
 
     public const ICON_WITHDRAWAL = '💰';
 
+    public const ICON_SUPPLY = '✅';
+
     /** @var list<string> */
     protected array $lines = [];
+
+    protected ?string $deepLinkUrl = null;
 
     public static function make(): self
     {
@@ -55,7 +59,7 @@ class WhatsAppMessage
         ));
     }
 
-    /** Meta-like header: bold company + separator. */
+    /** Meta-like header: event emoji + bold company + separator. */
     public function header(string $eventIcon = ''): self
     {
         $prefix = $eventIcon !== '' ? "{$eventIcon} " : '';
@@ -135,36 +139,45 @@ class WhatsAppMessage
         return $this;
     }
 
-    public function appLink(): self
+    /** Universal / App Link — appears as a tappable URL (WAHA has no interactive buttons). */
+    public function openInApp(?string $url): self
     {
-        $app = trim((string) (
-            config('services.waha.app_url')
-            ?: config('portal.plumber_app_url')
-            ?: ''
-        ));
+        $this->deepLinkUrl = filled($url) ? (string) $url : null;
 
-        if ($app === '') {
-            return $this;
+        return $this;
+    }
+
+    public function footer(?string $deepLink = null): self
+    {
+        if (filled($deepLink)) {
+            $this->deepLinkUrl = (string) $deepLink;
         }
 
         $this->lines[] = '';
-        $this->lines[] = '📱 *التطبيق*';
-        $this->lines[] = $app;
-
-        return $this;
-    }
-
-    public function footer(): self
-    {
-        $this->lines[] = '';
         $this->lines[] = '━━━━━━━━━━━━━━━━';
         $this->lines[] = 'شكرًا لتعاملكم مع *'.self::COMPANY.'*';
-        $this->appLink();
+
+        if (filled($this->deepLinkUrl)) {
+            $this->lines[] = '';
+            $this->lines[] = '📱 *افتح في التطبيق*';
+            $this->lines[] = $this->deepLinkUrl;
+        } else {
+            $fallback = trim((string) (
+                config('services.waha.app_url')
+                ?: config('portal.plumber_app_url')
+                ?: ''
+            ));
+            if ($fallback !== '') {
+                $this->lines[] = '';
+                $this->lines[] = '📱 *التطبيق*';
+                $this->lines[] = $fallback;
+            }
+        }
 
         return $this;
     }
 
-    /** Short Meta-style OTP (text only, no image). */
+    /** Short Meta-style OTP (text only, no image, no deep-link secrets). */
     public static function otp(string $code): string
     {
         return self::make()
@@ -173,6 +186,39 @@ class WhatsAppMessage
             ->line('صالح *5* دقائق — لا تشاركه.')
             ->footer()
             ->toString();
+    }
+
+    /**
+     * Clone body with a different greeting (same image card for all recipients).
+     */
+    public function withGreet(?string $name): self
+    {
+        $clone = clone $this;
+        $clone->lines = $this->lines;
+        // Rebuild: if first content line is greet, replace; else prepend after header block
+        $out = [];
+        $greeted = false;
+        $afterHeader = false;
+        foreach ($clone->lines as $i => $line) {
+            if (! $afterHeader && str_contains($line, '━━')) {
+                $out[] = $line;
+                $afterHeader = true;
+                $name = trim((string) $name);
+                if ($name !== '') {
+                    $out[] = "أهلاً *{$name}*،";
+                }
+                $greeted = true;
+
+                continue;
+            }
+            if ($greeted && preg_match('/^أهلاً \*/u', $line)) {
+                continue;
+            }
+            $out[] = $line;
+        }
+        $clone->lines = $out;
+
+        return $clone;
     }
 
     public function toString(): string

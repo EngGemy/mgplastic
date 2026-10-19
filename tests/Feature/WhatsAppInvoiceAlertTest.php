@@ -70,9 +70,12 @@ class WhatsAppInvoiceAlertTest extends TestCase
                 && str_contains($caption, 'OUT-55')
                 && str_contains($caption, '*MG للصناعات البلاستيكية*')
                 && str_contains($caption, 'شكرًا لتعاملكم مع')
+                && str_contains($caption, 'افتح في التطبيق')
+                && str_contains($caption, '/open/invoice/')
                 && str_starts_with($caption, "\u{200F}")
                 && filled($file['data'] ?? null)
                 && ($file['mimetype'] ?? '') === 'image/jpeg'
+                && str_contains((string) ($file['filename'] ?? ''), 'invoice_created')
                 && str_ends_with(strtolower((string) ($file['filename'] ?? '')), '.jpg')
                 && in_array($request['chatId'] ?? '', [
                     '218912002002@c.us',
