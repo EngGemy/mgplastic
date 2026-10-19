@@ -27,13 +27,35 @@ class WhatsAppNotifierTest extends TestCase
         ], $extra));
     }
 
-    public function test_normalizes_egyptian_local_phone(): void
+    public function test_normalizes_libya_and_egypt_phones(): void
     {
+        config(['services.n8n.default_country_code' => '218']);
         $notifier = app(WhatsAppNotifier::class);
 
+        // Egypt: 0 + 11 → 20…
         $this->assertSame('201012345678', $notifier->normalizePhone('+20 10-1234-5678'));
         $this->assertSame('201012345678', $notifier->normalizePhone('01012345678'));
-        $this->assertSame('201098765432', $notifier->normalizePhone('201098765432'));
+        $this->assertSame('201030003186', $notifier->normalizePhone('201030003186'));
+
+        // Libya: 0 + 10 → 218…
+        $this->assertSame('218912159316', $notifier->normalizePhone('0912159316'));
+        $this->assertSame('218912159316', $notifier->normalizePhone('218912159316'));
+        $this->assertSame('218912159316', $notifier->normalizePhone('00218912159316'));
+
+        // Bare local → default country code
+        $this->assertSame('218912159316', $notifier->normalizePhone('912159316'));
+    }
+
+    public function test_admin_phones_normalize_from_config(): void
+    {
+        config([
+            'services.n8n.admin_phones' => ['201030003186', '0912159316'],
+        ]);
+
+        $this->assertSame(
+            ['201030003186', '218912159316'],
+            app(WhatsAppNotifier::class)->adminPhones()
+        );
     }
 
     public function test_otp_sends_sync_without_admins(): void

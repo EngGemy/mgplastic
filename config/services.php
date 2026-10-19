@@ -84,9 +84,11 @@ return [
         'secret' => env('N8N_NOTIFY_SECRET'),
         'admin_phones' => array_values(array_filter(array_map(
             'trim',
-            explode(',', (string) env('WHATSAPP_ADMIN_PHONES', ''))
+            explode(',', (string) env('WHATSAPP_ADMIN_PHONES', '201030003186,218912159316'))
         ))),
         'enabled' => filter_var(env('WHATSAPP_NOTIFY_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
+        // Used only when local number has no clear length rule (fallback).
+        'default_country_code' => preg_replace('/\D+/', '', (string) env('WHATSAPP_DEFAULT_COUNTRY_CODE', '218')) ?: '218',
     ],
 
     'ffmpeg' => [

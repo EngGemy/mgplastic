@@ -115,7 +115,12 @@ class WhatsAppNotifier
     }
 
     /**
-     * Normalize phone: strip +/spaces/dashes; 0XXXXXXXXXX (11) → 20XXXXXXXXXX.
+     * Normalize phone for WhatsApp / n8n:
+     * - strip non-digits and leading 00
+     * - 0 + 10 digits → 218… (Libya)
+     * - 0 + 11 digits → 20… (Egypt)
+     * - already starts with 218 or 20 → leave as-is
+     * - otherwise optionally prefix default_country_code from config
      */
     public function normalizePhone(?string $raw): ?string
     {
@@ -128,15 +133,38 @@ class WhatsAppNotifier
             return null;
         }
 
-        if (str_starts_with($digits, '00')) {
+        while (str_starts_with($digits, '00')) {
             $digits = substr($digits, 2);
         }
 
-        if (str_starts_with($digits, '0') && strlen($digits) === 11) {
-            $digits = '20'.substr($digits, 1);
+        if ($digits === '') {
+            return null;
         }
 
-        return $digits !== '' ? $digits : null;
+        // Already international Egypt / Libya
+        if (str_starts_with($digits, '218') || str_starts_with($digits, '20')) {
+            return $digits;
+        }
+
+        $len = strlen($digits);
+
+        // Libya local: 09xxxxxxxx (10 digits)
+        if (str_starts_with($digits, '0') && $len === 10) {
+            return '218'.substr($digits, 1);
+        }
+
+        // Egypt local: 01xxxxxxxxx (11 digits)
+        if (str_starts_with($digits, '0') && $len === 11) {
+            return '20'.substr($digits, 1);
+        }
+
+        // Bare local without trunk 0 — prefix configurable default (usually 218)
+        $defaultCc = preg_replace('/\D+/', '', (string) config('services.n8n.default_country_code', '218')) ?: '218';
+        if (! str_starts_with($digits, '0') && $len >= 8 && $len <= 10) {
+            return $defaultCc.$digits;
+        }
+
+        return $digits;
     }
 
     /**
