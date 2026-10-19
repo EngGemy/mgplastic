@@ -7,7 +7,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Generates branded MG WhatsApp cover cards (logo + scene) for WAHA sendImage.
+ * Generates branded MG WhatsApp cover cards (JPEG) for WAHA sendImage.
+ *
+ * WAHA / WhatsApp prefer JPEG over PNG for sendImage; PNG often fails with 400.
  *
  * @phpstan-type CardAsset array{
  *   relative: string,
@@ -42,7 +44,7 @@ class WhatsAppBrandCard
     }
 
     /**
-     * Full asset for WAHA: local path + public URL + base64.
+     * Full asset for WAHA: local path + public URL + base64 (JPEG).
      *
      * @return CardAsset|null
      */
@@ -66,6 +68,7 @@ class WhatsAppBrandCard
                 'path' => $path,
                 'url' => $url,
                 'bytes' => strlen($binary),
+                'mimetype' => 'image/jpeg',
                 'url_looks_local' => $this->urlLooksLocal($url),
             ]);
 
@@ -74,7 +77,7 @@ class WhatsAppBrandCard
                 'path' => $path,
                 'url' => $url,
                 'base64' => base64_encode($binary),
-                'mimetype' => 'image/png',
+                'mimetype' => 'image/jpeg',
                 'filename' => basename($relative),
             ];
         } catch (\Throwable $e) {
@@ -92,27 +95,26 @@ class WhatsAppBrandCard
         $scene = array_key_exists($scene, self::SCENES) ? $scene : 'default';
         $meta = self::SCENES[$scene];
         $subtitle = $subtitle ?: $meta[1];
-        $hash = substr(md5($scene.'|'.$subtitle.'|v3-ar'), 0, 10);
-        $relative = "whatsapp-cards/mg-{$scene}-{$hash}.png";
+        // v4-jpeg: WAHA rejects many PNG payloads; use JPEG
+        $hash = substr(md5($scene.'|'.$subtitle.'|v4-jpeg'), 0, 10);
+        $relative = "whatsapp-cards/mg-{$scene}-{$hash}.jpg";
 
         if (Storage::disk('public')->exists($relative)) {
             return $relative;
         }
 
         Storage::disk('public')->makeDirectory('whatsapp-cards');
-        $png = $this->renderPng($meta[0], $subtitle);
-        Storage::disk('public')->put($relative, $png);
+        $jpeg = $this->renderJpeg($meta[0], $subtitle);
+        Storage::disk('public')->put($relative, $jpeg);
 
         return $relative;
     }
 
-    protected function renderPng(string $badgeAr, string $subtitleAr): string
+    protected function renderJpeg(string $badgeAr, string $subtitleAr): string
     {
         $w = 1080;
         $h = 1080;
         $img = imagecreatetruecolor($w, $h);
-        imagealphablending($img, true);
-        imagesavealpha($img, true);
 
         for ($y = 0; $y < $h; $y++) {
             $t = $y / max(1, $h - 1);
@@ -123,24 +125,24 @@ class WhatsAppBrandCard
             imageline($img, 0, $y, $w, $y, $color);
         }
 
-        $gold = imagecolorallocatealpha($img, 212, 175, 55, 90);
+        $gold = imagecolorallocate($img, 212, 175, 55);
         imagefilledellipse($img, 120, 180, 280, 280, $gold);
         imagefilledellipse($img, 980, 900, 360, 360, $gold);
 
-        $panel = imagecolorallocatealpha($img, 255, 255, 255, 95);
+        $panel = imagecolorallocate($img, 245, 248, 255);
         imagefilledrectangle($img, 90, 160, $w - 90, $h - 160, $panel);
-        $border = imagecolorallocatealpha($img, 255, 255, 255, 60);
+        $border = imagecolorallocate($img, 200, 210, 230);
         imagerectangle($img, 90, 160, $w - 90, $h - 160, $border);
 
         $this->paintLogo($img, (int) ($w / 2), 360);
 
-        $white = imagecolorallocate($img, 255, 255, 255);
-        $goldSolid = imagecolorallocate($img, 232, 197, 71);
-        $muted = imagecolorallocate($img, 220, 230, 255);
+        $navy = imagecolorallocate($img, 13, 45, 110);
+        $goldSolid = imagecolorallocate($img, 180, 140, 20);
+        $muted = imagecolorallocate($img, 90, 110, 150);
 
         $font = $this->fontPath();
         if ($font) {
-            $this->centerArabic($img, $font, 36, 500, 'MG للصناعات البلاستيكية', $white);
+            $this->centerArabic($img, $font, 36, 500, 'MG للصناعات البلاستيكية', $navy);
             $this->centerArabic($img, $font, 22, 560, 'الجودة الليبية… ثقة السباكين', $goldSolid);
 
             $badgeW = 480;
@@ -150,17 +152,17 @@ class WhatsAppBrandCard
             $badgeBg = imagecolorallocate($img, 13, 45, 110);
             imagefilledrectangle($img, $bx, $by, $bx + $badgeW, $by + $badgeH, $badgeBg);
             imagefilledrectangle($img, $bx, $by, $bx + 10, $by + $badgeH, $goldSolid);
-            $this->centerArabic($img, $font, 26, $by + 50, $badgeAr, $goldSolid);
+            $this->centerArabic($img, $font, 26, $by + 50, $badgeAr, imagecolorallocate($img, 232, 197, 71));
 
-            $this->centerArabic($img, $font, 30, 780, $subtitleAr, $white);
+            $this->centerArabic($img, $font, 30, 780, $subtitleAr, $navy);
             $this->centerArabic($img, $font, 18, 860, 'إشعار رسمي من MG', $muted);
             $this->centerText($img, $font, 16, 920, 'mg-plastic.com', $muted);
         } else {
-            imagestring($img, 5, (int) ($w / 2 - 80), 520, 'MG PLASTIC', $white);
+            imagestring($img, 5, (int) ($w / 2 - 80), 520, 'MG PLASTIC', $navy);
         }
 
         ob_start();
-        imagepng($img, null, 6);
+        imagejpeg($img, null, 85);
         $binary = (string) ob_get_clean();
         imagedestroy($img);
 
@@ -196,7 +198,7 @@ class WhatsAppBrandCard
             'expected' => public_path('images/logo-light.png'),
         ]);
 
-        $ring = imagecolorallocate($canvas, 232, 197, 71);
+        $ring = imagecolorallocate($canvas, 180, 140, 20);
         $fill = imagecolorallocate($canvas, 13, 45, 110);
         imagefilledellipse($canvas, $cx, $cy - 10, 200, 200, $ring);
         imagefilledellipse($canvas, $cx, $cy - 10, 170, 170, $fill);
@@ -216,7 +218,7 @@ class WhatsAppBrandCard
     {
         try {
             $arabic = new Arabic;
-            // Connected glyphs + force RTL presentation for GD imagettftext
+
             return $arabic->utf8Glyphs($text, 120, false, true);
         } catch (\Throwable $e) {
             Log::warning('[WhatsAppBrandCard] arabic shape failed', ['error' => $e->getMessage()]);
@@ -261,7 +263,6 @@ class WhatsAppBrandCard
     {
         $relative = ltrim($relative, '/');
         $base = rtrim((string) config('app.url'), '/');
-        // Prefer APP_URL + /storage/... (works with php artisan storage:link)
         $url = $base.'/storage/'.$relative;
 
         if ($this->urlLooksLocal($url)) {

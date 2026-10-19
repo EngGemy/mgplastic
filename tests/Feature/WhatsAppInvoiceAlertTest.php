@@ -68,9 +68,12 @@ class WhatsAppInvoiceAlertTest extends TestCase
 
             return str_contains($caption, 'فاتورة جديدة')
                 && str_contains($caption, 'OUT-55')
+                && str_contains($caption, '*MG للصناعات البلاستيكية*')
+                && str_contains($caption, 'شكرًا لتعاملكم مع')
                 && str_starts_with($caption, "\u{200F}")
                 && filled($file['data'] ?? null)
-                && ($file['mimetype'] ?? '') === 'image/png'
+                && ($file['mimetype'] ?? '') === 'image/jpeg'
+                && str_ends_with(strtolower((string) ($file['filename'] ?? '')), '.jpg')
                 && in_array($request['chatId'] ?? '', [
                     '218912002002@c.us',
                     '218912002001@c.us',
@@ -99,15 +102,19 @@ class WhatsAppInvoiceAlertTest extends TestCase
             '0912002002',
             "MG للصناعات البلاستيكية\nاختبار",
             [
-                'base64' => base64_encode('fakepng'),
-                'mimetype' => 'image/png',
-                'filename' => 'x.png',
-                'url' => 'http://localhost/storage/x.png',
+                'base64' => base64_encode('fakejpeg'),
+                'mimetype' => 'image/jpeg',
+                'filename' => 'x.jpg',
+                // Local URL must be skipped — only base64 attempt, then text fallback
+                'url' => 'http://localhost/storage/x.jpg',
             ]
         );
 
         $this->assertTrue($ok);
-        Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendImage'));
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendImage')
+            && ($r['file']['mimetype'] ?? '') === 'image/jpeg'
+            && filled($r['file']['data'] ?? null)
+            && ! isset($r['file']['url']));
         Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendText')
             && str_starts_with($r['text'] ?? '', "\u{200F}"));
     }

@@ -262,7 +262,12 @@ class WhatsAppNotifier
     }
 
     /**
-     * Prefer base64 (WAHA often cannot fetch localhost APP_URL). Fall back to file.url.
+     * Prefer JPEG base64 (WhatsApp/WAHA best path). Skip localhost URLs — remote WAHA cannot fetch them.
+     *
+     * Root causes of past sendImage failures:
+     * 1) PNG cards — WhatsApp works best with JPEG (mimetype image/jpeg + .jpg).
+     * 2) file.url pointing at APP_URL localhost/.test — WAHA server cannot reach it.
+     * 3) Missing file.data — empty payload.
      *
      * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string,path?:string}  $image
      */
@@ -275,15 +280,25 @@ class WhatsAppNotifier
         $attempts = [];
 
         if (is_array($image) && filled($image['base64'] ?? null)) {
+            $mimetype = (string) ($image['mimetype'] ?? 'image/jpeg');
+            $filename = (string) ($image['filename'] ?? 'mg-card.jpg');
+            // Normalize legacy PNG assets to JPEG naming if caller still passes png
+            if ($mimetype === 'image/png' || str_ends_with(strtolower($filename), '.png')) {
+                Log::warning('[WhatsAppNotifier] sendImage received PNG — WhatsApp prefers JPEG; sending as-is may fail', [
+                    'mimetype' => $mimetype,
+                    'filename' => $filename,
+                ]);
+            }
+
             $attempts[] = [
-                'mode' => 'base64',
+                'mode' => 'base64-jpeg',
                 'payload' => [
                     'session' => $session,
                     'chatId' => $chatId,
                     'caption' => $caption,
                     'file' => [
-                        'mimetype' => (string) ($image['mimetype'] ?? 'image/png'),
-                        'filename' => (string) ($image['filename'] ?? 'mg-card.png'),
+                        'mimetype' => $mimetype !== '' ? $mimetype : 'image/jpeg',
+                        'filename' => $filename !== '' ? $filename : 'mg-card.jpg',
                         'data' => (string) $image['base64'],
                     ],
                 ],
@@ -292,22 +307,34 @@ class WhatsAppNotifier
 
         $url = is_array($image) ? ($image['url'] ?? null) : $image;
         if (filled($url)) {
-            $attempts[] = [
-                'mode' => 'url',
-                'payload' => [
-                    'session' => $session,
-                    'chatId' => $chatId,
-                    'caption' => $caption,
-                    'file' => [
-                        'url' => (string) $url,
+            if ($this->urlLooksLocal((string) $url)) {
+                Log::warning('[WhatsAppNotifier] skipping sendImage url attempt — host is local/unreachable from WAHA', [
+                    'phone' => $phone,
+                    'url' => (string) $url,
+                    'hint' => 'Use base64 (file.data). APP_URL localhost/.test is not fetchable by remote WAHA.',
+                ]);
+            } else {
+                $attempts[] = [
+                    'mode' => 'url',
+                    'payload' => [
+                        'session' => $session,
+                        'chatId' => $chatId,
+                        'caption' => $caption,
+                        'file' => [
+                            'mimetype' => 'image/jpeg',
+                            'filename' => 'mg-card.jpg',
+                            'url' => (string) $url,
+                        ],
                     ],
-                ],
-            ];
+                ];
+            }
         }
 
         if ($attempts === []) {
-            Log::error('[WhatsAppNotifier] sendImage aborted — no base64 and no url', [
+            Log::error('[WhatsAppNotifier] sendImage aborted — no usable base64/url', [
                 'phone' => $phone,
+                'had_base64' => is_array($image) && filled($image['base64'] ?? null),
+                'had_url' => filled($url),
             ]);
 
             return false;
@@ -319,13 +346,28 @@ class WhatsAppNotifier
                 Log::info('[WhatsAppNotifier] sendImage ok', [
                     'phone' => $phone,
                     'mode' => $attempt['mode'],
+                    'mimetype' => $attempt['payload']['file']['mimetype'] ?? null,
                 ]);
 
                 return true;
             }
         }
 
+        Log::error('[WhatsAppNotifier] sendImage all attempts failed — will fall back to sendText', [
+            'phone' => $phone,
+            'modes' => array_column($attempts, 'mode'),
+        ]);
+
         return false;
+    }
+
+    protected function urlLooksLocal(string $url): bool
+    {
+        $host = parse_url($url, PHP_URL_HOST) ?: '';
+
+        return in_array(strtolower($host), ['localhost', '127.0.0.1', '::1'], true)
+            || str_ends_with(strtolower($host), '.test')
+            || str_ends_with(strtolower($host), '.local');
     }
 
     protected function hasImagePayload(mixed $image): bool

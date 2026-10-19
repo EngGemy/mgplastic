@@ -3,15 +3,30 @@
 namespace App\Support;
 
 /**
- * Premium Arabic WhatsApp captions.
- * Every non-empty line is prefixed with RLM (U+200F) so mixed Latin/Arabic
- * (e.g. "MG للصناعات البلاستيكية") keeps correct RTL order.
+ * Meta-style WhatsApp templates (header / body / footer).
+ * Every non-empty line is prefixed with RLM (U+200F) for stable RTL.
  */
 class WhatsAppMessage
 {
     public const RLM = "\u{200F}";
 
     public const COMPANY = 'MG للصناعات البلاستيكية';
+
+    public const ICON_INVOICE = '🧾';
+
+    public const ICON_ORDER = '📦';
+
+    public const ICON_RETURN = '↩️';
+
+    public const ICON_OTP = '🔐';
+
+    public const ICON_POINTS = '⭐';
+
+    public const ICON_WELCOME = '🎉';
+
+    public const ICON_STATUS = '🔔';
+
+    public const ICON_WITHDRAWAL = '💰';
 
     /** @var list<string> */
     protected array $lines = [];
@@ -21,21 +36,15 @@ class WhatsAppMessage
         return new self;
     }
 
-    /** Prefix a single line with RLM (idempotent). */
     public static function rtl(string $line): string
     {
         if ($line === '') {
             return '';
         }
 
-        if (str_starts_with($line, self::RLM)) {
-            return $line;
-        }
-
-        return self::RLM.$line;
+        return str_starts_with($line, self::RLM) ? $line : self::RLM.$line;
     }
 
-    /** Apply RLM to every non-empty line of a multi-line string. */
     public static function rtlBlock(string $text): string
     {
         $parts = preg_split("/\r\n|\n|\r/", $text) ?: [];
@@ -46,12 +55,12 @@ class WhatsAppMessage
         ));
     }
 
-    public function brandHeader(string $emoji = '🏭'): self
+    /** Meta-like header: bold company + separator. */
+    public function header(string $eventIcon = ''): self
     {
-        $this->lines[] = '╔══════════════════════╗';
-        $this->lines[] = "║  {$emoji} *".self::COMPANY.'*';
-        $this->lines[] = '║  _الجودة الليبية… ثقة السباكين_';
-        $this->lines[] = '╚══════════════════════╝';
+        $prefix = $eventIcon !== '' ? "{$eventIcon} " : '';
+        $this->lines[] = $prefix.'*'.self::COMPANY.'*';
+        $this->lines[] = '━━━━━━━━━━━━━━━━';
 
         return $this;
     }
@@ -59,19 +68,18 @@ class WhatsAppMessage
     public function greet(?string $name = null): self
     {
         $name = trim((string) $name);
-        $this->lines[] = '';
-        $this->lines[] = $name !== ''
-            ? "✨ أهلاً *{$name}*"
-            : '✨ أهلاً بك في عائلة MG';
+        if ($name !== '') {
+            $this->lines[] = "أهلاً *{$name}*،";
+        }
 
         return $this;
     }
 
-    public function title(string $title, string $emoji = '✨'): self
+    public function event(string $icon, string $title): self
     {
         $this->lines[] = '';
-        $this->lines[] = "{$emoji} *{$title}*";
-        $this->lines[] = '────────────────────';
+        $this->lines[] = "{$icon} *{$title}*";
+        $this->lines[] = '';
 
         return $this;
     }
@@ -83,10 +91,11 @@ class WhatsAppMessage
         return $this;
     }
 
-    public function kv(string $label, string|int|float|null $value): self
+    /** Body row — label + bold value (Meta template body params). */
+    public function param(string $label, string|int|float|null $value): self
     {
         $value = $value === null || $value === '' ? '—' : (string) $value;
-        $this->lines[] = "🔹 *{$label}:* {$value}";
+        $this->lines[] = "{$label}: *{$value}*";
 
         return $this;
     }
@@ -94,22 +103,20 @@ class WhatsAppMessage
     /**
      * @param  list<string>  $items
      */
-    public function bulletList(string $heading, array $items, int $limit = 8): self
+    public function items(string $heading, array $items, int $limit = 8): self
     {
         if ($items === []) {
             return $this;
         }
 
         $this->lines[] = '';
-        $this->lines[] = "📦 *{$heading}*";
-        $shown = array_slice($items, 0, $limit);
-        foreach ($shown as $i => $item) {
-            $n = $i + 1;
-            $this->lines[] = "   {$n}. {$item}";
+        $this->lines[] = "*{$heading}*";
+        foreach (array_slice($items, 0, $limit) as $i => $item) {
+            $this->lines[] = ($i + 1).'. '.$item;
         }
-        $extra = count($items) - count($shown);
+        $extra = count($items) - min(count($items), $limit);
         if ($extra > 0) {
-            $this->lines[] = "   … و*{$extra}* أصناف أخرى";
+            $this->lines[] = "… و*{$extra}* أخرى";
         }
 
         return $this;
@@ -122,44 +129,50 @@ class WhatsAppMessage
         }
 
         $this->lines[] = '';
-        $this->lines[] = "🔗 *{$label}*";
-        // URLs stay LTR — still prefix RLM so the label line stays RTL in context
+        $this->lines[] = "*{$label}*";
         $this->lines[] = $url;
 
         return $this;
     }
 
-    public function appLinks(): self
+    public function appLink(): self
     {
         $app = trim((string) (
             config('services.waha.app_url')
             ?: config('portal.plumber_app_url')
-            ?: config('app.url')
+            ?: ''
         ));
 
-        if ($app !== '') {
-            $this->lines[] = '';
-            $this->lines[] = '📱 *حمّل / افتح تطبيق MG*';
-            $this->lines[] = $app;
+        if ($app === '') {
+            return $this;
         }
+
+        $this->lines[] = '';
+        $this->lines[] = '📱 *التطبيق*';
+        $this->lines[] = $app;
 
         return $this;
     }
 
     public function footer(): self
     {
-        $settings = \App\Models\WebsiteSetting::instance();
-        $support = trim((string) ($settings->contact_whatsapp ?: $settings->contact_phone));
-
         $this->lines[] = '';
-        $this->lines[] = '════════════════════';
-        $this->lines[] = '💙 *شكراً لثقتك في '.self::COMPANY.'*';
-        if ($support !== '') {
-            $this->lines[] = "💬 خدمة العملاء: {$support}";
-        }
-        $this->lines[] = '_نحن معك في كل خطوة_';
+        $this->lines[] = '━━━━━━━━━━━━━━━━';
+        $this->lines[] = 'شكرًا لتعاملكم مع *'.self::COMPANY.'*';
+        $this->appLink();
 
         return $this;
+    }
+
+    /** Short Meta-style OTP (text only, no image). */
+    public static function otp(string $code): string
+    {
+        return self::make()
+            ->header(self::ICON_OTP)
+            ->line("رمز التحقق: *{$code}*")
+            ->line('صالح *5* دقائق — لا تشاركه.')
+            ->footer()
+            ->toString();
     }
 
     public function toString(): string

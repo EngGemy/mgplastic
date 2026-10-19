@@ -12,11 +12,10 @@ use App\Support\InvoiceReturnStatus;
 use App\Support\OrderStatus;
 use App\Support\WhatsAppMessage;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
 /**
- * Creative Arabic WhatsApp alerts (text + optional image) via WhatsAppNotifier.
+ * Meta-style WhatsApp alerts (caption + optional brand JPEG) via WhatsAppNotifier.
  */
 class WhatsAppBusinessAlerts
 {
@@ -35,23 +34,23 @@ class WhatsAppBusinessAlerts
         };
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('🎉')
+            ->header(WhatsAppMessage::ICON_WELCOME)
             ->greet($user->brand_name ?: $user->name)
-            ->title('مرحباً بك في عائلة MG', '🌟')
-            ->line('')
-            ->line("سعداء بانضمامك معنا كـ *{$role}*.")
-            ->line('من التطبيق تتابع طلباتك وفواتيرك ونقاطك لحظة بلحظة.');
+            ->event(WhatsAppMessage::ICON_WELCOME, 'مرحبًا بك في عائلة MG')
+            ->line("تم تسجيلك كـ *{$role}*.")
+            ->line('تابع طلباتك وفواتيرك ونقاطك من التطبيق.');
 
         if (filled($user->network_code)) {
-            $msg->kv('رقم شبكتك', $user->network_code);
+            $msg->param('رقم الشبكة', $user->network_code);
         }
 
-        $msg->appLinks()->footer();
+        $msg->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$user->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('welcome', 'مرحباً بك في عائلة MG')
+            'welcome',
+            'مرحبًا بك'
         );
     }
 
@@ -63,7 +62,6 @@ class WhatsAppBusinessAlerts
             'plumber',
             'issuer',
             'items.product.translations',
-            'items.product.images',
         ]);
 
         $buyer = $this->invoiceBuyer($invoice);
@@ -84,28 +82,28 @@ class WhatsAppBusinessAlerts
             $qty = (int) $item->quantity;
             $pts = (int) $item->total_points;
 
-            return "{$name} × {$qty}".($pts > 0 ? " — {$pts} نقطة" : '');
+            return "{$name} × *{$qty}*".($pts > 0 ? " — *{$pts}* نقطة" : '');
         })->filter()->values()->all();
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('🧾')
+            ->header(WhatsAppMessage::ICON_INVOICE)
             ->greet($buyerName)
-            ->title("فاتورة جديدة ({$flow})", '✅')
-            ->kv('رقم الفاتورة', $number)
-            ->kv('من', $sellerName)
-            ->kv('إلى', $buyerName)
-            ->kv('النقاط', number_format($points))
-            ->kv('الإجمالي', $totalMoney)
-            ->kv('التاريخ', $date)
-            ->bulletList('بنود الفاتورة', $lineItems)
-            ->link('عرض الفاتورة كاملة', $this->invoiceShareUrl($invoice))
-            ->appLinks()
+            ->event(WhatsAppMessage::ICON_INVOICE, "فاتورة جديدة ({$flow})")
+            ->param('رقم الفاتورة', $number)
+            ->param('من', $sellerName)
+            ->param('إلى', $buyerName)
+            ->param('النقاط', number_format($points))
+            ->param('الإجمالي', $totalMoney)
+            ->param('التاريخ', $date)
+            ->items('بنود الفاتورة', $lineItems)
+            ->link('عرض الفاتورة', $this->invoiceShareUrl($invoice))
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$buyer?->phone, $seller?->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('invoice', 'فاتورة '.$number)
+            'invoice',
+            'فاتورة '.$number
         );
     }
 
@@ -140,27 +138,27 @@ class WhatsAppBusinessAlerts
                 ? localized_name($product, 'name', 'صنف')
                 : 'صنف';
 
-            return "{$name} × ".(int) $di->quantity;
+            return "{$name} × *".(int) $di->quantity.'*';
         })->all();
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('🚚')
+            ->header(WhatsAppMessage::ICON_ORDER)
             ->greet($to)
-            ->title("تأكيد توريد ({$tierLabel})", '📦')
-            ->kv('الفاتورة', $invoiceNo)
-            ->kv('من', $from)
-            ->kv('إلى', $to)
-            ->kv('الكمية', $qty)
-            ->kv('النقاط', number_format($points))
-            ->bulletList('الأصناف', $lineItems)
+            ->event(WhatsAppMessage::ICON_ORDER, "تأكيد توريد ({$tierLabel})")
+            ->param('الفاتورة', $invoiceNo)
+            ->param('من', $from)
+            ->param('إلى', $to)
+            ->param('الكمية', $qty)
+            ->param('النقاط', number_format($points))
+            ->items('الأصناف', $lineItems)
             ->link('عرض الفاتورة', $distribution->invoice ? $this->invoiceShareUrl($distribution->invoice) : null)
-            ->appLinks()
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$distribution->toUser?->phone, $distribution->fromUser?->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('invoice', 'تأكيد توريد')
+            'invoice',
+            'تأكيد توريد'
         );
     }
 
@@ -177,49 +175,45 @@ class WhatsAppBusinessAlerts
             ?: ($distribution->invoice_id ? '#'.$distribution->invoice_id : '—');
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('⭐')
+            ->header(WhatsAppMessage::ICON_POINTS)
             ->greet($plumber?->name)
-            ->title('تم إضافة نقاط لحسابك', '🎉')
-            ->kv('النقاط', number_format($points))
-            ->kv('من', $from)
-            ->kv('الفاتورة', $invoiceNo)
-            ->line('')
-            ->line('تابع رصيدك وسحوباتك من التطبيق.')
+            ->event(WhatsAppMessage::ICON_POINTS, 'تم إضافة نقاط')
+            ->param('النقاط', number_format($points))
+            ->param('من', $from)
+            ->param('الفاتورة', $invoiceNo)
             ->link('عرض الفاتورة', $distribution->invoice ? $this->invoiceShareUrl($distribution->invoice) : null)
-            ->appLinks()
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$plumber?->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('points', number_format($points).' نقطة')
+            'points',
+            number_format($points).' نقطة'
         );
     }
 
     public function plumberSale(User $plumber, User $retailTrader, int $totalPoints, int $lineCount): void
     {
         $msg = WhatsAppMessage::make()
-            ->brandHeader('🛠️')
+            ->header(WhatsAppMessage::ICON_POINTS)
             ->greet($plumber->name)
-            ->title('توريد بضاعة لحسابك', '✅')
-            ->kv('من', $retailTrader->name)
-            ->kv('عدد الأصناف', $lineCount)
-            ->kv('النقاط', number_format($totalPoints))
-            ->line('')
-            ->line('افتح التطبيق لمتابعة رصيدك وتفاصيل التوريد.')
-            ->appLinks()
+            ->event(WhatsAppMessage::ICON_POINTS, 'توريد بضاعة لحسابك')
+            ->param('من', $retailTrader->name)
+            ->param('الأصناف', $lineCount)
+            ->param('النقاط', number_format($totalPoints))
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$plumber->phone, $retailTrader->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('points', 'توريد بضاعة')
+            'points',
+            'توريد بضاعة'
         );
     }
 
     public function orderCreated(Order $order): void
     {
-        $order->loadMissing(['requester', 'supplier', 'items.product.translations', 'items.product.images']);
+        $order->loadMissing(['requester', 'supplier', 'items']);
         $customer = $order->requester;
         $supplier = $order->supplier;
         $number = $order->order_number ?: '#'.$order->id;
@@ -228,54 +222,54 @@ class WhatsAppBusinessAlerts
             $name = $item->name_snapshot
                 ?: ($item->product ? localized_name($item->product, 'name', 'صنف') : 'صنف');
 
-            return "{$name} × ".(int) $item->quantity;
+            return "{$name} × *".(int) $item->quantity.'*';
         })->all();
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('🛒')
+            ->header(WhatsAppMessage::ICON_ORDER)
             ->greet($customer?->name)
-            ->title('طلبية جديدة', '🆕')
-            ->kv('رقم الطلب', $number)
-            ->kv('الحالة', OrderStatus::label($order->status))
-            ->kv('الإجمالي', (int) $order->total_points.' نقطة')
-            ->kv('العميل', $customer?->name ?: '—');
+            ->event(WhatsAppMessage::ICON_ORDER, 'طلبية جديدة')
+            ->param('رقم الطلب', $number)
+            ->param('الحالة', OrderStatus::label($order->status))
+            ->param('الإجمالي', (int) $order->total_points.' نقطة')
+            ->param('العميل', $customer?->name ?: '—');
 
         if ($supplier?->name) {
-            $msg->kv('المورّد', $supplier->name);
+            $msg->param('المورّد', $supplier->name);
         }
 
-        $msg->bulletList('الأصناف', $lineItems)
+        $msg->items('الأصناف', $lineItems)
             ->link('تفاصيل الطلب', $this->orderShareUrl($order))
-            ->appLinks()
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$customer?->phone, $supplier?->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('order', 'طلب '.$number)
+            'order',
+            'طلب '.$number
         );
     }
 
     public function orderStatusChanged(Order $order, string $from, string $to): void
     {
-        $order->loadMissing(['requester', 'supplier', 'items']);
+        $order->loadMissing(['requester', 'supplier']);
         $number = $order->order_number ?: '#'.$order->id;
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('🔄')
+            ->header(WhatsAppMessage::ICON_STATUS)
             ->greet($order->requester?->name)
-            ->title('تحديث حالة الطلب', '📌')
-            ->kv('رقم الطلب', $number)
-            ->kv('من', OrderStatus::label($from))
-            ->kv('إلى', OrderStatus::label($to))
+            ->event(WhatsAppMessage::ICON_STATUS, 'تحديث حالة الطلب')
+            ->param('رقم الطلب', $number)
+            ->param('من', OrderStatus::label($from))
+            ->param('إلى', OrderStatus::label($to))
             ->link('تفاصيل الطلب', $this->orderShareUrl($order))
-            ->appLinks()
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$order->requester?->phone, $order->supplier?->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('status', OrderStatus::label($to))
+            'status',
+            OrderStatus::label($to)
         );
     }
 
@@ -291,26 +285,26 @@ class WhatsAppBusinessAlerts
                 ? localized_name($item->product, 'name', 'صنف')
                 : 'صنف';
 
-            return "{$name} × ".(int) $item->quantity;
+            return "{$name} × *".(int) $item->quantity.'*';
         })->all();
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('↩️')
+            ->header(WhatsAppMessage::ICON_RETURN)
             ->greet($return->fromUser?->name)
-            ->title('طلب مرتجع جديد', '⚠️')
-            ->kv('رقم المرتجع', $number)
-            ->kv('الفاتورة', $invoiceRef)
-            ->kv('القيمة', (int) $return->total_points.' نقطة / '.(int) $return->total_quantity.' وحدة')
-            ->kv('السبب', trim((string) ($return->note ?: '—')))
-            ->bulletList('بنود المرتجع', $lineItems)
+            ->event(WhatsAppMessage::ICON_RETURN, 'طلب مرتجع جديد')
+            ->param('رقم المرتجع', $number)
+            ->param('الفاتورة', $invoiceRef)
+            ->param('القيمة', (int) $return->total_points.' نقطة / '.(int) $return->total_quantity.' وحدة')
+            ->param('السبب', trim((string) ($return->note ?: '—')))
+            ->items('بنود المرتجع', $lineItems)
             ->link('عرض الفاتورة', $return->invoice ? $this->invoiceShareUrl($return->invoice) : null)
-            ->appLinks()
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$return->fromUser?->phone, $return->toUser?->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('return', 'طلب مرتجع')
+            'return',
+            'طلب مرتجع'
         );
     }
 
@@ -320,20 +314,20 @@ class WhatsAppBusinessAlerts
         $number = $return->return_number ?: '#'.$return->id;
 
         $msg = WhatsAppMessage::make()
-            ->brandHeader('📋')
+            ->header(WhatsAppMessage::ICON_RETURN)
             ->greet($return->fromUser?->name)
-            ->title('تحديث حالة المرتجع', '🔔')
-            ->kv('رقم المرتجع', $number)
-            ->kv('من', InvoiceReturnStatus::label($from))
-            ->kv('إلى', InvoiceReturnStatus::label($to))
+            ->event(WhatsAppMessage::ICON_RETURN, 'تحديث حالة المرتجع')
+            ->param('رقم المرتجع', $number)
+            ->param('من', InvoiceReturnStatus::label($from))
+            ->param('إلى', InvoiceReturnStatus::label($to))
             ->link('عرض الفاتورة', $return->invoice ? $this->invoiceShareUrl($return->invoice) : null)
-            ->appLinks()
             ->footer();
 
-        $this->whatsapp->notifyUsersAndAdmins(
+        $this->fanOut(
             array_filter([$return->fromUser?->phone, $return->toUser?->phone]),
             $msg->toString(),
-            $this->brandCard->assetFor('return', InvoiceReturnStatus::label($to))
+            'return',
+            InvoiceReturnStatus::label($to)
         );
     }
 
@@ -341,30 +335,49 @@ class WhatsAppBusinessAlerts
     {
         $withdrawal->loadMissing(['plumber']);
         $msg = WhatsAppMessage::make()
-            ->brandHeader('💰')
-            ->title('طلب سحب جديد', '⏳')
-            ->kv('السباك', $withdrawal->plumber?->name ?: '—')
-            ->kv('المبلغ', $withdrawal->formattedAmount())
-            ->kv('الحالة', $withdrawal->statusLabel())
+            ->header(WhatsAppMessage::ICON_WITHDRAWAL)
+            ->event(WhatsAppMessage::ICON_WITHDRAWAL, 'طلب سحب جديد')
+            ->param('السباك', $withdrawal->plumber?->name ?: '—')
+            ->param('المبلغ', $withdrawal->formattedAmount())
+            ->param('الحالة', $withdrawal->statusLabel())
             ->footer();
 
-        $this->whatsapp->notifyAdmins($msg->toString());
+        $this->whatsapp->notifyAdmins(
+            $msg->toString(),
+            $this->brandCard->assetFor('withdrawal', 'طلب سحب')
+        );
     }
 
     public function withdrawalStatusChanged(WithdrawalRequest $withdrawal, string $from, string $to): void
     {
         $withdrawal->loadMissing(['plumber']);
         $msg = WhatsAppMessage::make()
-            ->brandHeader('💰')
+            ->header(WhatsAppMessage::ICON_WITHDRAWAL)
             ->greet($withdrawal->plumber?->name)
-            ->title('تحديث طلب السحب', '🔔')
-            ->kv('المبلغ', $withdrawal->formattedAmount())
-            ->kv('من', $from)
-            ->kv('إلى', $withdrawal->statusLabel())
-            ->appLinks()
+            ->event(WhatsAppMessage::ICON_WITHDRAWAL, 'تحديث طلب السحب')
+            ->param('المبلغ', $withdrawal->formattedAmount())
+            ->param('من', $from)
+            ->param('إلى', $withdrawal->statusLabel())
             ->footer();
 
-        $this->whatsapp->notifyUserAndAdmins($withdrawal->plumber?->phone, $msg->toString());
+        $this->fanOut(
+            array_filter([$withdrawal->plumber?->phone]),
+            $msg->toString(),
+            'withdrawal',
+            $withdrawal->statusLabel()
+        );
+    }
+
+    /**
+     * @param  list<string|null>  $phones
+     */
+    protected function fanOut(array $phones, string $caption, string $scene, string $subtitle): void
+    {
+        $this->whatsapp->notifyUsersAndAdmins(
+            $phones,
+            $caption,
+            $this->brandCard->assetFor($scene, $subtitle)
+        );
     }
 
     protected function invoiceBuyer(Invoice $invoice): ?User
@@ -412,74 +425,6 @@ class WhatsAppBusinessAlerts
             Log::warning('[WhatsApp] order share URL failed', ['error' => $e->getMessage()]);
 
             return null;
-        }
-    }
-
-    protected function firstProductImageUrl(Invoice $invoice): ?string
-    {
-        foreach ($invoice->items as $item) {
-            $product = $item->product;
-            if (! $product) {
-                continue;
-            }
-            $path = $product->catalog_image_path
-                ?? $product->main_image
-                ?? $product->images->sortBy('sort')->first()?->image;
-            if ($url = $this->publicStorageUrl($path)) {
-                return $url;
-            }
-            if (filled($product->display_image_url)) {
-                return $product->display_image_url;
-            }
-        }
-
-        return null;
-    }
-
-    protected function firstOrderImageUrl(Order $order): ?string
-    {
-        foreach ($order->items as $item) {
-            $product = $item->product;
-            if (! $product) {
-                continue;
-            }
-            $path = $product->catalog_image_path
-                ?? $product->main_image
-                ?? $product->images->sortBy('sort')->first()?->image;
-            if ($url = $this->publicStorageUrl($path)) {
-                return $url;
-            }
-        }
-
-        return null;
-    }
-
-    protected function brandImageUrl(): ?string
-    {
-        $configured = trim((string) config('services.waha.brand_image_url', ''));
-        if ($configured !== '') {
-            return $configured;
-        }
-
-        $path = trim((string) config('services.waha.brand_image_path', ''));
-
-        return $this->publicStorageUrl($path !== '' ? $path : null);
-    }
-
-    protected function publicStorageUrl(?string $path): ?string
-    {
-        if (! filled($path)) {
-            return null;
-        }
-
-        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-            return $path;
-        }
-
-        try {
-            return Storage::disk('public')->url(ltrim($path, '/'));
-        } catch (\Throwable) {
-            return asset('storage/'.ltrim($path, '/'));
         }
     }
 }

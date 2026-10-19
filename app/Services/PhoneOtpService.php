@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Support\ArabicWait;
+use App\Support\WhatsAppMessage;
 use App\Traits\SendsMarsolSmsOtp;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
@@ -50,16 +51,8 @@ class PhoneOtpService
 
         $otp = (string) random_int(100000, 999999);
         $expiresAt = Carbon::now()->addMinutes(5);
-        // Fast text-only OTP (no brand card image). RLM applied inside WhatsAppNotifier::send.
-        $text = "╔══════════════════════╗\n"
-            ."║  🏭 *MG للصناعات البلاستيكية*\n"
-            ."╚══════════════════════╝\n\n"
-            ."🔐 *رمز التحقق الآمن*\n"
-            ."────────────────────\n"
-            ."رمزك: *{$otp}*\n"
-            ."⏱ صالح لمدة *5 دقائق فقط*\n"
-            ."⚠️ لا تشاركه مع أي شخص.\n\n"
-            ."💙 _فريق MG يحمي حسابك_";
+        // Meta-style short OTP — text only (no brand card). RLM inside WhatsAppNotifier::send.
+        $text = WhatsAppMessage::otp($otp);
 
         $whatsappOk = false;
         $smsOk = false;
