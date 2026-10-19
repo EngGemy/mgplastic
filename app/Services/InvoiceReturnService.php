@@ -31,11 +31,12 @@ class InvoiceReturnService
             throw new \DomainException('لا يمكن عمل مرتجع إلا على توزيع مؤكّد أو تم صرف نقاطه');
         }
 
-        if (! in_array((int) $distribution->tier, [2, 3], true)) {
-            throw new \DomainException('المرتجعات متاحة فقط لتوزيعات الجملة→قطاعي أو القطاعي→سباك — مرتجع المصنع غير مدعوم من هذا المسار');
+        if (! in_array((int) $distribution->tier, [1, 2, 3], true)) {
+            throw new \DomainException('المرتجعات متاحة لتوزيعات المصنع→جملة أو الجملة→قطاعي أو القطاعي→سباك');
         }
 
-        $this->assertNotWarehouseToWholesaleSupply($distribution);
+        // Warehouse→wholesale: buyer (wholesale) may request return; upper party cannot invent one.
+        $this->assertNotWarehouseToWholesaleSupply($distribution, $actor);
         $this->assertActorCanReturn($distribution, $actor);
 
         $prepared = $this->prepareLines($distribution, $lines);
@@ -121,7 +122,7 @@ class InvoiceReturnService
         }
 
         $distribution->loadMissing(['items.invoiceItem.product', 'fromUser', 'toUser']);
-        $this->assertNotWarehouseToWholesaleSupply($distribution);
+        $this->assertNotWarehouseToWholesaleSupply($distribution, $actor);
 
         return DB::transaction(function () use ($return, $actor, $note, $distribution) {
             $lockedReturn = InvoiceReturn::query()
@@ -437,7 +438,7 @@ class InvoiceReturnService
                 ];
             }
 
-            $this->assertNotWarehouseToWholesaleSupply($distribution);
+            $this->assertNotWarehouseToWholesaleSupply($distribution, $actor);
 
             if ($this->returnableLines($distribution) === []) {
                 return [
@@ -466,22 +467,38 @@ class InvoiceReturnService
     }
 
     /**
-     * Warehouse→wholesale fulfilment burns warehouse slots AND remints a separate incoming
-     * invoice for the buyer. Approving a tier-2 return only restores warehouse stock and
-     * leaves the reminted buyer stock → network inflation. Block until a full reverse exists.
+     * Warehouse→wholesale: only the buyer (wholesale / lower party) may open a return.
+     * Upper party inventing a return is still blocked by assertActorCanReturn.
+     * Factory and central warehouse are treated as one supply pool for the mobile apps.
      */
-    protected function assertNotWarehouseToWholesaleSupply(InvoiceDistribution $distribution): void
+    protected function assertNotWarehouseToWholesaleSupply(InvoiceDistribution $distribution, ?User $actor = null): void
     {
         $distribution->loadMissing(['fromUser', 'toUser']);
 
         $from = $distribution->fromUser;
         $to = $distribution->toUser;
 
-        if ($from?->isCentralWarehouse() && $to?->isWholesaleDistributor()) {
-            throw new \DomainException(
-                'مرتجع توريد المخزن→الجملة غير متاح حالياً — التسليم يُنشئ مخزوناً مستقلاً للمشتري؛ تواصل مع الإدارة لضبط المخزون'
-            );
+        if (! ($from?->isCentralWarehouse() && $to?->isWholesaleDistributor())) {
+            return;
         }
+
+        // Buyer-initiated returns are allowed (فواتيري → مرتجع للمخزن/المصنع).
+        if ($actor && (int) $distribution->to_user_id === (int) $actor->id) {
+            return;
+        }
+
+        if ($actor && (in_array($actor->role, ['super_admin', 'admin'], true) || $actor->isCentralWarehouse())) {
+            return;
+        }
+
+        if ($actor === null) {
+            // Gate without actor: keep preview open so buyer UIs can show can_return after actor check.
+            return;
+        }
+
+        throw new \DomainException(
+            'مرتجع توريد المخزن→الجملة يطلبه تاجر الجملة (المشتري) فقط من فواتيري'
+        );
     }
 
     protected function resolveDocumentInvoice(InvoiceDistribution $distribution): Invoice
@@ -608,6 +625,7 @@ class InvoiceReturnService
 
         throw new \DomainException(
             match ((int) $distribution->tier) {
+                1 => 'طلب مرتجع التوريد من المصنع/المخزن متاح لتاجر الجملة (المشتري) فقط',
                 3 => 'طلب مرتجع البيع للسباك متاح للسباك فقط — لا يمكن لتاجر القطاعي إنشاء مرتجع دون طلب من السباك',
                 2 => 'طلب مرتجع الشراء من الجملة متاح لتاجر القطاعي فقط — لا يمكن لتاجر الجملة إنشاء مرتجع دون طلب من القطاعي',
                 default => 'طلب المرتجع متاح للمستلم (الطرف الأدنى) فقط — الطرف الأعلى ينتظر الطلب ثم يقبله أو يرفضه',

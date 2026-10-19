@@ -19,7 +19,9 @@ use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
 use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
+use App\Http\Controllers\Api\Mobile\ProductCollectionController;
 use App\Http\Controllers\Api\Mobile\ProductPromotionController;
+use App\Http\Controllers\Api\Mobile\PromoBannerController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
 use App\Http\Controllers\Api\Mobile\SettingsController;
 use App\Http\Controllers\Api\Mobile\SuggestController;
@@ -44,10 +46,13 @@ Route::prefix('v1/mobile')->group(function () {
     // ── Public app settings ─────────────────────────────────────
     Route::get('settings', [SettingsController::class, 'app']);
 
-    // أهم الموزعين + دعاية منتجات MG (عامة للتطبيق)
+    // أهم الموزعين + دعاية منتجات MG + مجموعات + بانرات (عامة للتطبيق)
     Route::get('featured-wholesalers', [FeaturedWholesalerController::class, 'index']);
     Route::get('product-promotions', [ProductPromotionController::class, 'index']);
     Route::get('product-promotions/{promotion}', [ProductPromotionController::class, 'show'])->whereNumber('promotion');
+    Route::get('product-collections', [ProductCollectionController::class, 'index']);
+    Route::get('product-collections/{collection}', [ProductCollectionController::class, 'show']);
+    Route::get('promo-banners', [PromoBannerController::class, 'index']);
 
     // Wallet visibility — apps read this to hide/show the wallet UI
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);
@@ -222,6 +227,7 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('distributions/{distribution}/return-preview', [TraderInvoiceReturnController::class, 'previewDistribution']);
         Route::post('distributions/{distribution}/returns', [TraderInvoiceReturnController::class, 'storeDistribution']);
         Route::get('invoices', [TraderInvoiceReturnController::class, 'invoices']);
+        Route::get('my-invoices', [TraderInvoiceReturnController::class, 'invoices']); // alias فواتيري
         Route::get('invoices/{invoice}/return-preview', [TraderInvoiceReturnController::class, 'previewInvoice']);
         Route::post('invoices/{invoice}/returns', [TraderInvoiceReturnController::class, 'storeInvoice']);
         Route::get('reports', [\App\Http\Controllers\Api\Trader\ReportController::class, 'index']);
@@ -301,14 +307,17 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('order-sources', [DistributorOrderController::class, 'sources']);
         Route::get('warehouses/{warehouse}/stock', [DistributorOrderController::class, 'warehouseStock'])->whereNumber('warehouse');
 
-        // Invoice returns — wholesale→retail outgoing invoices
+        // فواتيري + مرتجعات (مبيعات قطاعي + مشتريات مصنع/مخزن)
         Route::get('returns', [DistributorInvoiceReturnController::class, 'index']);
         Route::get('returns/{return}', [DistributorInvoiceReturnController::class, 'show']);
         Route::post('returns/{return}/approve', [DistributorInvoiceReturnController::class, 'approve']);
         Route::post('returns/{return}/reject', [DistributorInvoiceReturnController::class, 'reject']);
         Route::get('invoices', [DistributorInvoiceReturnController::class, 'invoices']);
+        Route::get('my-invoices', [DistributorInvoiceReturnController::class, 'invoices']); // alias فواتيري
         Route::get('invoices/{invoice}/return-preview', [DistributorInvoiceReturnController::class, 'preview']);
         Route::post('invoices/{invoice}/returns', [DistributorInvoiceReturnController::class, 'store']);
+        Route::get('distributions/{distribution}/return-preview', [DistributorInvoiceReturnController::class, 'previewDistribution'])->whereNumber('distribution');
+        Route::post('distributions/{distribution}/returns', [DistributorInvoiceReturnController::class, 'storeDistribution'])->whereNumber('distribution');
 
         // Period reports
         Route::get('reports', [\App\Http\Controllers\Api\Distributor\ReportController::class, 'index']);

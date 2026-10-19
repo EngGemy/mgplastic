@@ -6,13 +6,16 @@ use App\Http\Controllers\Api\Concerns\HandlesInvoiceReturnApi;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\InvoiceReturnResource;
 use App\Models\Invoice;
+use App\Models\InvoiceDistribution;
 use App\Models\InvoiceReturn;
 use App\Services\InvoiceReturnService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Wholesale distributor: return goods on outgoing wholesale→retail invoices (tier 2).
+ * Wholesale distributor:
+ *  - فواتيري: sales (outgoing) + purchases (incoming from factory/warehouse)
+ *  - approve retail→wholesale returns; request returns on own purchases
  */
 class InvoiceReturnController extends Controller
 {
@@ -32,7 +35,7 @@ class InvoiceReturnController extends Controller
         $status = $request->string('status')->toString();
 
         $returns = InvoiceReturn::query()
-            ->where('tier', 2)
+            ->whereIn('tier', [1, 2])
             ->when($scope === 'incoming' || $scope === 'needs_action', fn ($q) => $q
                 ->where('to_user_id', $user->id)
                 ->when($scope === 'needs_action', fn ($qq) => $qq->where('status', 'pending')))
@@ -74,33 +77,107 @@ class InvoiceReturnController extends Controller
         );
     }
 
-    /** Outgoing wholesale→retail invoices — pick one to return. */
+    /**
+     * فواتيري — مبيعات (صادر للقطاعي) + مشتريات (وارد من المصنع/المخزن).
+     * ?scope=sales|purchases|all (default all)
+     */
     public function invoices(Request $request): JsonResponse
     {
         $user = $request->user();
+        $scope = $request->string('scope')->toString() ?: 'all';
 
-        $invoices = Invoice::query()
-            ->where('invoice_type', 'wholesale_pos')
-            ->where('invoice_flow', 'outgoing')
-            ->where('wholesale_distributor_id', $user->id)
-            ->with([
-                'sourceDistribution.fromUser:id,name,brand_name,phone',
-                'sourceDistribution.toUser:id,name,brand_name,phone',
-                'sourceDistribution.items.invoiceItem.product.translations',
-                'counterparty:id,name,brand_name,phone',
-            ])
-            ->latest()
-            ->limit(100)
-            ->get();
+        $sales = [];
+        $purchases = [];
 
-        $rows = $invoices
-            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'retail_trader', 'to', $user))
-            ->filter()
-            ->values()
-            ->all();
+        if (in_array($scope, ['sales', 'all', ''], true)) {
+            $sales = Invoice::query()
+                ->where('invoice_type', 'wholesale_pos')
+                ->where('invoice_flow', 'outgoing')
+                ->where('wholesale_distributor_id', $user->id)
+                ->with([
+                    'sourceDistribution.fromUser:id,name,brand_name,phone',
+                    'sourceDistribution.toUser:id,name,brand_name,phone',
+                    'sourceDistribution.items.invoiceItem.product.translations',
+                    'counterparty:id,name,brand_name,phone',
+                ])
+                ->latest()
+                ->limit(100)
+                ->get()
+                ->map(function (Invoice $inv) use ($user) {
+                    $row = $this->summarizeInvoiceReturnRow($inv, 'retail_trader', 'to', $user);
+                    if (! $row) {
+                        return null;
+                    }
+                    $row['bucket'] = 'sales';
+                    $row['bucket_label'] = 'مبيعات — قطاعي';
+                    // جملة لا يطلب مرتجع على مبيعاته؛ ينتظر طلب القطاعي
+                    return $row;
+                })
+                ->filter()
+                ->values()
+                ->all();
+        }
 
-        // جملة: قائمة للمراجعة/القبول — طلب المرتجع من القطاعي فقط (can_return=false للجملة)
-        return $this->success(['items' => $rows], 'قائمة فواتير الصادر للجملة→قطاعي');
+        if (in_array($scope, ['purchases', 'all', ''], true)) {
+            $purchases = Invoice::query()
+                ->where('invoice_type', 'wholesale_pos')
+                ->where('invoice_flow', 'incoming')
+                ->where('wholesale_distributor_id', $user->id)
+                ->where('status', 'approved')
+                ->with([
+                    'distributions' => fn ($q) => $q
+                        ->where('tier', 1)
+                        ->where('to_user_id', $user->id)
+                        ->whereIn('status', ['confirmed', 'points_awarded'])
+                        ->with([
+                            'fromUser:id,name,brand_name,phone',
+                            'toUser:id,name,brand_name,phone',
+                            'items.invoiceItem.product.translations',
+                        ]),
+                    'items.product.translations',
+                ])
+                ->latest()
+                ->limit(100)
+                ->get()
+                ->map(function (Invoice $inv) use ($user) {
+                    $dist = $inv->distributions->first();
+                    if (! $dist) {
+                        return [
+                            'id' => (int) $inv->id,
+                            'invoice_id' => (int) $inv->id,
+                            'invoice_number' => $inv->number,
+                            'bucket' => 'purchases',
+                            'bucket_label' => 'مشتريات — مصنع/مخزن',
+                            'source' => 'factory_or_warehouse',
+                            'can_return' => false,
+                            'block_reason' => 'لا يوجد توزيع مؤكّد مرتبط بهذه الفاتورة بعد',
+                            'return_via' => 'distribution',
+                        ];
+                    }
+
+                    $row = $this->summarizeDistributionReturnRow($dist, 'supplier', 'from', $user);
+                    $row['id'] = (int) $inv->id;
+                    $row['invoice_id'] = (int) $inv->id;
+                    $row['invoice_number'] = $inv->number;
+                    $row['distribution_id'] = (int) $dist->id;
+                    $row['bucket'] = 'purchases';
+                    $row['bucket_label'] = 'مشتريات — مصنع/مخزن';
+                    $row['source'] = $dist->fromUser?->isCentralWarehouse() ? 'warehouse' : 'factory';
+                    $row['return_via'] = 'distribution'; // POST …/distributions/{distribution}/returns
+
+                    return $row;
+                })
+                ->values()
+                ->all();
+        }
+
+        return $this->success([
+            'section' => 'فواتيري',
+            'scope' => $scope === '' ? 'all' : $scope,
+            'sales' => $sales,
+            'purchases' => $purchases,
+            'items' => array_values(array_merge($purchases, $sales)),
+        ], 'فواتيري');
     }
 
     public function preview(Request $request, Invoice $invoice): JsonResponse
@@ -109,42 +186,102 @@ class InvoiceReturnController extends Controller
             return $this->error('غير مصرّح بعرض مرتجع هذه الفاتورة', 403);
         }
 
-        $invoice->loadMissing('sourceDistribution.items.invoiceItem.product');
+        $user = $request->user();
+        $invoice->loadMissing([
+            'sourceDistribution.items.invoiceItem.product',
+            'distributions' => fn ($q) => $q
+                ->where('to_user_id', $user->id)
+                ->whereIn('status', ['confirmed', 'points_awarded'])
+                ->with('items.invoiceItem.product'),
+        ]);
+
+        // Purchases (incoming): return via tier-1 distribution to factory/warehouse.
+        if ($invoice->isIncoming()) {
+            $dist = $invoice->distributions->firstWhere('tier', 1)
+                ?? $invoice->distributions->first();
+            if (! $dist) {
+                return $this->error('لا يوجد توزيع مؤكّد لهذه الفاتورة الواردة', 422);
+            }
+
+            return $this->respondReturnPreview($dist, $user);
+        }
 
         if (! $invoice->sourceDistribution) {
             return $this->error('لا يوجد توزيع مرتبط بهذه الفاتورة', 422);
         }
 
         if ((int) $invoice->sourceDistribution->tier !== 2) {
-            return $this->error('مرتجع الجملة متاح على فواتير جملة→قطاعي فقط', 422);
+            return $this->error('مرتجع المبيعات متاح على فواتير جملة→قطاعي فقط', 422);
         }
 
-        return $this->respondReturnPreview($invoice->sourceDistribution, $request->user());
+        return $this->respondReturnPreview($invoice->sourceDistribution, $user);
     }
 
     public function store(Request $request, Invoice $invoice): JsonResponse
     {
         $user = $request->user();
 
-        // Wholesale is the upper party — may approve incoming returns, never open one for retail.
-        if ($user && ! $user->isCentralWarehouse() && ! in_array($user->role, ['super_admin', 'admin'], true)) {
-            return $this->error(
-                'لا يمكن لتاجر الجملة إنشاء مرتجع على فاتورة القطاعي — الطلب من تاجر القطاعي فقط ثم تقبله من قائمة المرتجعات الواردة',
-                403,
-            );
-        }
-
         if (! $this->actorOwnsInvoice($invoice, $user)) {
             return $this->error('غير مصرّح بعمل مرتجع على هذه الفاتورة', 403);
         }
 
-        $invoice->loadMissing('sourceDistribution');
-        if ($invoice->sourceDistribution
-            && ! $this->returns()->actorCanRequestReturn($invoice->sourceDistribution, $user)) {
-            return $this->error(
-                'طلب المرتجع متاح لتاجر القطاعي فقط — تاجر الجملة ينتظر الطلب ثم يقبله أو يرفضه',
-                403,
+        $payload = $this->validatedReturnPayload($request);
+        if ($payload instanceof JsonResponse) {
+            return $payload;
+        }
+
+        // Purchases: wholesaler requests return to factory/warehouse.
+        if ($invoice->isIncoming()) {
+            $invoice->loadMissing([
+                'distributions' => fn ($q) => $q
+                    ->where('to_user_id', $user->id)
+                    ->whereIn('status', ['confirmed', 'points_awarded']),
+            ]);
+            $dist = $invoice->distributions->firstWhere('tier', 1)
+                ?? $invoice->distributions->first();
+            if (! $dist) {
+                return $this->error('لا يوجد توزيع مؤكّد لهذه الفاتورة الواردة', 422);
+            }
+
+            return $this->runReturn(
+                fn () => $this->returns()->returnDistribution(
+                    $dist,
+                    $payload['lines'],
+                    $user,
+                    $payload['note'],
+                    $invoice,
+                ),
+                'تم إرسال مرتجع المشتريات وبانتظار موافقة المصنع/المخزن',
             );
+        }
+
+        // Sales: wholesale must NOT open return for retail.
+        return $this->error(
+            'لا يمكن لتاجر الجملة إنشاء مرتجع على فاتورة القطاعي — الطلب من تاجر القطاعي فقط ثم تقبله من قائمة المرتجعات الواردة',
+            403,
+        );
+    }
+
+    /** Preview / request return on a purchase distribution (factory or warehouse supply). */
+    public function previewDistribution(Request $request, InvoiceDistribution $distribution): JsonResponse
+    {
+        $user = $request->user();
+        if ((int) $distribution->to_user_id !== (int) $user->id
+            && ! in_array($user->role, ['super_admin', 'admin'], true)) {
+            return $this->error('غير مصرّح بعرض مرتجع هذا التوزيع', 403);
+        }
+
+        $distribution->loadMissing(['items.invoiceItem.product', 'fromUser', 'toUser']);
+
+        return $this->respondReturnPreview($distribution, $user);
+    }
+
+    public function storeDistribution(Request $request, InvoiceDistribution $distribution): JsonResponse
+    {
+        $user = $request->user();
+        if ((int) $distribution->to_user_id !== (int) $user->id
+            && ! in_array($user->role, ['super_admin', 'admin'], true)) {
+            return $this->error('غير مصرّح بعمل مرتجع على هذا التوزيع', 403);
         }
 
         $payload = $this->validatedReturnPayload($request);
@@ -153,13 +290,13 @@ class InvoiceReturnController extends Controller
         }
 
         return $this->runReturn(
-            fn () => $this->returns()->returnOutgoingInvoice(
-                $invoice,
+            fn () => $this->returns()->returnDistribution(
+                $distribution,
                 $payload['lines'],
                 $user,
                 $payload['note'],
             ),
-            'تم إرسال المرتجع وبانتظار موافقة الطرف المستلم',
+            'تم إرسال مرتجع المشتريات وبانتظار موافقة المصنع/المخزن',
         );
     }
 

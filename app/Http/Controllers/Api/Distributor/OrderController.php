@@ -6,7 +6,9 @@ use App\Http\Controllers\Api\Concerns\ApiResponds;
 use App\Http\Controllers\Api\Concerns\InteractsWithOrders;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\OrderResource as OrderApiResource;
+use App\Http\Controllers\Api\Trader\ProductCatalogController;
 use App\Models\Order;
+use App\Models\Product;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\OrderService;
@@ -78,6 +80,8 @@ class OrderController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'brand_name', 'phone', 'network_code', 'is_central_warehouse']);
 
+        $catalogUrl = url('/api/v1/mobile/distributor/products');
+
         $items = [
             [
                 'source' => 'factory',
@@ -85,6 +89,8 @@ class OrderController extends Controller
                 'name' => 'المصنع',
                 'label' => 'طلب توريد من المصنع',
                 'requires_warehouse_id' => false,
+                'same_inventory_as_warehouse' => true,
+                'catalog_url' => $catalogUrl,
             ],
         ];
 
@@ -103,6 +109,9 @@ class OrderController extends Controller
                 'phone' => $wh->phone,
                 'network_code' => $wh->network_code,
                 'requires_warehouse_id' => true,
+                // المصنع والمخزن واحد — نفس كتالوج المنتجات + كميات المخزون
+                'same_inventory_as_factory' => true,
+                'catalog_url' => $catalogUrl,
                 'stock_url' => url("/api/v1/mobile/distributor/warehouses/{$wh->id}/stock"),
             ];
         }
@@ -110,7 +119,10 @@ class OrderController extends Controller
         return $this->success(['items' => $items], 'مصادر التوريد المتاحة');
     }
 
-    /** Central warehouse remaining stock — for placing supply orders. */
+    /**
+     * Central warehouse stock = same MG product catalog as factory,
+     * overlaid with available_qty from warehouse slots (null = same as factory / unlimited pool).
+     */
     public function warehouseStock(Request $request, User $warehouse): JsonResponse
     {
         if (! $warehouse->isCentralWarehouse()) {
@@ -121,52 +133,64 @@ class OrderController extends Controller
             return $this->error('هذا المخزن غير مفعّل حالياً', 403);
         }
 
+        $catalog = app(ProductCatalogController::class);
+        $lang = substr(strtolower(str_replace('_', '-', (string) $request->header('Accept-Language', 'ar'))), 0, 2);
+        app()->setLocale(in_array($lang, ['ar', 'en'], true) ? $lang : 'ar');
+
         $orderUnit = strtolower(trim((string) ($request->query('order_unit') ?? $request->query('unit') ?? '')));
         $orderUnit = in_array($orderUnit, ['box', 'piece'], true) ? $orderUnit : null;
-        $search = trim((string) ($request->query('q') ?? $request->query('search') ?? ''));
-        $categoryId = $request->filled('category_id') ? (int) $request->query('category_id') : null;
         $perPage = min(max((int) $request->integer('per_page', 20), 1), 50);
-        $pageNum = max((int) $request->integer('page', 1), 1);
 
-        $mapped = $this->inventory->stockForWholesaler($warehouse)
-            ->map(function (array $row) {
-                $piecesPerBox = isset($row['pieces_per_box']) ? (int) $row['pieces_per_box'] : 0;
+        $stockByProduct = $this->inventory->stockForWholesaler($warehouse)->keyBy('product_id');
 
-                return [
-                    'product_id' => (int) $row['product_id'],
-                    'name' => $row['name'],
-                    'image' => $row['image'] ?? null,
-                    'image_url' => $row['image'] ?? null,
-                    'category_id' => $row['category_id'] ?? null,
-                    'points_per_unit' => null,
-                    'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
-                    'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
-                    'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
-                    'available_qty' => (int) ($row['available_qty'] ?? 0),
-                    'available_quantity' => (int) ($row['available_qty'] ?? 0),
-                ];
+        $query = Product::query()->with(['translations', 'images', 'category.translations']);
+
+        if ($request->filled('category_id')) {
+            $query->where('product_category_id', (int) $request->query('category_id'));
+        }
+        if ($request->filled('q') || $request->filled('search')) {
+            $query->search((string) ($request->query('q') ?? $request->query('search')));
+        }
+        if ($orderUnit === 'box') {
+            $query->where('pieces_per_box', '>', 0);
+        } elseif ($orderUnit === 'piece') {
+            $query->where(function ($q) {
+                $q->whereNull('pieces_per_box')->orWhere('pieces_per_box', '<=', 0);
+            });
+        }
+
+        $boxCount = (clone $query)->where('pieces_per_box', '>', 0)->count();
+        $pieceCount = Product::query()
+            ->when($request->filled('category_id'), fn ($q) => $q->where('product_category_id', (int) $request->query('category_id')))
+            ->where(function ($q) {
+                $q->whereNull('pieces_per_box')->orWhere('pieces_per_box', '<=', 0);
             })
-            ->filter(fn (array $row) => (int) $row['available_qty'] > 0)
-            ->values();
+            ->count();
 
-        $boxCount = $mapped->where('order_unit', 'box')->count();
-        $pieceCount = $mapped->where('order_unit', 'piece')->count();
+        $page = $query->latest('id')->paginate($perPage);
 
-        $filtered = $mapped
-            ->when($orderUnit === 'box', fn ($c) => $c->where('order_unit', 'box'))
-            ->when($orderUnit === 'piece', fn ($c) => $c->where('order_unit', 'piece'))
-            ->when($categoryId, fn ($c) => $c->where('category_id', $categoryId))
-            ->when($search !== '', fn ($c) => $c->filter(
-                fn (array $row) => str_contains(mb_strtolower((string) $row['name']), mb_strtolower($search))
-            ))
-            ->values();
+        $items = collect($page->items())->map(function (Product $product) use ($stockByProduct, $catalog) {
+            $slot = $stockByProduct->get($product->id);
+            $qty = $slot !== null ? (int) ($slot['available_qty'] ?? 0) : null;
+            $mapped = $catalog->mapCatalogProductPublic($product, $qty);
 
-        $total = $filtered->count();
-        $lastPage = max((int) ceil($total / $perPage), 1);
-        $pageNum = min($pageNum, $lastPage);
-        $slice = $filtered->forPage($pageNum, $perPage)->values();
-        $from = $total === 0 ? null : (($pageNum - 1) * $perPage) + 1;
-        $to = $total === 0 ? null : min($pageNum * $perPage, $total);
+            return [
+                'product_id' => (int) $product->id,
+                'id' => (int) $product->id,
+                'name' => $mapped['name'],
+                'image' => $mapped['image'] ?? null,
+                'image_url' => $mapped['image_url'] ?? null,
+                'category_id' => $mapped['category_id'] ?? null,
+                'points_per_unit' => null,
+                'has_points' => (bool) ($mapped['has_points'] ?? false),
+                'pieces_per_box' => $mapped['pieces_per_box'] ?? null,
+                'order_unit' => $mapped['order_unit'] ?? 'piece',
+                // null = نفس مخزون المصنع (غير محدود في العرض) ؛ رقم = كمية مسجّلة في المخزن
+                'available_qty' => $qty,
+                'available_quantity' => $qty,
+                'same_as_factory' => true,
+            ];
+        })->values();
 
         return $this->success([
             'warehouse' => [
@@ -175,7 +199,8 @@ class OrderController extends Controller
                 'phone' => $warehouse->phone,
                 'network_code' => $warehouse->network_code,
             ],
-            'items' => $slice,
+            'same_as_factory' => true,
+            'items' => $items,
             'units' => [
                 'all' => $boxCount + $pieceCount,
                 'box' => $boxCount,
@@ -183,21 +208,21 @@ class OrderController extends Controller
             ],
             'filters' => [
                 'order_unit' => $orderUnit,
-                'category_id' => $categoryId,
-                'search' => $search !== '' ? $search : null,
+                'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
+                'search' => $request->query('q') ?? $request->query('search'),
             ],
             'pagination' => [
-                'current_page' => $pageNum,
-                'last_page' => $lastPage,
-                'per_page' => $perPage,
-                'total' => $total,
-                'from' => $from,
-                'to' => $to,
-                'has_more' => $pageNum < $lastPage,
-                'next_page' => $pageNum < $lastPage ? $pageNum + 1 : null,
-                'prev_page' => $pageNum > 1 ? $pageNum - 1 : null,
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'per_page' => $page->perPage(),
+                'total' => $page->total(),
+                'from' => $page->firstItem(),
+                'to' => $page->lastItem(),
+                'has_more' => $page->hasMorePages(),
+                'next_page' => $page->hasMorePages() ? $page->currentPage() + 1 : null,
+                'prev_page' => $page->currentPage() > 1 ? $page->currentPage() - 1 : null,
             ],
-        ], 'مخزون المخزن المتاح — صناديق / قطع');
+        ], 'مخزون المخزن = كتالوج المصنع (نفس المنتجات)');
     }
 
     /**

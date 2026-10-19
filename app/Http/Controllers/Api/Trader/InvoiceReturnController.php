@@ -126,12 +126,25 @@ class InvoiceReturnController extends Controller
             ->get();
 
         $rows = $invoices
-            ->map(fn (Invoice $inv) => $this->summarizeInvoiceReturnRow($inv, 'wholesale', 'from', $user))
+            ->map(function (Invoice $inv) use ($user) {
+                $row = $this->summarizeInvoiceReturnRow($inv, 'wholesale', 'from', $user);
+                if (! $row) {
+                    return null;
+                }
+                $row['bucket'] = 'purchases';
+                $row['bucket_label'] = 'مشتريات — جملة';
+
+                return $row;
+            })
             ->filter()
             ->values()
             ->all();
 
-        return $this->success(['items' => $rows], 'قائمة فواتير الشراء من الجملة');
+        return $this->success([
+            'section' => 'فواتيري',
+            'purchases' => $rows,
+            'items' => $rows,
+        ], 'فواتيري — فواتير الشراء من الجملة');
     }
 
     /** Preview a plumber distribution (tier 3) — retail may view, but cannot request. */

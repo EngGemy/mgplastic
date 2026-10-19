@@ -125,17 +125,21 @@ class OrderDeliverLockAndWarehouseReturnBlockTest extends TestCase
             'returned_quantity' => 0,
         ]);
 
-        $gate = app(InvoiceReturnService::class)->previewReturnGate($distribution->fresh(['fromUser', 'toUser', 'items']));
-        $this->assertFalse($gate['can_return']);
-        $this->assertStringContainsString('المخزن', (string) $gate['block_reason']);
+        // Buyer (wholesale) may request return to central warehouse — factory/warehouse are one pool.
+        $gate = app(InvoiceReturnService::class)->previewReturnGate(
+            $distribution->fresh(['fromUser', 'toUser', 'items']),
+            $buyer,
+        );
+        $this->assertTrue($gate['can_return']);
 
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessageMatches('/المخزن/');
-
-        app(InvoiceReturnService::class)->returnDistribution(
+        $return = app(InvoiceReturnService::class)->returnDistribution(
             $distribution->fresh(['items.invoiceItem', 'fromUser', 'toUser']),
             [['invoice_item_id' => $sourceItem->id, 'quantity' => 2]],
             $buyer,
         );
+
+        $this->assertSame(2, (int) $return->total_quantity);
+        $this->assertSame($buyer->id, (int) $return->from_user_id);
+        $this->assertSame($warehouse->id, (int) $return->to_user_id);
     }
 }

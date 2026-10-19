@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductPromotion;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -44,84 +45,176 @@ class ProductPromotionResource extends Resource
 
     public static function form(Form $form): Form
     {
-        return $form->schema([
-            Forms\Components\TextInput::make('title')
-                ->label('العنوان')
-                ->required()
-                ->maxLength(200)
-                ->columnSpanFull(),
+        return $form
+            ->schema([
+                Forms\Components\Group::make()
+                    ->schema([
+                        Forms\Components\Section::make('نص الإعلان')
+                            ->description('العنوان والوصف اللي يظهروا للمستخدم في التطبيق.')
+                            ->icon('heroicon-o-document-text')
+                            ->schema([
+                                Forms\Components\TextInput::make('title')
+                                    ->label('العنوان')
+                                    ->placeholder('مثال: مقارنة أنابيب MG مع الأنواع التقليدية')
+                                    ->required()
+                                    ->maxLength(200)
+                                    ->autofocus()
+                                    ->columnSpanFull(),
 
-            Forms\Components\TextInput::make('subtitle')
-                ->label('عنوان فرعي')
-                ->maxLength(255)
-                ->columnSpanFull(),
+                                Forms\Components\TextInput::make('subtitle')
+                                    ->label('عنوان فرعي')
+                                    ->placeholder('سطر قصير تحت العنوان')
+                                    ->maxLength(255)
+                                    ->columnSpanFull(),
 
-            Forms\Components\Textarea::make('body')
-                ->label('الوصف / المقارنة النصية')
-                ->rows(4)
-                ->columnSpanFull(),
+                                Forms\Components\Textarea::make('body')
+                                    ->label('الوصف / نص المقارنة')
+                                    ->placeholder('اكتب مزايا المنتج، نقاط المقارنة، أو رسالة الدعاية…')
+                                    ->rows(5)
+                                    ->columnSpanFull(),
+                            ]),
 
-            Forms\Components\Select::make('media_type')
-                ->label('نوع الوسائط')
-                ->options([
-                    'image' => 'صورة',
-                    'video' => 'فيديو',
-                    'comparison' => 'مقارنة (صورتان)',
-                ])
-                ->required()
-                ->native(false)
-                ->live()
-                ->default('image'),
+                        Forms\Components\Section::make('الوسائط')
+                            ->description('اختر نوع المحتوى ثم ارفع الملفات المناسبة.')
+                            ->icon('heroicon-o-photo')
+                            ->schema([
+                                Forms\Components\ToggleButtons::make('media_type')
+                                    ->label('نوع المحتوى')
+                                    ->options([
+                                        'image' => 'صورة',
+                                        'video' => 'فيديو',
+                                        'comparison' => 'مقارنة',
+                                    ])
+                                    ->icons([
+                                        'image' => 'heroicon-o-photo',
+                                        'video' => 'heroicon-o-play-circle',
+                                        'comparison' => 'heroicon-o-arrows-right-left',
+                                    ])
+                                    ->colors([
+                                        'image' => 'primary',
+                                        'video' => 'danger',
+                                        'comparison' => 'warning',
+                                    ])
+                                    ->inline()
+                                    ->required()
+                                    ->live()
+                                    ->default('image')
+                                    ->columnSpanFull(),
 
-            Forms\Components\FileUpload::make('image_path')
-                ->label('الصورة الرئيسية')
-                ->disk('public')
-                ->directory('product-promotions')
-                ->image()
-                ->imageEditor()
-                ->visible(fn (Forms\Get $get) => in_array($get('media_type'), ['image', 'comparison', 'video'], true)),
+                                Forms\Components\Placeholder::make('media_hint')
+                                    ->label('')
+                                    ->content(fn (Get $get) => match ($get('media_type')) {
+                                        'video' => 'ارفع صورة غلاف للفيديو ثم ضع رابط يوتيوب / فيميو / ملف الفيديو.',
+                                        'comparison' => 'ارفع صورتين: منتج MG وصورة المنافس أو قبل/بعد.',
+                                        default => 'ارفع صورة واضحة أفقية (يفضّل عرض عريض للتطبيق).',
+                                    })
+                                    ->columnSpanFull(),
 
-            Forms\Components\FileUpload::make('comparison_image_path')
-                ->label('صورة المقارنة (قبل/بعد أو منافس)')
-                ->disk('public')
-                ->directory('product-promotions')
-                ->image()
-                ->visible(fn (Forms\Get $get) => $get('media_type') === 'comparison'),
+                                Forms\Components\FileUpload::make('image_path')
+                                    ->label(fn (Get $get) => match ($get('media_type')) {
+                                        'comparison' => 'صورة منتج MG',
+                                        'video' => 'صورة غلاف الفيديو',
+                                        default => 'صورة الإعلان',
+                                    })
+                                    ->disk('public')
+                                    ->directory('product-promotions')
+                                    ->image()
+                                    ->imageEditor()
+                                    ->imageEditorAspectRatios(['16:9', '4:3', '1:1', null])
+                                    ->openable()
+                                    ->downloadable()
+                                    ->maxSize(5120)
+                                    ->helperText('حتى 5MB — JPG / PNG / WebP')
+                                    ->required(fn (Get $get) => in_array($get('media_type'), ['image', 'comparison'], true))
+                                    ->columnSpanFull(),
 
-            Forms\Components\TextInput::make('video_url')
-                ->label('رابط الفيديو')
-                ->url()
-                ->visible(fn (Forms\Get $get) => $get('media_type') === 'video')
-                ->columnSpanFull(),
+                                Forms\Components\FileUpload::make('comparison_image_path')
+                                    ->label('صورة المقارنة (منافس / قبل)')
+                                    ->disk('public')
+                                    ->directory('product-promotions')
+                                    ->image()
+                                    ->imageEditor()
+                                    ->imageEditorAspectRatios(['16:9', '4:3', '1:1', null])
+                                    ->openable()
+                                    ->downloadable()
+                                    ->maxSize(5120)
+                                    ->visible(fn (Get $get) => $get('media_type') === 'comparison')
+                                    ->required(fn (Get $get) => $get('media_type') === 'comparison')
+                                    ->columnSpanFull(),
 
-            Forms\Components\Select::make('product_id')
-                ->label('منتج MG المرتبط')
-                ->searchable()
-                ->preload()
-                ->options(fn () => Product::query()
-                    ->with('translations')
-                    ->orderBy('id')
-                    ->limit(500)
-                    ->get()
-                    ->mapWithKeys(fn (Product $p) => [
-                        $p->id => localized_name($p, 'name', "منتج #{$p->id}"),
-                    ]))
-                ->nullable(),
+                                Forms\Components\TextInput::make('video_url')
+                                    ->label('رابط الفيديو')
+                                    ->placeholder('https://www.youtube.com/watch?v=…')
+                                    ->url()
+                                    ->prefixIcon('heroicon-o-link')
+                                    ->visible(fn (Get $get) => $get('media_type') === 'video')
+                                    ->required(fn (Get $get) => $get('media_type') === 'video')
+                                    ->helperText('يوتيوب أو فيميو أو رابط مباشر لملف فيديو')
+                                    ->columnSpanFull(),
+                            ]),
 
-            Forms\Components\TextInput::make('product_url')
-                ->label('رابط خارجي للمنتج')
-                ->url()
-                ->helperText('اختياري — إن وُجد يُفضَّل على رابط المنتج الداخلي'),
+                        Forms\Components\Section::make('ربط بمنتج MG')
+                            ->description('اختياري — عند الضغط في التطبيق يفتح المنتج أو الرابط الخارجي.')
+                            ->icon('heroicon-o-link')
+                            ->collapsed()
+                            ->schema([
+                                Forms\Components\Select::make('product_id')
+                                    ->label('منتج من الكتالوج')
+                                    ->relationship(
+                                        name: 'product',
+                                        titleAttribute: 'id',
+                                        modifyQueryUsing: fn ($query) => $query->with('translations')->orderBy('id'),
+                                    )
+                                    ->getOptionLabelFromRecordUsing(
+                                        fn (Product $p) => localized_name($p, 'name', "منتج #{$p->id}")
+                                    )
+                                    ->searchable()
+                                    ->preload()
+                                    ->nullable()
+                                    ->helperText('ابحث باسم المنتج')
+                                    ->columnSpanFull(),
 
-            Forms\Components\TextInput::make('sort_order')
-                ->label('الترتيب')
-                ->numeric()
-                ->default(0),
+                                Forms\Components\TextInput::make('product_url')
+                                    ->label('أو رابط خارجي')
+                                    ->placeholder('https://mg-plastic.com/…')
+                                    ->url()
+                                    ->prefixIcon('heroicon-o-globe-alt')
+                                    ->helperText('إن وُجد يُفضَّل على رابط المنتج الداخلي')
+                                    ->columnSpanFull(),
+                            ]),
+                    ])
+                    ->columnSpan(['lg' => 2]),
 
-            Forms\Components\Toggle::make('is_active')
-                ->label('نشط')
-                ->default(true),
-        ])->columns(2);
+                Forms\Components\Group::make()
+                    ->schema([
+                        Forms\Components\Section::make('النشر')
+                            ->icon('heroicon-o-rocket-launch')
+                            ->schema([
+                                Forms\Components\Toggle::make('is_active')
+                                    ->label('ظاهر في التطبيق')
+                                    ->helperText('عطّله لإخفاء الإعلان دون حذفه.')
+                                    ->default(true)
+                                    ->inline(false),
+
+                                Forms\Components\TextInput::make('sort_order')
+                                    ->label('ترتيب الظهور')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->default(0)
+                                    ->helperText('الأقل يظهر أولاً'),
+                            ]),
+
+                        Forms\Components\Section::make('تذكير للموبايل')
+                            ->icon('heroicon-o-device-phone-mobile')
+                            ->schema([
+                                Forms\Components\Placeholder::make('api_hint')
+                                    ->label('')
+                                    ->content('يظهر عبر: GET /api/v1/mobile/product-promotions'),
+                            ]),
+                    ])
+                    ->columnSpan(['lg' => 1]),
+            ])
+            ->columns(3);
     }
 
     public static function table(Table $table): Table
@@ -137,11 +230,18 @@ class ProductPromotionResource extends Resource
                 Tables\Columns\TextColumn::make('title')
                     ->label('العنوان')
                     ->searchable()
-                    ->weight('bold'),
+                    ->weight('bold')
+                    ->wrap()
+                    ->limit(50),
 
                 Tables\Columns\TextColumn::make('media_type')
                     ->label('النوع')
                     ->badge()
+                    ->color(fn (string $state) => match ($state) {
+                        'video' => 'danger',
+                        'comparison' => 'warning',
+                        default => 'primary',
+                    })
                     ->formatStateUsing(fn (string $state) => match ($state) {
                         'video' => 'فيديو',
                         'comparison' => 'مقارنة',
@@ -152,26 +252,47 @@ class ProductPromotionResource extends Resource
                     ->label('المنتج')
                     ->formatStateUsing(fn ($state, ProductPromotion $record) => $record->product
                         ? localized_name($record->product, 'name')
-                        : '—'),
+                        : '—')
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('sort_order')
                     ->label('ترتيب')
-                    ->sortable(),
+                    ->sortable()
+                    ->alignCenter(),
 
                 Tables\Columns\IconColumn::make('is_active')
-                    ->label('نشط')
+                    ->label('ظاهر')
                     ->boolean(),
+
+                Tables\Columns\TextColumn::make('updated_at')
+                    ->label('آخر تحديث')
+                    ->since()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('sort_order')
+            ->filters([
+                Tables\Filters\SelectFilter::make('media_type')
+                    ->label('النوع')
+                    ->options([
+                        'image' => 'صورة',
+                        'video' => 'فيديو',
+                        'comparison' => 'مقارنة',
+                    ]),
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('ظاهر في التطبيق'),
+            ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('تعديل'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->emptyStateHeading('لا توجد إعلانات بعد')
+            ->emptyStateDescription('أضف أول إعلان صورة أو فيديو أو مقارنة ليظهر في التطبيق.')
+            ->emptyStateIcon('heroicon-o-megaphone');
     }
 
     public static function getPages(): array

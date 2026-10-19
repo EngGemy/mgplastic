@@ -183,10 +183,10 @@ class InvoiceReturnEdgesTest extends TestCase
 
         // Attach retail from tier2 so lists are under same users when needed
         Sanctum::actingAs($wholesale);
-        $this->getJson('/api/v1/mobile/distributor/invoices')
+        $this->getJson('/api/v1/mobile/distributor/invoices?scope=sales')
             ->assertOk()
-            ->assertJsonPath('data.items.0.invoice_id', $invoice->id)
-            ->assertJsonStructure(['data' => ['items' => [['can_return', 'returnable_quantity']]]]);
+            ->assertJsonPath('data.sales.0.invoice_id', $invoice->id)
+            ->assertJsonStructure(['data' => ['sales' => [['can_return', 'returnable_quantity']]]]);
 
         Sanctum::actingAs($retail);
         $this->getJson('/api/v1/mobile/trader/invoices')

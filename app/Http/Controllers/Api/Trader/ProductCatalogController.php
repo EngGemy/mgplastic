@@ -154,6 +154,14 @@ class ProductCatalogController extends Controller
     /**
      * @return array<string, mixed>
      */
+    public function mapCatalogProductPublic(Product $product, ?int $availableQuantity = null): array
+    {
+        return $this->mapCatalogProduct($product, $availableQuantity);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     protected function mapCatalogProduct(Product $product, ?int $availableQuantity = null): array
     {
         $gallery = $product->images->sortBy('sort')->first()?->image;
