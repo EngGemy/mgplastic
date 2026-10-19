@@ -50,17 +50,26 @@ class PhoneOtpService
 
         $otp = (string) random_int(100000, 999999);
         $expiresAt = Carbon::now()->addMinutes(5);
-        $text = "MG للصناعات البلاستيكية\nرمز التحقق الخاص بك: {$otp}\nصالح لمدة 5 دقائق. لا تشاركه مع أي شخص.";
+        $text = "╔══════════════════════╗\n"
+            ."║  🏭 *MG للصناعات البلاستيكية*\n"
+            ."╚══════════════════════╝\n\n"
+            ."🔐 *رمز التحقق الآمن*\n"
+            ."────────────────────\n"
+            ."رمزك: *{$otp}*\n"
+            ."⏱ صالح لمدة *5 دقائق فقط*\n"
+            ."⚠️ لا تشاركه مع أي شخص.\n\n"
+            ."💙 _فريق MG يحمي حسابك_";
 
         $whatsappOk = false;
         $smsOk = false;
         $marsolRequestId = null;
         $marsolResendToken = null;
         $marsolExpiration = 300;
+        $otpCard = app(WhatsAppBrandCard::class)->urlFor('otp', 'رمز التحقق');
 
         if (in_array('whatsapp', $channels, true)) {
             try {
-                $whatsappOk = $this->whatsapp->send((string) $user->phone, $text);
+                $whatsappOk = $this->whatsapp->send((string) $user->phone, $text, $otpCard);
             } catch (\Throwable $e) {
                 Log::error('[OTP] WhatsApp channel failed', [
                     'reason' => $reason,

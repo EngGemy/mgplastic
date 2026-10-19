@@ -93,6 +93,11 @@ return [
         'queue' => env('WAHA_QUEUE', 'default'),
         // true = send alerts immediately without queue:work (recommended if worker is not running)
         'sync_alerts' => filter_var(env('WAHA_SYNC_ALERTS', true), FILTER_VALIDATE_BOOLEAN),
+        // Mobile / web app link embedded in WhatsApp alerts
+        'app_url' => env('MG_APP_URL', env('PLUMBER_APP_URL', env('APP_URL'))),
+        // Optional cover image for alerts (public URL or storage path)
+        'brand_image_url' => env('WAHA_BRAND_IMAGE_URL'),
+        'brand_image_path' => env('WAHA_BRAND_IMAGE_PATH'),
     ],
 
     /*

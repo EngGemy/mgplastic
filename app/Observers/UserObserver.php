@@ -4,6 +4,8 @@ namespace App\Observers;
 
 use App\Models\User;
 use App\Services\NetworkCodeService;
+use App\Services\WhatsAppBusinessAlerts;
+use Illuminate\Support\Facades\Log;
 
 class UserObserver
 {
@@ -13,11 +15,22 @@ class UserObserver
             return;
         }
 
-        if (filled($user->network_code)) {
-            return;
+        if (! filled($user->network_code)) {
+            app(NetworkCodeService::class)->ensure($user);
+            $user->refresh();
         }
 
-        app(NetworkCodeService::class)->ensure($user);
+        // Welcome WhatsApp on real HTTP registrations (skip seeders / console).
+        if (! app()->runningInConsole() && filled($user->phone)) {
+            try {
+                app(WhatsAppBusinessAlerts::class)->welcome($user->fresh() ?? $user);
+            } catch (\Throwable $e) {
+                Log::warning('[WhatsApp] welcome skipped', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     public function updated(User $user): void

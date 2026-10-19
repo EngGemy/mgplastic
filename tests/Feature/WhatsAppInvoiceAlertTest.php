@@ -59,9 +59,12 @@ class WhatsAppInvoiceAlertTest extends TestCase
         ]);
 
         Http::assertSent(function ($request) {
-            return $request->url() === 'https://waha.test/api/sendText'
-                && str_contains($request['text'] ?? '', 'فاتورة جديدة')
-                && str_contains($request['text'] ?? '', 'OUT-55')
+            $body = $request['text'] ?? $request['caption'] ?? '';
+            $url = $request->url();
+
+            return (str_contains($url, '/api/sendText') || str_contains($url, '/api/sendImage'))
+                && str_contains($body, 'فاتورة جديدة')
+                && str_contains($body, 'OUT-55')
                 && in_array($request['chatId'] ?? '', [
                     '218912002002@c.us', // retailer
                     '218912002001@c.us', // wholesaler

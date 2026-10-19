@@ -11,16 +11,20 @@ class WhatsAppNotifier
     /**
      * Send one message immediately (OTP / sync). Never fans out to admins.
      */
-    public function send(string $phone, string $text): bool
+    public function send(string $phone, string $text, ?string $imageUrl = null): bool
     {
-        return $this->deliver([['phone' => $phone, 'text' => $text]]);
+        return $this->deliver([[
+            'phone' => $phone,
+            'text' => $text,
+            'image_url' => $imageUrl,
+        ]]);
     }
 
     /**
      * Queue a batch of messages (non-OTP business alerts).
      * Dispatched after DB commit so invoice/order rows exist before send.
      *
-     * @param  list<array{phone:string,text:string}>  $messages
+     * @param  list<array{phone:string,text:string,image_url?:?string}>  $messages
      */
     public function sendMany(array $messages): void
     {
@@ -37,7 +41,6 @@ class WhatsAppNotifier
             return;
         }
 
-        // Sync path: no queue worker required (useful on shared hosting).
         if (filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
             || config('queue.default') === 'sync') {
             $this->deliver($prepared);
@@ -48,48 +51,55 @@ class WhatsAppNotifier
         SendWhatsAppNotification::dispatch($prepared)->afterCommit();
     }
 
-    public function notifyAdmins(string $text): void
+    public function notifyAdmins(string $text, ?string $imageUrl = null): void
     {
         $messages = [];
         foreach ($this->adminPhones() as $phone) {
-            $messages[] = ['phone' => $phone, 'text' => $text];
+            $messages[] = ['phone' => $phone, 'text' => $text, 'image_url' => $imageUrl];
         }
 
         $this->sendMany($messages);
     }
 
-    public function notifyUserAndAdmins(?string $userPhone, string $text): void
+    public function notifyUserAndAdmins(?string $userPhone, string $text, ?string $imageUrl = null): void
     {
         $this->notifyUsersAndAdmins(
             filled($userPhone) ? [$userPhone] : [],
-            $text
+            $text,
+            $imageUrl
         );
     }
 
     /**
      * @param  list<string|null>  $userPhones
      */
-    public function notifyUsersAndAdmins(array $userPhones, string $text): void
+    public function notifyUsersAndAdmins(array $userPhones, string $text, ?string $imageUrl = null): void
     {
         $messages = [];
 
         foreach ($userPhones as $phone) {
             if (filled($phone)) {
-                $messages[] = ['phone' => (string) $phone, 'text' => $text];
+                $messages[] = [
+                    'phone' => (string) $phone,
+                    'text' => $text,
+                    'image_url' => $imageUrl,
+                ];
             }
         }
 
         foreach ($this->adminPhones() as $phone) {
-            $messages[] = ['phone' => $phone, 'text' => $text];
+            $messages[] = [
+                'phone' => $phone,
+                'text' => $text,
+                'image_url' => $imageUrl,
+            ];
         }
 
         $this->sendMany($messages);
     }
 
     /**
-     * Deliver via WAHA sendText. Returns true only if every message succeeds.
-     *
-     * @param  list<array{phone:string,text:string}>  $messages
+     * @param  list<array{phone:string,text:string,image_url?:?string}>  $messages
      */
     public function deliver(array $messages): bool
     {
@@ -118,7 +128,16 @@ class WhatsAppNotifier
             }
             $isFirst = false;
 
-            if (! $this->sendText($url, $message['phone'], $message['text'])) {
+            $ok = filled($message['image_url'] ?? null)
+                ? $this->sendImage($url, $message['phone'], $message['text'], (string) $message['image_url'])
+                : $this->sendText($url, $message['phone'], $message['text']);
+
+            // Fallback to text if image endpoint fails
+            if (! $ok && filled($message['image_url'] ?? null)) {
+                $ok = $this->sendText($url, $message['phone'], $message['text']);
+            }
+
+            if (! $ok) {
                 $allOk = false;
             }
         }
@@ -131,14 +150,6 @@ class WhatsAppNotifier
         return (bool) config('services.waha.enabled');
     }
 
-    /**
-     * Normalize phone:
-     * - strip non-digits and leading 00
-     * - 0 + 10 digits → 218… (Libya)
-     * - 0 + 11 digits → 20… (Egypt)
-     * - already starts with 218 or 20 → leave as-is
-     * - bare local → prefix default_country_code
-     */
     public function normalizePhone(?string $raw): ?string
     {
         if ($raw === null) {
@@ -197,8 +208,8 @@ class WhatsAppNotifier
     }
 
     /**
-     * @param  list<array{phone?:string,text?:string}>  $messages
-     * @return list<array{phone:string,text:string}>
+     * @param  list<array{phone?:string,text?:string,image_url?:?string}>  $messages
+     * @return list<array{phone:string,text:string,image_url:?string}>
      */
     protected function prepareMessages(array $messages): array
     {
@@ -208,18 +219,25 @@ class WhatsAppNotifier
         foreach ($messages as $message) {
             $phone = $this->normalizePhone((string) ($message['phone'] ?? ''));
             $text = trim((string) ($message['text'] ?? ''));
+            $imageUrl = filled($message['image_url'] ?? null)
+                ? trim((string) $message['image_url'])
+                : null;
 
             if (! $phone || $text === '') {
                 continue;
             }
 
-            $key = $phone.'|'.md5($text);
+            $key = $phone.'|'.md5($text.'|'.($imageUrl ?? ''));
             if (isset($seen[$key])) {
                 continue;
             }
             $seen[$key] = true;
 
-            $out[] = ['phone' => $phone, 'text' => $text];
+            $out[] = [
+                'phone' => $phone,
+                'text' => $text,
+                'image_url' => $imageUrl,
+            ];
         }
 
         return $out;
@@ -227,37 +245,53 @@ class WhatsAppNotifier
 
     protected function sendText(string $baseUrl, string $phone, string $text): bool
     {
-        $endpoint = $baseUrl.'/api/sendText';
-        $session = (string) config('services.waha.session', 'default');
-        $apiKey = (string) config('services.waha.key');
+        return $this->postJson($baseUrl.'/api/sendText', [
+            'session' => (string) config('services.waha.session', 'default'),
+            'chatId' => $phone.'@c.us',
+            'text' => $text,
+        ], $phone, 'sendText');
+    }
 
+    protected function sendImage(string $baseUrl, string $phone, string $caption, string $imageUrl): bool
+    {
+        return $this->postJson($baseUrl.'/api/sendImage', [
+            'session' => (string) config('services.waha.session', 'default'),
+            'chatId' => $phone.'@c.us',
+            'caption' => $caption,
+            'file' => [
+                'url' => $imageUrl,
+            ],
+        ], $phone, 'sendImage');
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function postJson(string $endpoint, array $payload, string $phone, string $action): bool
+    {
         try {
-            $response = Http::timeout(8)
+            $response = Http::timeout(12)
                 ->retry(2, 200, throw: false)
                 ->withHeaders([
-                    'X-Api-Key' => $apiKey,
+                    'X-Api-Key' => (string) config('services.waha.key'),
                     'Accept' => 'application/json',
                     'Content-Type' => 'application/json',
                 ])
-                ->post($endpoint, [
-                    'session' => $session,
-                    'chatId' => $phone.'@c.us',
-                    'text' => $text,
-                ]);
+                ->post($endpoint, $payload);
 
             if ($response->successful()) {
                 return true;
             }
 
-            Log::error('[WhatsAppNotifier] WAHA sendText failed', [
+            Log::error('[WhatsAppNotifier] WAHA '.$action.' failed', [
                 'status' => $response->status(),
                 'phone' => $phone,
-                'session' => $session,
+                'session' => config('services.waha.session'),
             ]);
 
             return false;
         } catch (\Throwable $e) {
-            Log::error('[WhatsAppNotifier] WAHA sendText exception', [
+            Log::error('[WhatsAppNotifier] WAHA '.$action.' exception', [
                 'phone' => $phone,
                 'error' => $e->getMessage(),
             ]);
