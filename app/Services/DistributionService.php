@@ -57,24 +57,8 @@ class DistributionService
             return $created;
         });
 
-        if ((int) $distribution->tier === 2) {
-            $outgoing = Invoice::query()
-                ->where('source_distribution_id', $distribution->id)
-                ->first();
-
-            if ($outgoing) {
-                try {
-                    app(CustomerWhatsAppNotifier::class)->notifyInvoiceIssued(
-                        $outgoing->fresh(['counterparty', 'wholesaleDistributor']),
-                    );
-                } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning('[WhatsApp] outgoing invoice notify skipped', [
-                        'invoice_id' => $outgoing->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
-        }
+        // WhatsApp: InvoiceObserver fires on outgoing Invoice::create (tier 2).
+        // Confirm / points alerts come from InvoiceDistributionObserver.
 
         return $distribution;
     }

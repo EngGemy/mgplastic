@@ -81,7 +81,7 @@ class PlumberDistributionPosService
         );
 
         try {
-            app(CustomerWhatsAppNotifier::class)->notifyPlumberSale(
+            app(WhatsAppBusinessAlerts::class)->plumberSale(
                 $plumber,
                 $retailTrader,
                 $totalPoints,

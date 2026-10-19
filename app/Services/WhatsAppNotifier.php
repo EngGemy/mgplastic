@@ -18,21 +18,34 @@ class WhatsAppNotifier
 
     /**
      * Queue a batch of messages (non-OTP business alerts).
+     * Dispatched after DB commit so invoice/order rows exist before send.
      *
      * @param  list<array{phone:string,text:string}>  $messages
      */
     public function sendMany(array $messages): void
     {
         if (! $this->enabled()) {
+            Log::warning('[WhatsAppNotifier] skipped — WHATSAPP_NOTIFY_ENABLED is false');
+
             return;
         }
 
         $prepared = $this->prepareMessages($messages);
         if ($prepared === []) {
+            Log::warning('[WhatsAppNotifier] skipped — no valid phones after normalize');
+
             return;
         }
 
-        SendWhatsAppNotification::dispatch($prepared);
+        // Sync path: no queue worker required (useful on shared hosting).
+        if (filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
+            || config('queue.default') === 'sync') {
+            $this->deliver($prepared);
+
+            return;
+        }
+
+        SendWhatsAppNotification::dispatch($prepared)->afterCommit();
     }
 
     public function notifyAdmins(string $text): void
@@ -47,10 +60,23 @@ class WhatsAppNotifier
 
     public function notifyUserAndAdmins(?string $userPhone, string $text): void
     {
+        $this->notifyUsersAndAdmins(
+            filled($userPhone) ? [$userPhone] : [],
+            $text
+        );
+    }
+
+    /**
+     * @param  list<string|null>  $userPhones
+     */
+    public function notifyUsersAndAdmins(array $userPhones, string $text): void
+    {
         $messages = [];
 
-        if (filled($userPhone)) {
-            $messages[] = ['phone' => $userPhone, 'text' => $text];
+        foreach ($userPhones as $phone) {
+            if (filled($phone)) {
+                $messages[] = ['phone' => (string) $phone, 'text' => $text];
+            }
         }
 
         foreach ($this->adminPhones() as $phone) {

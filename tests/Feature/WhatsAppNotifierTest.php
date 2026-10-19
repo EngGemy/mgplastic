@@ -27,6 +27,8 @@ class WhatsAppNotifierTest extends TestCase
             'services.waha.enabled' => true,
             'services.waha.admin_phones' => ['01012345678', '201098765432'],
             'services.waha.default_country_code' => '218',
+            'services.waha.sync_alerts' => false,
+            'services.waha.queue' => 'default',
             'services.otp.channels' => 'whatsapp,sms',
             'services.marsol.token' => 'marsol-token',
             'services.marsol.sender_id' => 'sender-uuid',
@@ -160,9 +162,12 @@ class WhatsAppNotifierTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_invoice_created_queues_on_whatsapp_queue(): void
+    public function test_invoice_created_queues_alert_job(): void
     {
-        $this->enableWaha();
+        $this->enableWaha([
+            'services.waha.sync_alerts' => false,
+            'queue.default' => 'database',
+        ]);
         Queue::fake();
 
         $customer = User::factory()->create([
@@ -180,12 +185,16 @@ class WhatsAppNotifierTest extends TestCase
             'status' => 'approved',
         ]);
 
-        Queue::assertPushedOn('whatsapp', SendWhatsAppNotification::class);
+        Queue::assertPushedOn('default', SendWhatsAppNotification::class);
         Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
             $this->assertSame(3, $job->tries);
             $phones = collect($job->messages)->pluck('phone')->unique()->values()->all();
             $this->assertContains('201012345678', $phones);
             $this->assertContains('201098765432', $phones);
+            $this->assertTrue(
+                collect($job->messages)->contains(fn ($m) => str_contains($m['text'], 'فاتورة جديدة')
+                    && str_contains($m['text'], 'INV-100'))
+            );
             $keys = collect($job->messages)->map(fn ($m) => $m['phone'].'|'.$m['text'])->unique();
 
             return $keys->count() === count($job->messages);

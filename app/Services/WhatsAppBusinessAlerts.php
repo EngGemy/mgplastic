@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Models\InvoiceDistribution;
 use App\Models\InvoiceReturn;
 use App\Models\Order;
 use App\Models\User;
@@ -21,28 +22,117 @@ class WhatsAppBusinessAlerts
 
     public function invoiceCreated(Invoice $invoice): void
     {
-        $invoice->loadMissing(['wholesaleDistributor', 'counterparty', 'plumber']);
-        $customer = $this->invoiceCustomer($invoice);
-        $customerName = $customer?->name ?: '—';
+        $invoice->loadMissing(['wholesaleDistributor', 'counterparty', 'plumber', 'issuer']);
+
+        $buyer = $this->invoiceBuyer($invoice);
+        $seller = $this->invoiceSeller($invoice);
+        $buyerName = $buyer?->name ?: ($buyer?->brand_name ?: '—');
+        $sellerName = $seller?->name ?: ($seller?->brand_name ?: '—');
         $number = $invoice->number ?: ($invoice->serial_number ?: '#'.$invoice->id);
-        $total = number_format(((int) $invoice->total_cents) / 100, 2).' د.ل';
+        $points = (int) ($invoice->points_awarded ?? 0);
+        if ($points <= 0) {
+            $points = (int) $invoice->items()->sum('total_points');
+        }
+        $totalMoney = number_format(((int) $invoice->total_cents) / 100, 2).' د.ل';
         $date = optional($invoice->created_at)->timezone(config('app.timezone'))->format('Y-m-d H:i')
             ?: now()->format('Y-m-d H:i');
+        $flow = $invoice->isOutgoing() ? 'صادرة' : 'واردة';
 
         $text = "MG للصناعات البلاستيكية\n"
-            ."فاتورة جديدة\n"
+            ."فاتورة جديدة ({$flow})\n"
             ."رقم الفاتورة: {$number}\n"
-            ."الإجمالي: {$total}\n"
-            ."التاريخ: {$date}\n"
-            ."العميل: {$customerName}";
+            ."من: {$sellerName}\n"
+            ."إلى: {$buyerName}\n"
+            ."النقاط: {$points}\n"
+            ."الإجمالي: {$totalMoney}\n"
+            ."التاريخ: {$date}";
 
-        $this->whatsapp->notifyUserAndAdmins($customer?->phone, $text);
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$buyer?->phone, $seller?->phone]),
+            $text
+        );
+    }
+
+    public function distributionConfirmed(InvoiceDistribution $distribution): void
+    {
+        $distribution->loadMissing(['fromUser', 'toUser', 'items', 'invoice']);
+
+        // Tier 2 already notified via outgoing Invoice::created — skip duplicate.
+        if ((int) $distribution->tier === 2) {
+            return;
+        }
+
+        $from = $distribution->fromUser?->name ?: '—';
+        $to = $distribution->toUser?->name ?: '—';
+        $points = (int) $distribution->items->sum('points_value');
+        $qty = (int) $distribution->items->sum('quantity');
+        $invoiceNo = $distribution->invoice?->number
+            ?: ($distribution->invoice_id ? '#'.$distribution->invoice_id : '—');
+        $tierLabel = match ((int) $distribution->tier) {
+            1 => 'مصنع → جملة',
+            3 => 'قطاعي → سباك',
+            default => 'توزيع #'.$distribution->tier,
+        };
+
+        $text = "MG للصناعات البلاستيكية\n"
+            ."تأكيد توريد ({$tierLabel})\n"
+            ."الفاتورة: {$invoiceNo}\n"
+            ."من: {$from}\n"
+            ."إلى: {$to}\n"
+            ."الكمية: {$qty}\n"
+            ."النقاط: {$points}";
+
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$distribution->toUser?->phone, $distribution->fromUser?->phone]),
+            $text
+        );
+    }
+
+    public function pointsAwarded(InvoiceDistribution $distribution, int $points): void
+    {
+        if ($points <= 0) {
+            return;
+        }
+
+        $distribution->loadMissing(['fromUser', 'toUser', 'invoice']);
+        $plumber = $distribution->toUser;
+        $from = $distribution->fromUser?->name ?: '—';
+        $invoiceNo = $distribution->invoice?->number
+            ?: ($distribution->invoice_id ? '#'.$distribution->invoice_id : '—');
+
+        $text = "MG للصناعات البلاستيكية\n"
+            ."تم إضافة نقاط لحسابك\n"
+            ."النقاط: {$points}\n"
+            ."من: {$from}\n"
+            ."الفاتورة: {$invoiceNo}\n"
+            ."افتح التطبيق لمتابعة رصيدك.";
+
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$plumber?->phone]),
+            $text
+        );
+    }
+
+    public function plumberSale(User $plumber, User $retailTrader, int $totalPoints, int $lineCount): void
+    {
+        $text = "MG للصناعات البلاستيكية\n"
+            ."تم تسجيل توريد بضاعة لحسابك\n"
+            ."من: {$retailTrader->name}\n"
+            ."عدد الأصناف: {$lineCount}\n"
+            ."النقاط: {$totalPoints}\n"
+            ."افتح تطبيق MG Plastic لمتابعة رصيدك.";
+
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$plumber->phone, $retailTrader->phone]),
+            $text
+        );
     }
 
     public function orderCreated(Order $order): void
     {
-        $order->loadMissing(['requester', 'items']);
+        $order->loadMissing(['requester', 'supplier', 'items']);
         $customer = $order->requester;
+        $supplier = $order->supplier;
         $number = $order->order_number ?: '#'.$order->id;
         $itemsSummary = $order->items
             ->take(5)
@@ -64,12 +154,15 @@ class WhatsAppBusinessAlerts
             ."الإجمالي: {$total}\n"
             ."العميل: {$customerName}";
 
-        $this->whatsapp->notifyUserAndAdmins($customer?->phone, $text);
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$customer?->phone, $supplier?->phone]),
+            $text
+        );
     }
 
     public function orderStatusChanged(Order $order, string $from, string $to): void
     {
-        $order->loadMissing(['requester']);
+        $order->loadMissing(['requester', 'supplier']);
         $number = $order->order_number ?: '#'.$order->id;
         $fromLabel = OrderStatus::label($from);
         $toLabel = OrderStatus::label($to);
@@ -80,12 +173,15 @@ class WhatsAppBusinessAlerts
             ."من: {$fromLabel}\n"
             ."إلى: {$toLabel}";
 
-        $this->whatsapp->notifyUserAndAdmins($order->requester?->phone, $text);
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$order->requester?->phone, $order->supplier?->phone]),
+            $text
+        );
     }
 
     public function returnCreated(InvoiceReturn $return): void
     {
-        $return->loadMissing(['fromUser', 'invoice']);
+        $return->loadMissing(['fromUser', 'toUser', 'invoice']);
         $number = $return->return_number ?: '#'.$return->id;
         $invoiceRef = $return->invoice?->number
             ?: ($return->invoice_id ? '#'.$return->invoice_id : '—');
@@ -99,7 +195,10 @@ class WhatsAppBusinessAlerts
             ."القيمة: {$value}\n"
             ."السبب: {$reason}";
 
-        $this->whatsapp->notifyUserAndAdmins($return->fromUser?->phone, $text);
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$return->fromUser?->phone, $return->toUser?->phone]),
+            $text
+        );
     }
 
     public function returnStatusChanged(InvoiceReturn $return, string $from, string $to): void
@@ -115,16 +214,10 @@ class WhatsAppBusinessAlerts
             ."من: {$fromLabel}\n"
             ."إلى: {$toLabel}";
 
-        $messages = [];
-        foreach ([$return->fromUser?->phone, $return->toUser?->phone] as $phone) {
-            if (filled($phone)) {
-                $messages[] = ['phone' => $phone, 'text' => $text];
-            }
-        }
-        foreach ($this->whatsapp->adminPhones() as $adminPhone) {
-            $messages[] = ['phone' => $adminPhone, 'text' => $text];
-        }
-        $this->whatsapp->sendMany($messages);
+        $this->whatsapp->notifyUsersAndAdmins(
+            array_filter([$return->fromUser?->phone, $return->toUser?->phone]),
+            $text
+        );
     }
 
     public function withdrawalCreated(WithdrawalRequest $withdrawal): void
@@ -139,7 +232,6 @@ class WhatsAppBusinessAlerts
             ."المبلغ: {$amount}\n"
             ."الحالة: ".$withdrawal->statusLabel();
 
-        // Admins only
         $this->whatsapp->notifyAdmins($text);
     }
 
@@ -159,12 +251,21 @@ class WhatsAppBusinessAlerts
         $this->whatsapp->notifyUserAndAdmins($withdrawal->plumber?->phone, $text);
     }
 
-    protected function invoiceCustomer(Invoice $invoice): ?User
+    protected function invoiceBuyer(Invoice $invoice): ?User
     {
         if ($invoice->isOutgoing()) {
             return $invoice->counterparty;
         }
 
-        return $invoice->wholesaleDistributor ?: $invoice->plumber;
+        return $invoice->wholesaleDistributor ?: $invoice->plumber ?: $invoice->counterparty;
+    }
+
+    protected function invoiceSeller(Invoice $invoice): ?User
+    {
+        if ($invoice->isOutgoing()) {
+            return $invoice->wholesaleDistributor ?: $invoice->issuer;
+        }
+
+        return $invoice->issuer;
     }
 }

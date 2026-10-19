@@ -89,6 +89,10 @@ return [
             explode(',', (string) env('WHATSAPP_ADMIN_PHONES', '201030003186,218912159316'))
         ))),
         'default_country_code' => preg_replace('/\D+/', '', (string) env('WHATSAPP_DEFAULT_COUNTRY_CODE', '218')) ?: '218',
+        // Queue name for business alerts (OTP stays sync). Use "default" unless a dedicated worker exists.
+        'queue' => env('WAHA_QUEUE', 'default'),
+        // true = send alerts immediately without queue:work (recommended if worker is not running)
+        'sync_alerts' => filter_var(env('WAHA_SYNC_ALERTS', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
     /*
