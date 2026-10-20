@@ -36,6 +36,8 @@ class DeepLinkTest extends TestCase
         ]);
 
         $this->assertSame('mgplastic://order/9', DeepLink::customScheme('order', 9));
+        $this->assertSame('order/9', DeepLink::appPath('order', 9));
+        $this->assertSame('mgplastic://home', DeepLink::customScheme('home'));
         $intent = DeepLink::androidIntent('order', 9);
         $this->assertStringContainsString('intent://order/9#Intent', $intent);
         $this->assertStringContainsString('scheme=mgplastic', $intent);

@@ -46,6 +46,11 @@ class WhatsAppMessage
             return '';
         }
 
+        // Never prefix bare URLs — WhatsApp won't make them tappable if RLM comes first.
+        if (self::isBareUrl($line)) {
+            return ltrim($line, self::RLM." \t");
+        }
+
         return str_starts_with($line, self::RLM) ? $line : self::RLM.$line;
     }
 
@@ -57,6 +62,14 @@ class WhatsAppMessage
             fn (string $line) => $line === '' ? '' : self::rtl($line),
             $parts
         ));
+    }
+
+    /** True when the whole line is an http(s) URL (optional surrounding whitespace / RLM). */
+    public static function isBareUrl(string $line): bool
+    {
+        $trimmed = trim(ltrim($line, self::RLM." \t"));
+
+        return (bool) preg_match('#^https?://\S+$#iu', $trimmed);
     }
 
     /** Meta-like header: event emoji + bold company + separator. */
@@ -229,3 +242,4 @@ class WhatsAppMessage
         ));
     }
 }
+

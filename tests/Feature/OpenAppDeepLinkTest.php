@@ -8,11 +8,23 @@ class OpenAppDeepLinkTest extends TestCase
 {
     public function test_open_route_renders_bridge_page(): void
     {
+        config([
+            'app_links.scheme' => 'mgplastic',
+            'app_links.package' => 'com.mgplastic.app',
+            'app_links.public_base' => 'https://mg-plastic.com',
+        ]);
+
         $response = $this->get('/open/invoice/42');
 
         $response->assertOk();
         $response->assertSee('افتح في التطبيق', false);
-        $response->assertSee('invoice/42', false);
+        $response->assertSee('https://mg-plastic.com/open/invoice/42', false);
+        $response->assertSee('mgplastic://invoice/42', false);
+    }
+
+    public function test_open_home_without_id(): void
+    {
+        $this->get('/open/home')->assertOk();
     }
 
     public function test_open_rejects_unknown_type(): void

@@ -65,6 +65,28 @@ class WhatsAppMessageRtlTest extends TestCase
             ->toString();
 
         $this->assertStringContainsString('افتح في التطبيق', $text);
-        $this->assertStringContainsString('https://mg-plastic.com/open/order/1', $text);
+        $this->assertStringContainsString("https://mg-plastic.com/open/order/1", $text);
+
+        // Bare URL must NOT start with RLM or WhatsApp won't auto-link it
+        $urlLine = null;
+        foreach (explode("\n", $text) as $line) {
+            if (str_starts_with(ltrim($line, WhatsAppMessage::RLM), 'https://')) {
+                $urlLine = $line;
+                break;
+            }
+        }
+        $this->assertNotNull($urlLine);
+        $this->assertSame('https://mg-plastic.com/open/order/1', $urlLine);
+        $this->assertFalse(str_starts_with($urlLine, WhatsAppMessage::RLM));
+    }
+
+    public function test_rtl_block_preserves_bare_urls(): void
+    {
+        $block = WhatsAppMessage::rtlBlock("أهلاً\nhttps://mg-plastic.com/open/invoice/9\nشكرًا");
+        $lines = explode("\n", $block);
+
+        $this->assertStringStartsWith(WhatsAppMessage::RLM, $lines[0]);
+        $this->assertSame('https://mg-plastic.com/open/invoice/9', $lines[1]);
+        $this->assertStringStartsWith(WhatsAppMessage::RLM, $lines[2]);
     }
 }

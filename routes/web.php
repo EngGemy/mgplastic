@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [LandingController::class, 'index'])->name('landing');
 
 // Universal / App Links (WhatsApp captions → mobile screen)
-Route::get('/open/{type}/{id}', OpenAppController::class)
+Route::get('/open/{type}/{id?}', OpenAppController::class)
     ->where(['type' => '[A-Za-z]+', 'id' => '[A-Za-z0-9_-]+'])
     ->name('app.open');
 
