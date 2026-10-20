@@ -5,8 +5,12 @@
  * Brand chrome is fixed; colors / badge / icon / progress vary per event.
  */
 return [
-    'jpeg_quality' => 82,
+    // Overridden by services.waha.card_quality / card_size when set
+    'jpeg_quality' => 85,
+    // Square fallback; BrandCard prefers WHATSAPP_CARD_SIZE (e.g. 1080x1350)
     'size' => 1080,
+    'width' => 1080,
+    'height' => 1350,
 
     'themes' => [
         'invoice_created' => [

@@ -23,12 +23,17 @@ class WhatsAppNotifierTest extends TestCase
         config(array_merge([
             'services.waha.url' => 'https://waha.test',
             'services.waha.key' => 'test-api-key',
-            'services.waha.session' => 'default',
+            'services.waha.session' => 'session_test',
             'services.waha.enabled' => true,
             'services.waha.admin_phones' => ['01012345678', '201098765432'],
             'services.waha.default_country_code' => '218',
             'services.waha.sync_alerts' => false,
-            'services.waha.queue' => 'default',
+            'services.waha.queue' => 'whatsapp',
+            'services.waha.delay_min' => 0,
+            'services.waha.delay_max' => 0,
+            'services.waha.daily_limit' => 0,
+            'services.waha.coalesce_seconds' => 0,
+            'services.waha.notify_customers' => true,
             'services.otp.channels' => 'whatsapp,sms',
             'services.marsol.token' => 'marsol-token',
             'services.marsol.sender_id' => 'sender-uuid',
@@ -76,7 +81,7 @@ class WhatsAppNotifierTest extends TestCase
         Http::assertSent(function ($request) {
             return $request->url() === 'https://waha.test/api/sendText'
                 && $request->header('X-Api-Key')[0] === 'test-api-key'
-                && $request['session'] === 'default'
+                && $request['session'] === 'session_test'
                 && $request['chatId'] === '218912159316@c.us'
                 && $request['text'] === "\u{200F}مرحبا";
         });
@@ -185,7 +190,7 @@ class WhatsAppNotifierTest extends TestCase
             'status' => 'approved',
         ]);
 
-        Queue::assertPushedOn('default', SendWhatsAppNotification::class);
+        Queue::assertPushedOn('whatsapp', SendWhatsAppNotification::class);
         Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
             $this->assertSame(3, $job->tries);
             $phones = collect($job->messages)->pluck('phone')->unique()->values()->all();

@@ -18,19 +18,24 @@ class SendWhatsAppNotification implements ShouldQueue
 
     public int $tries = 3;
 
+    /** @var list<int> */
+    public array $backoff = [5, 15, 30];
+
     /**
-     * @param  list<array{phone:string,text:string}>  $messages
+     * @param  list<array<string, mixed>>  $messages
      */
     public function __construct(
         public array $messages,
     ) {
-        // Default "default" so `php artisan queue:work` picks jobs up.
-        // Override with WAHA_QUEUE=whatsapp if you run a dedicated worker.
-        $this->onQueue((string) config('services.waha.queue', 'default'));
+        $this->onQueue((string) config('services.waha.queue', 'whatsapp'));
     }
 
     public function handle(WhatsAppNotifier $notifier): void
     {
-        $notifier->deliver($this->messages);
+        try {
+            $notifier->deliver($this->messages);
+        } catch (\Throwable) {
+            // Never break the queue worker / primary business flow.
+        }
     }
 }

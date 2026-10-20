@@ -82,22 +82,36 @@ return [
     'waha' => [
         'url' => env('WAHA_URL'),
         'key' => env('WAHA_API_KEY'),
-        'session' => env('WAHA_SESSION', 'default'),
+        // Must match a WAHA session name (e.g. session_01m5…). Never hardcode in code.
+        'session' => env('WAHA_SESSION', ''),
         'enabled' => filter_var(env('WHATSAPP_NOTIFY_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'admin_phones' => array_values(array_filter(array_map(
             'trim',
             explode(',', (string) env('WHATSAPP_ADMIN_PHONES', '201030003186,218912159316'))
         ))),
         'default_country_code' => preg_replace('/\D+/', '', (string) env('WHATSAPP_DEFAULT_COUNTRY_CODE', '218')) ?: '218',
-        // Queue name for business alerts (OTP stays sync). Use "default" unless a dedicated worker exists.
-        'queue' => env('WAHA_QUEUE', 'default'),
-        // true = send alerts immediately without queue:work (recommended if worker is not running)
+        // Dedicated queue when WAHA_SYNC_ALERTS=false
+        'queue' => env('WAHA_QUEUE', 'whatsapp'),
         'sync_alerts' => filter_var(env('WAHA_SYNC_ALERTS', true), FILTER_VALIDATE_BOOLEAN),
-        // Mobile / web app link embedded in WhatsApp alerts
         'app_url' => env('MG_APP_URL', env('PLUMBER_APP_URL', env('APP_URL'))),
-        // Optional cover image for alerts (public URL or storage path)
         'brand_image_url' => env('WAHA_BRAND_IMAGE_URL'),
         'brand_image_path' => env('WAHA_BRAND_IMAGE_PATH'),
+        // Anti-ban pacing (seconds, random between min–max; not applied to OTP)
+        'delay_min' => max(0, (int) env('WHATSAPP_DELAY_MIN', 1)),
+        'delay_max' => max(0, (int) env('WHATSAPP_DELAY_MAX', 3)),
+        // Daily cap for non-OTP sends (counted from whatsapp_logs)
+        'daily_limit' => max(0, (int) env('WHATSAPP_DAILY_LIMIT', 50)),
+        // false = admin-only (safe for staging)
+        'notify_customers' => filter_var(env('WHATSAPP_NOTIFY_CUSTOMERS', true), FILTER_VALIDATE_BOOLEAN),
+        // Merge/skip related alerts to same phone+reference within N seconds (0 = off)
+        'coalesce_seconds' => max(0, (int) env('WHATSAPP_COALESCE_SECONDS', 60)),
+        // Health / limit alert emails (comma-separated)
+        'alert_emails' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('WHATSAPP_ALERT_EMAILS', ''))
+        ))),
+        'card_size' => env('WHATSAPP_CARD_SIZE', '1080x1350'),
+        'card_quality' => max(60, min(95, (int) env('WHATSAPP_CARD_QUALITY', 85))),
     ],
 
     /*

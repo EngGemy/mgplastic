@@ -17,11 +17,16 @@ class WhatsAppInvoiceAlertTest extends TestCase
         config([
             'services.waha.url' => 'https://waha.test',
             'services.waha.key' => 'key',
-            'services.waha.session' => 'default',
+            'services.waha.session' => 'session_test',
             'services.waha.enabled' => true,
             'services.waha.sync_alerts' => true,
             'services.waha.admin_phones' => ['201030003186'],
             'services.waha.default_country_code' => '218',
+            'services.waha.delay_min' => 0,
+            'services.waha.delay_max' => 0,
+            'services.waha.notify_customers' => true,
+            'services.waha.coalesce_seconds' => 0,
+            'services.waha.daily_limit' => 0,
         ]);
 
         Http::fake([
@@ -90,10 +95,14 @@ class WhatsAppInvoiceAlertTest extends TestCase
         config([
             'services.waha.url' => 'https://waha.test',
             'services.waha.key' => 'key',
-            'services.waha.session' => 'default',
+            'services.waha.session' => 'session_test',
             'services.waha.enabled' => true,
             'services.waha.sync_alerts' => true,
             'services.waha.admin_phones' => [],
+            'services.waha.delay_min' => 0,
+            'services.waha.delay_max' => 0,
+            'services.waha.daily_limit' => 0,
+            'services.waha.coalesce_seconds' => 0,
         ]);
 
         Http::fake([

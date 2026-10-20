@@ -3,153 +3,216 @@
 namespace App\Services;
 
 use App\Jobs\SendWhatsAppNotification;
+use App\Mail\WhatsAppLimitReachedMail;
+use App\Models\WhatsAppLog;
 use App\Support\WhatsAppMessage;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class WhatsAppNotifier
 {
     /**
-     * Send one message immediately (OTP / sync). Never fans out to admins.
-     * Pass $imageUrl OR a brand-card asset array from WhatsAppBrandCard::assetFor().
+     * Immediate send (OTP). Never fans out to admins. Never delayed / never counts toward daily limit.
      *
-     * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string,path?:string}|null  $image
+     * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string}|null  $image
      */
     public function send(string $phone, string $text, string|array|null $image = null): bool
     {
-        return $this->deliver([[
-            'phone' => $phone,
-            'text' => WhatsAppMessage::rtlBlock($text),
-            'image' => $image,
-        ]]);
+        try {
+            return $this->deliver([[
+                'phone' => $phone,
+                'text' => $text,
+                'image' => $image,
+                'event' => 'otp',
+                'recipient_type' => 'otp',
+                'is_otp' => true,
+            ]], skipDelay: true);
+        } catch (\Throwable $e) {
+            Log::error('[WhatsAppNotifier] send exception', ['error' => $e->getMessage()]);
+
+            return false;
+        }
     }
 
     /**
-     * @param  list<array{phone:string,text:string,image?:mixed,image_url?:?string}>  $messages
+     * @param  list<array<string, mixed>>  $messages
      */
     public function sendMany(array $messages): void
     {
-        if (! $this->enabled()) {
-            Log::warning('[WhatsAppNotifier] skipped — WHATSAPP_NOTIFY_ENABLED is false');
+        try {
+            if (! $this->enabled()) {
+                Log::warning('[WhatsAppNotifier] skipped — WHATSAPP_NOTIFY_ENABLED is false');
 
-            return;
+                return;
+            }
+
+            $prepared = $this->prepareMessages($messages);
+            if ($prepared === []) {
+                return;
+            }
+
+            if (filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
+                || config('queue.default') === 'sync') {
+                $this->deliver($prepared);
+
+                return;
+            }
+
+            SendWhatsAppNotification::dispatch($prepared)->afterCommit();
+        } catch (\Throwable $e) {
+            Log::error('[WhatsAppNotifier] sendMany exception', ['error' => $e->getMessage()]);
         }
-
-        $prepared = $this->prepareMessages($messages);
-        if ($prepared === []) {
-            Log::warning('[WhatsAppNotifier] skipped — no valid phones after normalize');
-
-            return;
-        }
-
-        if (filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
-            || config('queue.default') === 'sync') {
-            $this->deliver($prepared);
-
-            return;
-        }
-
-        SendWhatsAppNotification::dispatch($prepared)->afterCommit();
     }
 
-    public function notifyAdmins(string $text, string|array|null $image = null): void
+    public function notifyAdmins(string $text, string|array|null $image = null, array $meta = []): void
     {
         $messages = [];
         foreach ($this->adminPhones() as $phone) {
-            $messages[] = ['phone' => $phone, 'text' => $text, 'image' => $image];
+            $messages[] = array_merge($meta, [
+                'phone' => $phone,
+                'text' => $text,
+                'image' => $image,
+                'recipient_type' => 'admin',
+            ]);
         }
-
         $this->sendMany($messages);
-    }
-
-    public function notifyUserAndAdmins(?string $userPhone, string $text, string|array|null $image = null): void
-    {
-        $this->notifyUsersAndAdmins(
-            filled($userPhone) ? [$userPhone] : [],
-            $text,
-            $image
-        );
     }
 
     /**
      * @param  list<string|null>  $userPhones
      */
-    public function notifyUsersAndAdmins(array $userPhones, string $text, string|array|null $image = null): void
+    public function notifyUsersAndAdmins(array $userPhones, string $text, string|array|null $image = null, array $meta = []): void
     {
         $messages = [];
-
-        foreach ($userPhones as $phone) {
-            if (filled($phone)) {
-                $messages[] = [
-                    'phone' => (string) $phone,
-                    'text' => $text,
-                    'image' => $image,
-                ];
+        if ($this->notifyCustomers()) {
+            foreach ($userPhones as $phone) {
+                if (filled($phone)) {
+                    $messages[] = array_merge($meta, [
+                        'phone' => (string) $phone,
+                        'text' => $text,
+                        'image' => $image,
+                        'recipient_type' => 'customer',
+                    ]);
+                }
             }
         }
-
         foreach ($this->adminPhones() as $phone) {
-            $messages[] = [
+            $messages[] = array_merge($meta, [
                 'phone' => $phone,
                 'text' => $text,
                 'image' => $image,
-            ];
+                'recipient_type' => 'admin',
+            ]);
         }
-
         $this->sendMany($messages);
     }
 
     /**
-     * @param  list<array{phone:string,text:string,image?:mixed,image_url?:?string}>  $messages
+     * @param  list<array<string, mixed>>  $messages
      */
-    public function deliver(array $messages): bool
+    public function deliver(array $messages, bool $skipDelay = false): bool
     {
-        if (! $this->enabled()) {
-            return false;
-        }
-
-        $prepared = $this->prepareMessages($messages);
-        if ($prepared === []) {
-            return false;
-        }
-
-        $url = rtrim(trim((string) config('services.waha.url')), '/');
-        if ($url === '') {
-            Log::error('[WhatsAppNotifier] WAHA_URL is empty — cannot send');
-
-            return false;
-        }
-
-        $allOk = true;
-        $isFirst = true;
-
-        foreach ($prepared as $message) {
-            if (! $isFirst) {
-                usleep(1_000_000);
+        try {
+            if (! $this->enabled()) {
+                return false;
             }
-            $isFirst = false;
 
-            $hasImage = $this->hasImagePayload($message['image'] ?? null);
-            $ok = false;
+            $prepared = $this->prepareMessages($messages);
+            if ($prepared === []) {
+                return false;
+            }
 
-            if ($hasImage) {
-                $ok = $this->sendImage($url, $message['phone'], $message['text'], $message['image']);
-                if (! $ok) {
-                    Log::warning('[WhatsAppNotifier] sendImage failed — falling back to sendText', [
-                        'phone' => $message['phone'],
-                    ]);
-                    $ok = $this->sendText($url, $message['phone'], $message['text']);
+            $baseUrl = rtrim(trim((string) config('services.waha.url')), '/');
+            if ($baseUrl === '') {
+                Log::error('[WhatsAppNotifier] WAHA_URL is empty');
+
+                return false;
+            }
+
+            $session = $this->sessionName();
+            if ($session === '') {
+                Log::error('[WhatsAppNotifier] WAHA_SESSION is empty');
+
+                return false;
+            }
+
+            $allOk = true;
+            $isFirst = true;
+
+            foreach ($prepared as $message) {
+                $isOtp = (bool) ($message['is_otp'] ?? ($message['recipient_type'] ?? '') === 'otp');
+
+                if (! $isFirst && ! $skipDelay && ! $isOtp) {
+                    $this->sleepBetweenMessages();
                 }
-            } else {
-                $ok = $this->sendText($url, $message['phone'], $message['text']);
+                $isFirst = false;
+
+                if (! $isOtp && $this->dailyLimitReached()) {
+                    $this->logAttempt($message, 'skipped_limit', null, 'Daily limit reached');
+                    $this->maybeAlertDailyLimit();
+                    $allOk = false;
+
+                    continue;
+                }
+
+                if (! $this->isValidInternational($message['phone'])) {
+                    $this->logAttempt($message, 'skipped_invalid_phone', null, 'Invalid international phone');
+                    $allOk = false;
+
+                    continue;
+                }
+
+                if ($this->shouldCoalesceSkip($message)) {
+                    continue;
+                }
+
+                $hasImage = $this->hasImagePayload($message['image'] ?? null);
+                $ok = false;
+                $channel = 'text';
+                $status = 'failed';
+                $error = null;
+
+                if ($hasImage) {
+                    $ok = $this->sendImage($baseUrl, $session, $message['phone'], $message['text'], $message['image']);
+                    if ($ok) {
+                        $channel = 'image';
+                        $status = 'sent';
+                    } else {
+                        Log::warning('[WhatsAppNotifier] sendImage failed — fallback sendText', [
+                            'phone' => $message['phone'],
+                        ]);
+                        $ok = $this->sendText($baseUrl, $session, $message['phone'], $message['text']);
+                        if ($ok) {
+                            $channel = 'text';
+                            $status = 'fallback_text';
+                        } else {
+                            $error = 'image and text failed';
+                        }
+                    }
+                } else {
+                    $ok = $this->sendText($baseUrl, $session, $message['phone'], $message['text']);
+                    $status = $ok ? 'sent' : 'failed';
+                    if (! $ok) {
+                        $error = 'sendText failed';
+                    }
+                }
+
+                $this->logAttempt($message, $status, $channel, $error);
+                if ($ok) {
+                    $this->markCoalesce($message);
+                } else {
+                    $allOk = false;
+                }
             }
 
-            if (! $ok) {
-                $allOk = false;
-            }
+            return $allOk;
+        } catch (\Throwable $e) {
+            Log::error('[WhatsAppNotifier] deliver exception', ['error' => $e->getMessage()]);
+
+            return false;
         }
-
-        return $allOk;
     }
 
     public function enabled(): bool
@@ -157,39 +220,41 @@ class WhatsAppNotifier
         return (bool) config('services.waha.enabled');
     }
 
+    public function notifyCustomers(): bool
+    {
+        return (bool) config('services.waha.notify_customers', true);
+    }
+
+    public function sessionName(): string
+    {
+        return trim((string) config('services.waha.session', ''));
+    }
+
     public function normalizePhone(?string $raw): ?string
     {
         if ($raw === null) {
             return null;
         }
-
         $digits = preg_replace('/\D+/', '', $raw) ?? '';
         if ($digits === '') {
             return null;
         }
-
         while (str_starts_with($digits, '00')) {
             $digits = substr($digits, 2);
         }
-
         if ($digits === '') {
             return null;
         }
-
         if (str_starts_with($digits, '218') || str_starts_with($digits, '20')) {
             return $digits;
         }
-
         $len = strlen($digits);
-
         if (str_starts_with($digits, '0') && $len === 10) {
             return '218'.substr($digits, 1);
         }
-
         if (str_starts_with($digits, '0') && $len === 11) {
             return '20'.substr($digits, 1);
         }
-
         $defaultCc = preg_replace('/\D+/', '', (string) config('services.waha.default_country_code', '218')) ?: '218';
         if (! str_starts_with($digits, '0') && $len >= 8 && $len <= 10) {
             return $defaultCc.$digits;
@@ -198,15 +263,26 @@ class WhatsAppNotifier
         return $digits;
     }
 
-    /**
-     * @return list<string>
-     */
+    /** Libya 218 + 9 digits, Egypt 20 + 10 digits, or other E.164-ish 10–15 digits with country code. */
+    public function isValidInternational(string $digits): bool
+    {
+        if (preg_match('/^2189\d{8}$/', $digits)) {
+            return true;
+        }
+        if (preg_match('/^20(10|11|12|15)\d{8}$/', $digits)) {
+            return true;
+        }
+
+        return (bool) preg_match('/^[1-9]\d{9,14}$/', $digits);
+    }
+
+    /** @return list<string> */
     public function adminPhones(): array
     {
         $phones = [];
         foreach ((array) config('services.waha.admin_phones', []) as $phone) {
             $normalized = $this->normalizePhone((string) $phone);
-            if ($normalized) {
+            if ($normalized && $this->isValidInternational($normalized)) {
                 $phones[$normalized] = $normalized;
             }
         }
@@ -215,90 +291,216 @@ class WhatsAppNotifier
     }
 
     /**
-     * @param  list<array{phone?:string,text?:string,image?:mixed,image_url?:?string}>  $messages
-     * @return list<array{phone:string,text:string,image:mixed}>
+     * @param  list<array<string, mixed>>  $messages
+     * @return list<array<string, mixed>>
      */
     protected function prepareMessages(array $messages): array
     {
         $out = [];
         $seen = [];
+        $notifyCustomers = $this->notifyCustomers();
 
         foreach ($messages as $message) {
-            $phone = $this->normalizePhone((string) ($message['phone'] ?? ''));
-            $text = WhatsAppMessage::rtlBlock(trim((string) ($message['text'] ?? '')));
-            $image = $message['image'] ?? $message['image_url'] ?? null;
+            $recipientType = (string) ($message['recipient_type'] ?? 'customer');
+            $isOtp = (bool) ($message['is_otp'] ?? $recipientType === 'otp');
 
-            if (! $phone || $text === '') {
+            if (! $isOtp && $recipientType === 'customer' && ! $notifyCustomers) {
                 continue;
             }
 
-            $imageKey = is_array($image)
-                ? md5(($image['filename'] ?? '').($image['url'] ?? '').substr((string) ($image['base64'] ?? ''), 0, 32))
-                : (string) $image;
+            $rawPhone = (string) ($message['phone'] ?? '');
+            $phone = $this->normalizePhone($rawPhone);
+            $text = WhatsAppMessage::rtlBlock(trim((string) ($message['text'] ?? '')));
+            $image = $message['image'] ?? $message['image_url'] ?? null;
 
+            if (! $phone) {
+                WhatsAppLog::record([
+                    'event' => $message['event'] ?? null,
+                    'phone' => substr(preg_replace('/\D+/', '', $rawPhone) ?: 'unknown', 0, 32),
+                    'recipient_type' => $recipientType,
+                    'status' => 'skipped_invalid_phone',
+                    'reference_type' => $message['reference_type'] ?? null,
+                    'reference_id' => $message['reference_id'] ?? null,
+                    'error' => 'normalize failed',
+                ]);
+
+                continue;
+            }
+
+            if ($text === '') {
+                continue;
+            }
+
+            // Dedupe same phone in one batch (customer who is also admin, etc.)
+            $imageKey = is_array($image)
+                ? md5(($image['filename'] ?? '').substr((string) ($image['base64'] ?? ''), 0, 24))
+                : (string) $image;
             $key = $phone.'|'.md5($text.'|'.$imageKey);
             if (isset($seen[$key])) {
                 continue;
             }
             $seen[$key] = true;
 
+            // Prefer first occurrence; if admin+customer same phone, keep whichever came first
+            if (isset($seen['phone:'.$phone]) && ! $isOtp) {
+                continue;
+            }
+            $seen['phone:'.$phone] = true;
+
             $out[] = [
                 'phone' => $phone,
                 'text' => $text,
                 'image' => $image,
+                'event' => $message['event'] ?? null,
+                'recipient_type' => $isOtp ? 'otp' : $recipientType,
+                'reference_type' => $message['reference_type'] ?? null,
+                'reference_id' => $message['reference_id'] ?? null,
+                'is_otp' => $isOtp,
             ];
         }
 
         return $out;
     }
 
-    protected function sendText(string $baseUrl, string $phone, string $text): bool
+    protected function sleepBetweenMessages(): void
+    {
+        $min = (int) config('services.waha.delay_min', 1);
+        $max = (int) config('services.waha.delay_max', 3);
+        if ($max < $min) {
+            $max = $min;
+        }
+        if ($max <= 0) {
+            return;
+        }
+        $seconds = $min === $max ? $min : random_int($min, $max);
+        if ($seconds > 0) {
+            usleep($seconds * 1_000_000);
+        }
+    }
+
+    protected function dailyLimitReached(): bool
+    {
+        $limit = (int) config('services.waha.daily_limit', 50);
+        if ($limit <= 0) {
+            return false;
+        }
+
+        return WhatsAppLog::countTodayNonOtp() >= $limit;
+    }
+
+    protected function maybeAlertDailyLimit(): void
+    {
+        $key = 'whatsapp:daily_limit_alert:'.now()->toDateString();
+        if (! Cache::add($key, 1, now()->endOfDay())) {
+            return;
+        }
+        $emails = (array) config('services.waha.alert_emails', []);
+        if ($emails === []) {
+            Log::warning('[WhatsAppNotifier] daily limit reached — no WHATSAPP_ALERT_EMAILS configured');
+
+            return;
+        }
+        try {
+            Mail::to($emails)->send(new WhatsAppLimitReachedMail(
+                (int) config('services.waha.daily_limit', 50),
+                WhatsAppLog::countTodayNonOtp()
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('[WhatsAppNotifier] daily limit mail failed', ['error' => $e->getMessage()]);
+        }
+        Log::warning('[WhatsAppNotifier] daily limit reached', [
+            'limit' => (int) config('services.waha.daily_limit', 50),
+        ]);
+    }
+
+    /** @param  array<string, mixed>  $message */
+    protected function shouldCoalesceSkip(array $message): bool
+    {
+        if (! empty($message['is_otp'])) {
+            return false;
+        }
+        $seconds = (int) config('services.waha.coalesce_seconds', 60);
+        if ($seconds <= 0) {
+            return false;
+        }
+        $refType = $message['reference_type'] ?? null;
+        $refId = $message['reference_id'] ?? null;
+        if (! $refType || ! $refId) {
+            return false;
+        }
+        $key = 'whatsapp:coalesce:'.$message['phone'].':'.$refType.':'.$refId;
+        if (Cache::has($key)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /** @param  array<string, mixed>  $message */
+    protected function markCoalesce(array $message): void
+    {
+        if (! empty($message['is_otp'])) {
+            return;
+        }
+        $seconds = (int) config('services.waha.coalesce_seconds', 60);
+        if ($seconds <= 0) {
+            return;
+        }
+        $refType = $message['reference_type'] ?? null;
+        $refId = $message['reference_id'] ?? null;
+        if (! $refType || ! $refId) {
+            return;
+        }
+        Cache::put(
+            'whatsapp:coalesce:'.$message['phone'].':'.$refType.':'.$refId,
+            1,
+            $seconds
+        );
+    }
+
+    /** @param  array<string, mixed>  $message */
+    protected function logAttempt(array $message, string $status, ?string $channel, ?string $error): void
+    {
+        WhatsAppLog::record([
+            'event' => $message['event'] ?? null,
+            'phone' => $message['phone'],
+            'recipient_type' => $message['recipient_type'] ?? 'customer',
+            'status' => $status,
+            'channel' => $channel,
+            'reference_type' => $message['reference_type'] ?? null,
+            'reference_id' => $message['reference_id'] ?? null,
+            'error' => $error,
+        ]);
+    }
+
+    protected function sendText(string $baseUrl, string $session, string $phone, string $text): bool
     {
         return $this->postJson($baseUrl.'/api/sendText', [
-            'session' => (string) config('services.waha.session', 'default'),
+            'session' => $session,
             'chatId' => $phone.'@c.us',
             'text' => $text,
         ], $phone, 'sendText');
     }
 
     /**
-     * Prefer JPEG base64 (WhatsApp/WAHA best path). Skip localhost URLs — remote WAHA cannot fetch them.
-     *
-     * Root causes of past sendImage failures:
-     * 1) PNG cards — WhatsApp works best with JPEG (mimetype image/jpeg + .jpg).
-     * 2) file.url pointing at APP_URL localhost/.test — WAHA server cannot reach it.
-     * 3) Missing file.data — empty payload.
-     *
-     * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string,path?:string}  $image
+     * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string}  $image
      */
-    protected function sendImage(string $baseUrl, string $phone, string $caption, string|array $image): bool
+    protected function sendImage(string $baseUrl, string $session, string $phone, string $caption, string|array $image): bool
     {
-        $session = (string) config('services.waha.session', 'default');
-        $chatId = $phone.'@c.us';
         $endpoint = $baseUrl.'/api/sendImage';
-
+        $chatId = $phone.'@c.us';
         $attempts = [];
 
         if (is_array($image) && filled($image['base64'] ?? null)) {
-            $mimetype = (string) ($image['mimetype'] ?? 'image/jpeg');
-            $filename = (string) ($image['filename'] ?? 'mg-card.jpg');
-            // Normalize legacy PNG assets to JPEG naming if caller still passes png
-            if ($mimetype === 'image/png' || str_ends_with(strtolower($filename), '.png')) {
-                Log::warning('[WhatsAppNotifier] sendImage received PNG — WhatsApp prefers JPEG; sending as-is may fail', [
-                    'mimetype' => $mimetype,
-                    'filename' => $filename,
-                ]);
-            }
-
             $attempts[] = [
-                'mode' => 'base64-jpeg',
+                'mode' => 'base64',
                 'payload' => [
                     'session' => $session,
                     'chatId' => $chatId,
                     'caption' => $caption,
                     'file' => [
-                        'mimetype' => $mimetype !== '' ? $mimetype : 'image/jpeg',
-                        'filename' => $filename !== '' ? $filename : 'mg-card.jpg',
+                        'mimetype' => (string) ($image['mimetype'] ?? 'image/jpeg'),
+                        'filename' => (string) ($image['filename'] ?? 'mg-card.jpg'),
                         'data' => (string) $image['base64'],
                     ],
                 ],
@@ -306,68 +508,38 @@ class WhatsAppNotifier
         }
 
         $url = is_array($image) ? ($image['url'] ?? null) : $image;
-        if (filled($url)) {
-            if ($this->urlLooksLocal((string) $url)) {
-                Log::warning('[WhatsAppNotifier] skipping sendImage url attempt — host is local/unreachable from WAHA', [
-                    'phone' => $phone,
-                    'url' => (string) $url,
-                    'hint' => 'Use base64 (file.data). APP_URL localhost/.test is not fetchable by remote WAHA.',
-                ]);
-            } else {
-                $attempts[] = [
-                    'mode' => 'url',
-                    'payload' => [
-                        'session' => $session,
-                        'chatId' => $chatId,
-                        'caption' => $caption,
-                        'file' => [
-                            'mimetype' => 'image/jpeg',
-                            'filename' => 'mg-card.jpg',
-                            'url' => (string) $url,
-                        ],
+        if (filled($url) && ! $this->urlLooksLocal((string) $url)) {
+            $attempts[] = [
+                'mode' => 'url',
+                'payload' => [
+                    'session' => $session,
+                    'chatId' => $chatId,
+                    'caption' => $caption,
+                    'file' => [
+                        'mimetype' => 'image/jpeg',
+                        'filename' => 'mg-card.jpg',
+                        'url' => (string) $url,
                     ],
-                ];
-            }
-        }
-
-        if ($attempts === []) {
-            Log::error('[WhatsAppNotifier] sendImage aborted — no usable base64/url', [
-                'phone' => $phone,
-                'had_base64' => is_array($image) && filled($image['base64'] ?? null),
-                'had_url' => filled($url),
-            ]);
-
-            return false;
+                ],
+            ];
         }
 
         foreach ($attempts as $attempt) {
-            $ok = $this->postJson($endpoint, $attempt['payload'], $phone, 'sendImage:'.$attempt['mode']);
-            if ($ok) {
-                Log::info('[WhatsAppNotifier] sendImage ok', [
-                    'phone' => $phone,
-                    'mode' => $attempt['mode'],
-                    'mimetype' => $attempt['payload']['file']['mimetype'] ?? null,
-                ]);
-
+            if ($this->postJson($endpoint, $attempt['payload'], $phone, 'sendImage:'.$attempt['mode'])) {
                 return true;
             }
         }
-
-        Log::error('[WhatsAppNotifier] sendImage all attempts failed — will fall back to sendText', [
-            'phone' => $phone,
-            'modes' => array_column($attempts, 'mode'),
-        ]);
 
         return false;
     }
 
     protected function urlLooksLocal(string $url): bool
     {
-        $host = parse_url($url, PHP_URL_HOST) ?: '';
+        $host = strtolower((string) (parse_url($url, PHP_URL_HOST) ?: ''));
 
-        return in_array(strtolower($host), ['localhost', '127.0.0.1', '::1'], true)
-            || str_ends_with(strtolower($host), '.test')
-            || str_ends_with(strtolower($host), '.local');
+        return in_array($host, ['localhost', '127.0.0.1', '::1'], true)
+            || str_ends_with($host, '.test')
+            || str_ends_with($host, '.local');
     }
 
     protected function hasImagePayload(mixed $image): bool
@@ -376,16 +548,10 @@ class WhatsAppNotifier
             return true;
         }
 
-        if (! is_array($image)) {
-            return false;
-        }
-
-        return filled($image['base64'] ?? null) || filled($image['url'] ?? null);
+        return is_array($image) && (filled($image['base64'] ?? null) || filled($image['url'] ?? null));
     }
 
-    /**
-     * @param  array<string, mixed>  $payload
-     */
+    /** @param  array<string, mixed>  $payload */
     protected function postJson(string $endpoint, array $payload, string $phone, string $action): bool
     {
         try {
@@ -402,28 +568,21 @@ class WhatsAppNotifier
                 return true;
             }
 
-            // Truncate body; never log API key or full base64
             $body = $response->body();
             if (strlen($body) > 500) {
                 $body = substr($body, 0, 500).'…';
             }
-
             Log::error('[WhatsAppNotifier] WAHA '.$action.' failed', [
                 'status' => $response->status(),
                 'phone' => $phone,
-                'session' => config('services.waha.session'),
-                'endpoint' => $endpoint,
+                'session' => $this->sessionName(),
                 'reason' => $body,
-                'hint' => str_contains($action, 'url')
-                    ? 'WAHA may not reach APP_URL (localhost). Base64 path should be used.'
-                    : 'Check WAHA session is WORKING and /api/sendImage accepts file.data base64.',
             ]);
 
             return false;
         } catch (\Throwable $e) {
             Log::error('[WhatsAppNotifier] WAHA '.$action.' exception', [
                 'phone' => $phone,
-                'endpoint' => $endpoint,
                 'error' => $e->getMessage(),
             ]);
 
