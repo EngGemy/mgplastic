@@ -129,7 +129,10 @@ class DistributionService
         }
     }
 
-    public function confirmDistribution(InvoiceDistribution $distribution): void
+    /**
+     * @return array{new_badges:list,score_delta:int,level_changed:bool}
+     */
+    public function confirmDistribution(InvoiceDistribution $distribution): array
     {
         if ($distribution->status === 'points_awarded') {
             throw new \DomainException('لا يمكن تعديل توزيع تم منح نقاطه');
@@ -148,6 +151,21 @@ class DistributionService
         };
 
         $this->syncOutgoingInvoiceStatus($distribution);
+
+        $reputation = ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false];
+        if ((int) $distribution->tier === 3 && $distribution->to_user_id) {
+            try {
+                $reputation = \App\Jobs\Reputation\RecomputeScoreJob::runSync(
+                    (int) $distribution->to_user_id,
+                    'distribution_confirmed',
+                    (int) $distribution->id
+                );
+            } catch (\Throwable) {
+                // reputation must never break distribution confirm
+            }
+        }
+
+        return $reputation;
     }
 
     private function awardPointsToPlumber(InvoiceDistribution $distribution, int $points): void

@@ -35,6 +35,11 @@ class OrderResource extends JsonResource
                 'name' => $this->requester->name,
                 'brand_name' => $this->requester->brand_name,
             ]),
+            // Visible to retail when fulfilling plumber orders — level/badges/streak only (no product points).
+            'plumber_badge' => $this->when(
+                $this->isPlumberChannel() && $this->relationLoaded('requester') && $this->requester,
+                fn () => $this->plumberBadgePayload()
+            ),
             'supplier' => $this->supplier_id
                 ? $this->when($this->relationLoaded('supplier') && $this->supplier, fn () => [
                     'id' => $this->supplier->id,
@@ -76,6 +81,38 @@ class OrderResource extends JsonResource
             })->values()),
 
             'created_at' => $this->created_at?->toIso8601String(),
+        ];
+    }
+
+    /** @return array{level:string,top_badges:list,streak_weeks:int}|null */
+    protected function plumberBadgePayload(): ?array
+    {
+        $plumber = $this->requester;
+        if (! $plumber || $plumber->role !== 'plumber') {
+            return null;
+        }
+        $level = (string) (\App\Models\PlumberScore::query()->where('user_id', $plumber->id)->value('level') ?: 'bronze');
+        $streak = (int) (\App\Models\PlumberStreak::query()->where('user_id', $plumber->id)->value('current_weeks') ?? 0);
+        $top = \App\Models\UserBadge::query()
+            ->where('user_id', $plumber->id)
+            ->with('badge')
+            ->latest('awarded_at')
+            ->limit(3)
+            ->get()
+            ->map(fn ($ub) => [
+                'key' => $ub->badge?->key,
+                'name_ar' => $ub->badge?->name_ar,
+                'tier' => $ub->badge?->tier,
+                'icon' => $ub->badge?->icon,
+            ])
+            ->filter(fn ($b) => filled($b['key']))
+            ->values()
+            ->all();
+
+        return [
+            'level' => $level,
+            'top_badges' => $top,
+            'streak_weeks' => $streak,
         ];
     }
 

@@ -15,6 +15,7 @@ class PlumberDistributionPosService
 
     /**
      * @param  array<int, array{product_id:int, quantity:int}>  $lines
+     * @return array{distributions:list, reputation:array{new_badges:list,score_delta:int,level_changed:bool}}
      */
     public function issueToPlumber(User $retailTrader, User $plumber, array $lines, User $issuedBy): array
     {
@@ -51,8 +52,9 @@ class PlumberDistributionPosService
         // Plumber wallet is credited on confirm (tier 3); seller wallet is not debited.
         $groups = $this->inventory->allocateFromStock($stock, $requested);
 
-        $distributions = DB::transaction(function () use ($groups, $retailTrader, $plumber) {
+        $pack = DB::transaction(function () use ($groups, $retailTrader, $plumber) {
             $created = [];
+            $reputation = ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false];
 
             foreach ($groups as $group) {
                 $invoice = Invoice::query()->findOrFail($group['invoice_id']);
@@ -66,13 +68,17 @@ class PlumberDistributionPosService
                     parentId: $group['parent_distribution_id'],
                 );
 
-                $this->distributions->confirmDistribution($distribution->fresh(['items']));
+                $rep = $this->distributions->confirmDistribution($distribution->fresh(['items']));
                 $created[] = $distribution->fresh(['items', 'invoice']);
+                $reputation['score_delta'] += (int) ($rep['score_delta'] ?? 0);
+                $reputation['level_changed'] = $reputation['level_changed'] || ! empty($rep['level_changed']);
+                $reputation['new_badges'] = array_merge($reputation['new_badges'], $rep['new_badges'] ?? []);
             }
 
-            return $created;
+            return ['distributions' => $created, 'reputation' => $reputation];
         });
 
+        $distributions = $pack['distributions'];
         $totalPoints = (int) collect($distributions)->sum(
             fn ($distribution) => (int) $distribution->items->sum('points_value')
         );
@@ -94,6 +100,6 @@ class PlumberDistributionPosService
             ]);
         }
 
-        return $distributions;
+        return $pack;
     }
 }

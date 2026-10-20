@@ -237,6 +237,24 @@ trait HandlesInvoiceReturnApi
         $row['invoice_status'] = $invoice->status;
         $row['return_via'] = 'invoice'; // POST …/invoices/{invoice}/returns
 
+        if ($actor) {
+            $row = array_merge($row, $this->invoiceShareFields($invoice, $actor));
+        }
+
         return $row;
+    }
+
+    /** Non-breaking WhatsApp share fields for invoice list/detail rows. */
+    protected function invoiceShareFields(Invoice $invoice, User $actor): array
+    {
+        try {
+            return app(\App\Services\InvoiceWhatsAppShareService::class)->compactShareFields($invoice, $actor);
+        } catch (\Throwable) {
+            return [
+                'can_share_whatsapp' => false,
+                'share_url' => null,
+                'whatsapp_url' => null,
+            ];
+        }
     }
 }

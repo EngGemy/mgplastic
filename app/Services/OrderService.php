@@ -771,6 +771,7 @@ class OrderService
 
         $groups = $this->inventory->allocateFromStock($stock, $requested);
         $distributionIds = [];
+        $reputation = ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false];
 
         foreach ($groups as $group) {
             $invoice = Invoice::query()->findOrFail($group['invoice_id']);
@@ -785,13 +786,17 @@ class OrderService
                 skipCallerCheck: true,
             );
 
-            $this->distributions->confirmDistribution($distribution->fresh(['items']));
+            $rep = $this->distributions->confirmDistribution($distribution->fresh(['items']));
             $distributionIds[] = $distribution->id;
+            $reputation['score_delta'] += (int) ($rep['score_delta'] ?? 0);
+            $reputation['level_changed'] = $reputation['level_changed'] || ! empty($rep['level_changed']);
+            $reputation['new_badges'] = array_merge($reputation['new_badges'], $rep['new_badges'] ?? []);
         }
 
         return [
             'invoice_id' => null,
             'reference' => ['distribution_ids' => $distributionIds],
+            'reputation' => $reputation,
         ];
     }
 
@@ -1131,7 +1136,14 @@ class OrderService
                 'success',
             );
 
-            return $order->fresh(['items', 'requester', 'supplier']);
+            $fresh = $order->fresh(['items', 'requester', 'supplier']);
+            $fresh->setAttribute('_reputation_celebration', $reference['reputation'] ?? [
+                'new_badges' => [],
+                'score_delta' => 0,
+                'level_changed' => false,
+            ]);
+
+            return $fresh;
         });
     }
 

@@ -50,8 +50,22 @@ class PosController extends Controller
                 $request->user(),
             );
 
+            $share = null;
+            $first = collect($invoices)->first();
+            if ($first instanceof \App\Models\Invoice) {
+                try {
+                    $share = app(\App\Services\InvoiceWhatsAppShareService::class)
+                        ->forInvoice($first, $request->user());
+                } catch (\Throwable) {
+                    $share = null;
+                }
+            }
+
             return $this->created([
                 'invoices' => $invoices,
+                'whatsapp_share' => $share,
+                'share_url' => $share['share_url'] ?? null,
+                'whatsapp_url' => $share['whatsapp_url'] ?? null,
             ], 'تم البيع للتاجر القطاعي');
         } catch (\DomainException $e) {
             return $this->error($e->getMessage(), 422);

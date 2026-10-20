@@ -142,7 +142,7 @@ class InvoiceReturnController extends Controller
                 ->map(function (Invoice $inv) use ($user) {
                     $dist = $inv->distributions->first();
                     if (! $dist) {
-                        return [
+                        return array_merge([
                             'id' => (int) $inv->id,
                             'invoice_id' => (int) $inv->id,
                             'invoice_number' => $inv->number,
@@ -152,7 +152,7 @@ class InvoiceReturnController extends Controller
                             'can_return' => false,
                             'block_reason' => 'لا يوجد توزيع مؤكّد مرتبط بهذه الفاتورة بعد',
                             'return_via' => 'distribution',
-                        ];
+                        ], $this->invoiceShareFields($inv, $user));
                     }
 
                     $row = $this->summarizeDistributionReturnRow($dist, 'supplier', 'from', $user);
@@ -165,7 +165,7 @@ class InvoiceReturnController extends Controller
                     $row['source'] = $dist->fromUser?->isCentralWarehouse() ? 'warehouse' : 'factory';
                     $row['return_via'] = 'distribution'; // POST …/distributions/{distribution}/returns
 
-                    return $row;
+                    return array_merge($row, $this->invoiceShareFields($inv, $user));
                 })
                 ->values()
                 ->all();

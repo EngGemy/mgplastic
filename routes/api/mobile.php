@@ -26,6 +26,9 @@ use App\Http\Controllers\Api\Mobile\PromoBannerController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
 use App\Http\Controllers\Api\Mobile\SettingsController;
 use App\Http\Controllers\Api\Mobile\SuggestController;
+use App\Http\Controllers\Api\Mobile\Reputation\PlumberReputationController;
+use App\Http\Controllers\Api\Mobile\Reputation\PlumberWarrantyController;
+use App\Http\Controllers\Api\Mobile\InvoiceShareController;
 use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardController;
 use App\Http\Controllers\Api\Plumber\InvoiceReturnController as PlumberInvoiceReturnController;
 use App\Http\Controllers\Api\Plumber\OrderController as PlumberOrderController;
@@ -153,7 +156,22 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('returns/{return}/reject', [PlumberInvoiceReturnController::class, 'reject']);
         Route::get('distributions/{distribution}/return-preview', [PlumberInvoiceReturnController::class, 'previewDistribution']);
         Route::post('distributions/{distribution}/returns', [PlumberInvoiceReturnController::class, 'storeDistribution']);
+        Route::get('distributions/{distribution}/share', [InvoiceShareController::class, 'showDistribution'])->whereNumber('distribution');
+        Route::post('distributions/{distribution}/share-whatsapp', [InvoiceShareController::class, 'shareDistributionWhatsApp'])->whereNumber('distribution');
         Route::get('reports', [\App\Http\Controllers\Api\Plumber\ReportController::class, 'index']);
+
+        // Reputation / badges / streak / warranties / reminder prefs
+        Route::get('reputation', [PlumberReputationController::class, 'reputation']);
+        Route::get('badges', [PlumberReputationController::class, 'badges']);
+        Route::get('streak', [PlumberReputationController::class, 'streak']);
+        Route::get('reminder-preferences', [PlumberReputationController::class, 'reminderPreferences']);
+        Route::put('reminder-preferences', [PlumberReputationController::class, 'updateReminderPreferences']);
+        Route::get('warranties/eligible-items', [PlumberWarrantyController::class, 'eligible']);
+        Route::get('warranties', [PlumberWarrantyController::class, 'index']);
+        Route::post('warranties', [PlumberWarrantyController::class, 'store']);
+        Route::get('warranties/{warranty}', [PlumberWarrantyController::class, 'show'])->whereNumber('warranty');
+        Route::post('warranties/{warranty}/resend', [PlumberWarrantyController::class, 'resend'])->whereNumber('warranty');
+        Route::get('warranties/{warranty}/pdf', [PlumberWarrantyController::class, 'pdf'])->whereNumber('warranty');
     });
 
     // ── Retail trader (تاجر التجزئة) ───────────────────────────
@@ -164,7 +182,10 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('plumbers', [TraderPlumberController::class, 'index']);
         Route::post('plumbers/link', [TraderPlumberController::class, 'link']);
         Route::delete('plumbers/{plumber}', [TraderPlumberController::class, 'unlink'])->whereNumber('plumber');
+        Route::get('plumbers/{plumber}/reputation', [PlumberReputationController::class, 'showPlumber'])->whereNumber('plumber');
         Route::get('plumbers/{plumber}', [TraderPlumberController::class, 'show']);
+        Route::get('reminder-preferences', [PlumberReputationController::class, 'reminderPreferences']);
+        Route::put('reminder-preferences', [PlumberReputationController::class, 'updateReminderPreferences']);
 
         Route::get('pos/stock', [TraderPosController::class, 'stock']);
         Route::post('pos/checkout', [TraderPosController::class, 'checkout']);
@@ -239,8 +260,12 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('distributions/{distribution}/returns', [TraderInvoiceReturnController::class, 'storeDistribution']);
         Route::get('invoices', [TraderInvoiceReturnController::class, 'invoices']);
         Route::get('my-invoices', [TraderInvoiceReturnController::class, 'invoices']); // alias فواتيري
+        Route::get('invoices/{invoice}/share', [InvoiceShareController::class, 'showInvoice'])->whereNumber('invoice');
+        Route::post('invoices/{invoice}/share-whatsapp', [InvoiceShareController::class, 'shareInvoiceWhatsApp'])->whereNumber('invoice');
         Route::get('invoices/{invoice}/return-preview', [TraderInvoiceReturnController::class, 'previewInvoice']);
         Route::post('invoices/{invoice}/returns', [TraderInvoiceReturnController::class, 'storeInvoice']);
+        Route::get('distributions/{distribution}/share', [InvoiceShareController::class, 'showDistribution'])->whereNumber('distribution');
+        Route::post('distributions/{distribution}/share-whatsapp', [InvoiceShareController::class, 'shareDistributionWhatsApp'])->whereNumber('distribution');
         Route::get('reports', [\App\Http\Controllers\Api\Trader\ReportController::class, 'index']);
     });
 
@@ -259,7 +284,10 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('plumbers', [DistributorNetworkPlumberController::class, 'index']);
         Route::post('plumbers', [DistributorNetworkPlumberController::class, 'store']);
         Route::post('plumbers/link', [DistributorNetworkPlumberController::class, 'link']);
+        Route::get('plumbers/{plumber}/reputation', [PlumberReputationController::class, 'showPlumber'])->whereNumber('plumber');
         Route::get('plumbers/{plumber}', [DistributorNetworkPlumberController::class, 'show']);
+        Route::get('reminder-preferences', [PlumberReputationController::class, 'reminderPreferences']);
+        Route::put('reminder-preferences', [PlumberReputationController::class, 'updateReminderPreferences']);
 
         Route::get('pos/stock', [DistributorPosController::class, 'stock']);
         Route::post('pos/checkout', [DistributorPosController::class, 'checkout']);
@@ -325,10 +353,14 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('returns/{return}/reject', [DistributorInvoiceReturnController::class, 'reject']);
         Route::get('invoices', [DistributorInvoiceReturnController::class, 'invoices']);
         Route::get('my-invoices', [DistributorInvoiceReturnController::class, 'invoices']); // alias فواتيري
+        Route::get('invoices/{invoice}/share', [InvoiceShareController::class, 'showInvoice'])->whereNumber('invoice');
+        Route::post('invoices/{invoice}/share-whatsapp', [InvoiceShareController::class, 'shareInvoiceWhatsApp'])->whereNumber('invoice');
         Route::get('invoices/{invoice}/return-preview', [DistributorInvoiceReturnController::class, 'preview']);
         Route::post('invoices/{invoice}/returns', [DistributorInvoiceReturnController::class, 'store']);
         Route::get('distributions/{distribution}/return-preview', [DistributorInvoiceReturnController::class, 'previewDistribution'])->whereNumber('distribution');
         Route::post('distributions/{distribution}/returns', [DistributorInvoiceReturnController::class, 'storeDistribution'])->whereNumber('distribution');
+        Route::get('distributions/{distribution}/share', [InvoiceShareController::class, 'showDistribution'])->whereNumber('distribution');
+        Route::post('distributions/{distribution}/share-whatsapp', [InvoiceShareController::class, 'shareDistributionWhatsApp'])->whereNumber('distribution');
 
         // Period reports
         Route::get('reports', [\App\Http\Controllers\Api\Distributor\ReportController::class, 'index']);

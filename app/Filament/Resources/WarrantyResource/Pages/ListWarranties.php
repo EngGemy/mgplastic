@@ -1,0 +1,11 @@
+<?php
+
+namespace App\Filament\Resources\WarrantyResource\Pages;
+
+use App\Filament\Resources\WarrantyResource;
+use Filament\Resources\Pages\ListRecords;
+
+class ListWarranties extends ListRecords
+{
+    protected static string $resource = WarrantyResource::class;
+}

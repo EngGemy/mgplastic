@@ -11,6 +11,15 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [LandingController::class, 'index'])->name('landing');
 
 // Universal / App Links (WhatsApp captions → mobile screen)
+Route::get('/w/{code}', [\App\Http\Controllers\Web\WarrantyPublicController::class, 'show'])
+    ->where('code', 'MGW-[A-Za-z0-9]+')
+    ->middleware('throttle:60,1')
+    ->name('warranty.verify');
+Route::post('/w/{code}/claims', [\App\Http\Controllers\Web\WarrantyPublicController::class, 'claim'])
+    ->where('code', 'MGW-[A-Za-z0-9]+')
+    ->middleware('throttle:10,1')
+    ->name('warranty.claim');
+
 Route::get('/open/{type}/{id?}', OpenAppController::class)
     ->where(['type' => '[A-Za-z]+', 'id' => '[A-Za-z0-9_-]+'])
     ->name('app.open');

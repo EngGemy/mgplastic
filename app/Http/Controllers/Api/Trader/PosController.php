@@ -109,23 +109,43 @@ class PosController extends Controller
         $plumber = User::findOrFail($request->integer('plumber_id'));
 
         try {
-            $distributions = $this->pos->issueToPlumber(
+            $pack = $this->pos->issueToPlumber(
                 $request->user(),
                 $plumber,
                 $request->input('lines'),
                 $request->user(),
             );
+            $distributions = $pack['distributions'] ?? $pack;
+            $reputation = $pack['reputation'] ?? ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false];
 
             $plumber->refresh();
             $balancePoints = (int) ($plumber->wallet('LYD')->balance_points ?? 0);
 
+            $share = null;
+            $firstDist = collect($distributions)->first();
+            if ($firstDist) {
+                try {
+                    $share = app(\App\Services\InvoiceWhatsAppShareService::class)
+                        ->forDistribution($firstDist, $request->user());
+                } catch (\Throwable) {
+                    $share = null;
+                }
+            }
+
             return $this->created([
                 'distributions' => $distributions,
-                'total_points' => collect($distributions)->sum(fn ($d) => $d->total_points),
+                'total_points' => collect($distributions)->sum(fn ($d) => $d->total_points ?? (int) $d->items?->sum('points_value')),
                 'plumber_id' => $plumber->id,
                 'plumber_name' => $plumber->name,
                 'plumber_balance_points' => $balancePoints,
                 'balance_points' => $balancePoints,
+                'new_badges' => $reputation['new_badges'] ?? [],
+                'score_delta' => (int) ($reputation['score_delta'] ?? 0),
+                'level_changed' => (bool) ($reputation['level_changed'] ?? false),
+                // مشاركة واتساب لصاحب رقم السباك
+                'whatsapp_share' => $share,
+                'share_url' => $share['share_url'] ?? null,
+                'whatsapp_url' => $share['whatsapp_url'] ?? null,
             ], 'تم توزيع النقاط للسبّاك');
         } catch (\DomainException $e) {
             return $this->error($e->getMessage(), 422);

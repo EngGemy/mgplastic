@@ -64,6 +64,21 @@ class SettingsController extends Controller
                     'devices' => url('/api/v1/mobile/biometric/devices'),
                 ],
             ],
+            'reputation' => [
+                'enabled' => (bool) config('reputation.enabled', true),
+                'levels' => config('reputation.levels'),
+                'weights' => config('reputation.weights'),
+            ],
+            'warranty' => [
+                'enabled' => (bool) config('warranty.enabled', true),
+                'min_level' => config('warranty.min_level', 'gold'),
+                'min_score' => (int) config('warranty.min_score', 70),
+                'min_distributions' => (int) config('warranty.min_distributions', 5),
+                'default_months' => (int) config('warranty.default_months', 12),
+            ],
+            'reminders' => [
+                'enabled' => (bool) config('reminders.enabled', false),
+            ],
         ]);
     }
 }

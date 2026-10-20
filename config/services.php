@@ -135,7 +135,8 @@ return [
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-2.0-flash'),
-        'timeout' => (int) env('GEMINI_TIMEOUT', 45),
+        'timeout' => (int) env('GEMINI_TIMEOUT', 8),
+        'daily_limit' => (int) env('AI_DAILY_CALL_LIMIT', 300),
     ],
 
 ];

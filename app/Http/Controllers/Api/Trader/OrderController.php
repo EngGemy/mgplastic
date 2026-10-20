@@ -189,10 +189,20 @@ class OrderController extends Controller
             return $this->error('يمكن للتاجر القطاعي فقط تنفيذ الطلب كفاتورة', 403);
         }
 
-        return $this->transition(
-            fn () => $this->orders->fulfillAsInvoice($order, $request->user(), $request->input('note')),
-            'تم تنفيذ الطلب وتحويله لفاتورة وتحديث المخزون',
-        );
+        try {
+            $updated = $this->orders->fulfillAsInvoice($order, $request->user(), $request->input('note'));
+            $data = (new OrderApiResource($this->loadedOrder($updated)))->resolve();
+            $cel = $updated->getAttribute('_reputation_celebration');
+            if (is_array($cel)) {
+                $data['new_badges'] = $cel['new_badges'] ?? [];
+                $data['score_delta'] = (int) ($cel['score_delta'] ?? 0);
+                $data['level_changed'] = (bool) ($cel['level_changed'] ?? false);
+            }
+
+            return $this->success($data, 'تم تنفيذ الطلب وتحويله لفاتورة وتحديث المخزون');
+        } catch (\DomainException $e) {
+            return $this->error($e->getMessage(), 422);
+        }
     }
 
     public function receive(Request $request, Order $order): JsonResponse

@@ -745,6 +745,27 @@ Tier 2 لا يحرّك محفظة النقاط. كانت الأرقام «نقا
 
 ---
 
+## 11a) تحديثات 19–20 أكتوبر (ملف واحد للموبايل)
+
+كل ما يخص الموبايل من أمس واليوم (مشاركة فاتورة واتساب + سمعة/ضمان + بانرات…):  
+[`MOBILE_UPDATES_OCT19_20.md`](./MOBILE_UPDATES_OCT19_20.md)
+
+مشاركة فاتورة: `GET|POST …/invoices/{id}/share` · `…/share-whatsapp`  
+(ونفس الفكرة لـ `distributions/{id}`) — افتح `whatsapp_url` في التطبيق.
+
+## 11b) السمعة · الضمان · التذكيرات (ملحق)
+
+تفاصيل كاملة + أمثلة JSON: [`MOBILE_REPUTATION_WARRANTY.md`](./MOBILE_REPUTATION_WARRANTY.md)
+
+مسارات السباك الجديدة تحت `/api/v1/mobile/plumber`:
+`reputation` · `badges` · `streak` · `warranties*` · `reminder-preferences`
+
+للقطاعي/الجملة: `GET …/plumbers/{id}/reputation` و `reminder-preferences`  
+عام: `GET|POST /w/{code}` و `/w/{code}/claims`  
+في ردود التنفيذ: `new_badges[]` · `score_delta` · `level_changed` · وفي الطلب `plumber_badge`.
+
+---
+
 ## 12) Cheat sheet
 
 ```
@@ -757,11 +778,19 @@ Shared:    /api/v1/mobile/me|profile|settings|wallet-visibility|notifications*
 Stores:    /api/v1/network-stores* · /api/v1/vendors · /api/v1/my-store*
 
 Plumber:   /plumber/{dashboard,wallet*,withdrawals*,products,orders*,
-           distributions,returns*,notifications*}
+           distributions,returns*,reputation,badges,streak,warranties*,
+           reminder-preferences,notifications*}
 
 Trader:    /trader/{dashboard,products,wholesalers/{id}/stock,my-products*,
-           plumbers*,orders*,pos*,distributions,invoices,returns*,notifications*}
+           plumbers*,plumbers/{id}/reputation,orders*,pos*,distributions,
+           invoices,invoices/{id}/share|share-whatsapp,returns*,
+           reminder-preferences,notifications*}
 
 Distrib:   /distributor/{dashboard,products,my-products*,retail-traders*,
-           plumbers*,orders*,pos*,invoices,returns*,notifications*}
+           plumbers*,plumbers/{id}/reputation,orders*,pos*,invoices,
+           invoices/{id}/share|share-whatsapp,returns*,
+           reminder-preferences,notifications*}
+
+Public:    GET /w/{code} · POST /w/{code}/claims
+           GET /invoices/{id}/share (signed HTML)
 ```

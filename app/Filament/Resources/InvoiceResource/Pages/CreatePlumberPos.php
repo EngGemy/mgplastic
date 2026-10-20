@@ -150,12 +150,13 @@ class CreatePlumberPos extends Page
         try {
             $plumber = User::findOrFail($this->plumberId);
 
-            $distributions = app(PlumberDistributionPosService::class)->issueToPlumber(
+            $pack = app(PlumberDistributionPosService::class)->issueToPlumber(
                 retailTrader: auth()->user(),
                 plumber: $plumber,
                 lines: $this->cartLines(),
                 issuedBy: auth()->user(),
             );
+            $distributions = $pack['distributions'] ?? $pack;
 
             $points = $this->cartPoints;
 

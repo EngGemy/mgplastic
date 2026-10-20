@@ -175,7 +175,15 @@ class InvoiceReturnService
                 $this->syncOutgoingInvoiceTotals($lockedReturn->invoice->fresh(['sourceDistribution.items', 'returns']));
             }
 
-            return $lockedReturn->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
+            $fresh = $lockedReturn->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
+            if ((int) $fresh->tier === 3 && $fresh->from_user_id) {
+                try {
+                    \App\Jobs\Reputation\RecomputeScoreJob::dispatch((int) $fresh->from_user_id, 'return_approved', (int) $fresh->id);
+                } catch (\Throwable) {
+                }
+            }
+
+            return $fresh;
         });
     }
 
@@ -190,7 +198,15 @@ class InvoiceReturnService
 
         $this->recordDecision($return, $actor, InvoiceReturnStatus::REJECTED, $reason);
 
-        return $return->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
+        $fresh = $return->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
+        if ((int) $fresh->tier === 3 && $fresh->from_user_id) {
+            try {
+                \App\Jobs\Reputation\RecomputeScoreJob::dispatch((int) $fresh->from_user_id, 'return_rejected', (int) $fresh->id);
+            } catch (\Throwable) {
+            }
+        }
+
+        return $fresh;
     }
 
     /**

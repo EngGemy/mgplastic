@@ -69,3 +69,15 @@ GET /api/v1/mobile/trader/my-invoices
 GET /api/v1/mobile/trader/invoices
 ```
 مشتريات من الجملة — يطلب المرتجع ثم الجملة توافق.
+
+### مشاركة واتساب (جملة + قطاعي + سباك)
+كل صف فاتورة يتضمن `can_share_whatsapp` · `share_url` · `whatsapp_url`.
+
+```http
+GET  /api/v1/mobile/{trader|distributor}/invoices/{id}/share
+POST /api/v1/mobile/{trader|distributor}/invoices/{id}/share-whatsapp
+GET|POST /api/v1/mobile/{trader|distributor|plumber}/distributions/{id}/share-whatsapp
+```
+
+افتح `whatsapp_url` في التطبيق → محادثة صاحب الرقم بنص + رابط الفاتورة.  
+تفاصيل كاملة: [MOBILE_UPDATES_OCT19_20.md](./MOBILE_UPDATES_OCT19_20.md)
