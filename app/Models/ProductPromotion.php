@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 class ProductPromotion extends Model
 {
@@ -37,14 +37,12 @@ class ProductPromotion extends Model
 
     public function imageUrl(): ?string
     {
-        return $this->image_path ? Storage::disk('public')->url($this->image_path) : null;
+        return PublicStorageUrl::make($this->image_path);
     }
 
     public function comparisonImageUrl(): ?string
     {
-        return $this->comparison_image_path
-            ? Storage::disk('public')->url($this->comparison_image_path)
-            : null;
+        return PublicStorageUrl::make($this->comparison_image_path);
     }
 
     public function resolveProductLink(): ?string

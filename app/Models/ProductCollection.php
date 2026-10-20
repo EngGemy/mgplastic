@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ProductCollection extends Model
@@ -61,9 +61,7 @@ class ProductCollection extends Model
 
     public function coverImageUrl(): ?string
     {
-        return $this->cover_image
-            ? Storage::disk('public')->url($this->cover_image)
-            : null;
+        return PublicStorageUrl::make($this->cover_image);
     }
 
     public function kindLabel(): string

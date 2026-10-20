@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class PromoBanner extends Model
 {
@@ -32,9 +32,15 @@ class PromoBanner extends Model
 
     public function imageUrl(): ?string
     {
-        return $this->image_path
-            ? Storage::disk('public')->url($this->image_path)
-            : null;
+        return PublicStorageUrl::make($this->image_path);
+    }
+
+    protected function setImagePathAttribute(mixed $value): void
+    {
+        if (is_array($value)) {
+            $value = $value[0] ?? null;
+        }
+        $this->attributes['image_path'] = is_string($value) ? $value : null;
     }
 
     /** @return array<string, mixed>|null */
