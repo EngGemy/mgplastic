@@ -79,6 +79,10 @@ class SettingsController extends Controller
             'reminders' => [
                 'enabled' => (bool) config('reminders.enabled', false),
             ],
+            'testimonials' => [
+                'enabled' => (bool) config('testimonials.enabled', true),
+                'endpoint' => url('/api/v1/mobile/testimonials'),
+            ],
         ]);
     }
 }

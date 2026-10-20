@@ -10,6 +10,7 @@
     @include('website.partials.about')
     @include('website.partials.catalog')
     @include('website.partials.services')
+    @include('website.partials.testimonials')
     @include('website.partials.points')
     @include('website.partials.contact')
     @include('website.partials.footer')

@@ -54,3 +54,10 @@ Schedule::command('ai:prune-message-cache')
     ->dailyAt('03:45')
     ->timezone($tz)
     ->withoutOverlapping();
+
+Schedule::command('testimonials:generate')
+    ->dailyAt('09:15')
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->when(fn () => (bool) config('testimonials.enabled', true)
+        && (bool) config('testimonials.daily_generate', true));

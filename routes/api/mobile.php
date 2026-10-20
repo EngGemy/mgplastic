@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\Mobile\SuggestController;
 use App\Http\Controllers\Api\Mobile\Reputation\PlumberReputationController;
 use App\Http\Controllers\Api\Mobile\Reputation\PlumberWarrantyController;
 use App\Http\Controllers\Api\Mobile\InvoiceShareController;
+use App\Http\Controllers\Api\Mobile\TestimonialController;
 use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardController;
 use App\Http\Controllers\Api\Plumber\InvoiceReturnController as PlumberInvoiceReturnController;
 use App\Http\Controllers\Api\Plumber\OrderController as PlumberOrderController;
@@ -49,6 +50,9 @@ Route::prefix('v1/mobile')->group(function () {
 
     // ── Public app settings ─────────────────────────────────────
     Route::get('settings', [SettingsController::class, 'app']);
+
+    // آراء العملاء عن منتجات MG (عامة — موقع + تطبيق)
+    Route::get('testimonials', [TestimonialController::class, 'index'])->middleware('throttle:60,1');
 
     // أهم الموزعين + دعاية منتجات MG + مجموعات + بانرات (عامة للتطبيق)
     Route::get('featured-wholesalers', [FeaturedWholesalerController::class, 'index']);

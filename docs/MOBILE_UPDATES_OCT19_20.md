@@ -208,7 +208,14 @@ Content-Type: application/json
 
 ---
 
-## و) Checklist تنفيذ RN (19+20)
+## و) آراء العملاء Testimonials (20 أكتوبر — مساءً)
+
+- موقع: قسم متحرك بعد الخدمات  
+- لوحة: المحتوى → آراء العملاء + زر توليد Gemini  
+- موبايل: `GET /api/v1/mobile/testimonials`  
+- تفاصيل RN: [`MOBILE_TESTIMONIALS.md`](./MOBILE_TESTIMONIALS.md)
+
+## ز) Checklist تنفيذ RN (19+20)
 
 - [ ] بانرات `between_plumbers_stores` + مجموعات + ترويج + featured
 - [ ] فواتيري جملة/قطاعي + مرتجعات
@@ -222,10 +229,11 @@ Content-Type: application/json
 - [ ] تفضيلات التذكير
 - [ ] لا تعرض `points_per_unit` في الكتالوج
 - [ ] اعتمد `can_issue` من `unlock_warranty`
+- [ ] قسم آراء العملاء (`/testimonials`) بأنيميشن + 5 نجوم في Home / نهاية التدفق
 
 ---
 
-## ز) أوامر باكند (مرجع سيرفر — ليس للموبايل)
+## ح) أوامر باكند (مرجع سيرفر — ليس للموبايل)
 
 ```bash
 php artisan migrate --force

@@ -750,6 +750,9 @@ Tier 2 لا يحرّك محفظة النقاط. كانت الأرقام «نقا
 كل ما يخص الموبايل من أمس واليوم (مشاركة فاتورة واتساب + سمعة/ضمان + بانرات…):  
 [`MOBILE_UPDATES_OCT19_20.md`](./MOBILE_UPDATES_OCT19_20.md)
 
+آراء العملاء (5★ · أسماء ليبية · Gemini يومي · أنيميشن) — نهاية/هوم التطبيق + الموقع:  
+[`MOBILE_TESTIMONIALS.md`](./MOBILE_TESTIMONIALS.md) · `GET /api/v1/mobile/testimonials`
+
 مشاركة فاتورة: `GET|POST …/invoices/{id}/share` · `…/share-whatsapp`  
 (ونفس الفكرة لـ `distributions/{id}`) — افتح `whatsapp_url` في التطبيق.
 

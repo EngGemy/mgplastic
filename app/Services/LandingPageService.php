@@ -10,6 +10,7 @@ use App\Models\Privacy;
 use App\Models\Slider;
 use App\Models\SocialMedia;
 use App\Models\TermsCondition;
+use App\Models\Testimonial;
 use App\Models\WebsiteService;
 use App\Models\WebsiteSetting;
 use App\Models\WebsiteStat;
@@ -27,6 +28,9 @@ class LandingPageService
             'sliders' => Slider::forHome()->active()->ordered()->get(),
             'stats' => WebsiteStat::active()->ordered()->get(),
             'services' => WebsiteService::active()->ordered()->get(),
+            'testimonials' => config('testimonials.enabled', true)
+                ? Testimonial::query()->forPublic()->limit((int) config('testimonials.public_limit', 24))->get()
+                : collect(),
             'categories' => $this->categoriesTree(),
             'socialLinks' => SocialMedia::query()->orderBy('id')->get(),
             'cities' => City::query()
