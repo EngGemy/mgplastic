@@ -46,7 +46,7 @@ class OpenAppController extends Controller
                 'iosStore' => (string) config('app_links.ios_store_url'),
                 'company' => 'MG للصناعات البلاستيكية',
                 'scheme' => (string) config('app_links.scheme', 'mgplastic'),
-                'package' => (string) config('app_links.package', 'com.mgplastic.app'),
+                'package' => (string) config('app_links.package', 'com.MgTools'),
             ])
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate')
             // Help some Android WebViews resolve App Links

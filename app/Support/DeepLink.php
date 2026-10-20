@@ -43,7 +43,7 @@ class DeepLink
     public static function androidIntent(string $type, int|string|null $id = null, ?Model $model = null): string
     {
         $scheme = (string) config('app_links.scheme', 'mgplastic');
-        $package = (string) config('app_links.package', 'com.mgplastic.app');
+        $package = (string) config('app_links.package', 'com.MgTools');
         $path = self::appPath($type, $id, $model);
         $fallback = rawurlencode(self::for($type, $id, $model));
 

@@ -9,7 +9,7 @@ use Illuminate\Http\Response;
 class WellKnownController extends Controller
 {
     /**
-     * Android App Links — replace APP_ANDROID_SHA256 placeholder before production.
+     * Android App Links — package + SHA-256 from config/app_links.php (.env).
      */
     public function assetLinks(): JsonResponse
     {
@@ -23,19 +23,22 @@ class WellKnownController extends Controller
                 'package_name' => $package,
                 'sha256_cert_fingerprints' => array_values($fps),
             ],
-        ]])->header('Content-Type', 'application/json');
+        ]], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'public, max-age=300',
+        ]);
     }
 
     /**
-     * Apple Universal Links — set APP_APPLE_TEAM_ID / APP_APPLE_APP_ID before production.
+     * Apple Universal Links — appID must be TeamID.iOSBundle (not the Android package).
      */
     public function appleAppSiteAssociation(): Response
     {
-        $appId = (string) config('app_links.apple_app_id');
+        $appId = trim((string) config('app_links.apple_app_id', ''));
         if ($appId === '') {
-            $team = (string) config('app_links.apple_team_id', 'TEAMIDXXXX');
-            $package = (string) config('app_links.package', 'com.mgplastic.app');
-            $appId = $team.'.'.$package;
+            $team = trim((string) config('app_links.apple_team_id', ''));
+            $bundle = trim((string) config('app_links.ios_bundle_id', 'com.mgPlumbers.app'));
+            $appId = $team !== '' ? $team.'.'.$bundle : $bundle;
         }
 
         $payload = [
@@ -49,7 +52,9 @@ class WellKnownController extends Controller
         ];
 
         return response(json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), 200, [
+            // Apple requires application/json (no charset); no auth; HTTPS only.
             'Content-Type' => 'application/json',
+            'Cache-Control' => 'public, max-age=300',
         ]);
     }
 }

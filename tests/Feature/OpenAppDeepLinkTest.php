@@ -35,19 +35,36 @@ class OpenAppDeepLinkTest extends TestCase
     public function test_well_known_asset_links_and_aasa(): void
     {
         config([
-            'app_links.package' => 'com.mgplastic.app',
-            'app_links.android_sha256_fingerprints' => ['AA:BB'],
-            'app_links.apple_team_id' => 'TEAM1',
-            'app_links.apple_app_id' => '',
+            'app_links.package' => 'com.MgTools',
+            'app_links.android_sha256_fingerprints' => ['2C:C3:68:A2:7B:57:DE:E8'],
+            'app_links.apple_team_id' => 'LP86Z6FUHH',
+            'app_links.apple_app_id' => 'LP86Z6FUHH.com.mgPlumbers.app',
+            'app_links.ios_bundle_id' => 'com.mgPlumbers.app',
         ]);
 
         $android = $this->get('/.well-known/assetlinks.json');
         $android->assertOk();
-        $android->assertJsonFragment(['package_name' => 'com.mgplastic.app']);
+        $android->assertJsonFragment(['package_name' => 'com.MgTools']);
 
         $ios = $this->get('/.well-known/apple-app-site-association');
         $ios->assertOk();
-        $ios->assertSee('TEAM1.com.mgplastic.app', false);
+        $ios->assertSee('LP86Z6FUHH.com.mgPlumbers.app', false);
         $ios->assertSee('/open/*', false);
+        $ios->assertDontSee('com.MgTools', false);
+    }
+
+    public function test_aasa_fallback_uses_ios_bundle_not_android_package(): void
+    {
+        config([
+            'app_links.package' => 'com.MgTools',
+            'app_links.apple_team_id' => 'LP86Z6FUHH',
+            'app_links.apple_app_id' => '',
+            'app_links.ios_bundle_id' => 'com.mgPlumbers.app',
+        ]);
+
+        $this->get('/.well-known/apple-app-site-association')
+            ->assertOk()
+            ->assertSee('LP86Z6FUHH.com.mgPlumbers.app', false)
+            ->assertDontSee('LP86Z6FUHH.com.MgTools', false);
     }
 }

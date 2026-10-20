@@ -164,6 +164,13 @@ Content-Type: application/json
 
 أنواع: `invoice` · `order` · `return` · `points` · `supply` · `withdrawal` · `home`
 
+### Well-known (مهم — بدون placeholders)
+يجب أن يظهر على السيرفر:
+- iOS `appID` = `LP86Z6FUHH.com.mgPlumbers.app`
+- Android `package_name` = `com.MgTools` + بصمتا SHA-256 الحقيقيتان
+
+إن ظهرت `TEAMIDXXXX` أو `com.mgplastic.app` أو `AA:BB:CC…` يفتح Safari أولًا. التفاصيل: [MOBILE_DEEP_LINKS.md](./MOBILE_DEEP_LINKS.md)
+
 ثيمات كروت جديدة للمعاينة: `badge_awarded` · `level_up` · `streak` · `warranty_issued` · `reminder_weekly` · `reminder_daily`
 
 ---
