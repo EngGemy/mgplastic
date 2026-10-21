@@ -79,12 +79,7 @@ class ViewDistributorInvoice extends ViewInvoice
 
             $this->deleteInvoiceAction(),
 
-            Actions\Action::make('print_invoice')
-                ->label('طباعة الفاتورة')
-                ->icon('heroicon-o-printer')
-                ->color('gray')
-                ->url(fn () => route('admin.invoices.print', $this->record))
-                ->openUrlInNewTab(),
+            ...$this->invoiceDocumentHeaderActions(),
         ];
     }
 }

@@ -297,6 +297,21 @@ class CustomerWhatsAppNotifier
         }
     }
 
+    public function invoicePdfUrl(Invoice $invoice): ?string
+    {
+        try {
+            return URL::temporarySignedRoute(
+                'invoices.pdf',
+                now()->addDays((int) config('services.whatsapp.share_days', 30)),
+                ['invoice' => $invoice->id],
+            );
+        } catch (\Throwable $e) {
+            Log::warning('[WhatsApp] invoice PDF URL failed', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
     protected function orderPlacedMessage(Order $order, User $customer): string
     {
         $lines = [
@@ -360,6 +375,12 @@ class CustomerWhatsAppNotifier
             $lines[] = '';
             $lines[] = 'راجع الفاتورة من الرابط:';
             $lines[] = $share;
+        }
+
+        if ($pdf = $this->invoicePdfUrl($invoice)) {
+            $lines[] = '';
+            $lines[] = 'تحميل PDF:';
+            $lines[] = $pdf;
         }
 
         $this->appendSupport($lines);

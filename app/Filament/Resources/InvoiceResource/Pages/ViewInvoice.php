@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
+use App\Filament\Concerns\HasInvoiceDocumentActions;
 use App\Filament\Resources\InvoiceDistributionResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Models\InvoiceDistribution;
 use App\Models\User;
-use App\Services\CustomerWhatsAppNotifier;
 use App\Services\DistributionService;
 use App\Services\InvoiceAdjustmentService;
 use App\Services\InvoiceReuseService;
@@ -14,10 +14,11 @@ use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
-use Illuminate\Support\Js;
 
 class ViewInvoice extends ViewRecord
 {
+    use HasInvoiceDocumentActions;
+
     protected static string $resource = InvoiceResource::class;
 
     public function mount(int|string $record): void
@@ -136,65 +137,7 @@ class ViewInvoice extends ViewRecord
 
             $this->deleteInvoiceAction(),
 
-            Actions\Action::make('whatsapp_customer')
-                ->label('واتساب للعميل')
-                ->icon('heroicon-o-chat-bubble-left-right')
-                ->color('success')
-                ->action(function () {
-                    $invoice = $this->record->fresh([
-                        'wholesaleDistributor',
-                        'counterparty',
-                        'plumber',
-                    ]);
-                    $notifier = app(CustomerWhatsAppNotifier::class);
-                    $result = $notifier->notifyInvoiceIssued($invoice);
-
-                    if ($result['sent']) {
-                        Notification::make()->success()->title('تم إرسال واتساب للعميل')->send();
-
-                        return;
-                    }
-
-                    $chatUrl = $result['chat_url'] ?? $notifier->invoiceChatUrl($invoice);
-                    if ($chatUrl === null) {
-                        Notification::make()
-                            ->warning()
-                            ->title('أضف هاتف المستلم لإرسال واتساب')
-                            ->body($result['error'])
-                            ->send();
-
-                        return;
-                    }
-
-                    Notification::make()
-                        ->success()
-                        ->title('فتح واتساب لإرسال الرسالة')
-                        ->body('اضغط إرسال في واتساب بعد فتح المحادثة.')
-                        ->send();
-
-                    $this->js('window.open('.Js::from($chatUrl).', "_blank", "noopener")');
-                }),
-
-            Actions\Action::make('print_invoice')
-                ->label('طباعة الفاتورة')
-                ->icon('heroicon-o-printer')
-                ->color('gray')
-                ->url(fn () => route('admin.invoices.print', $this->record))
-                ->openUrlInNewTab(),
-
-            Actions\Action::make('download_invoice')
-                ->label('تنزيل للنظام')
-                ->icon('heroicon-o-arrow-down-tray')
-                ->color('info')
-                ->url(fn () => route('admin.invoices.download', $this->record))
-                ->visible(fn () => $isAdmin),
-
-            Actions\Action::make('export_json')
-                ->label('تصدير JSON')
-                ->icon('heroicon-o-document-arrow-down')
-                ->color('gray')
-                ->url(fn () => route('admin.invoices.export', $this->record))
-                ->visible(fn () => $isAdmin && $this->record->isWholesalePos()),
+            ...$this->invoiceDocumentHeaderActions(includeAdminExtras: $isAdmin),
 
             Actions\Action::make('pos_new')
                 ->label('بيع للقطاعي')

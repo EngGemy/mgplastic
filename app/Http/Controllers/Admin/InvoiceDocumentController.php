@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -14,18 +15,7 @@ class InvoiceDocumentController extends Controller
     {
         $this->authorizeInvoice($invoice);
 
-        $invoice->load([
-            'items.product.translations',
-            'wholesaleDistributor',
-            'plumber',
-            'issuer',
-            'reviewer',
-            'counterparty',
-            'sourceDistribution.items.invoiceItem.product.translations',
-            'returns.items.product.translations',
-            'returns.fromUser',
-            'returns.toUser',
-        ]);
+        $invoice->load($this->documentRelations());
 
         return response()->view('invoices.document', [
             'invoice' => $invoice,
@@ -35,11 +25,35 @@ class InvoiceDocumentController extends Controller
         ]);
     }
 
-    public function download(Invoice $invoice): StreamedResponse
+    /** Authenticated panel download (admin / warehouse / distributor / trader). */
+    public function pdf(Invoice $invoice)
     {
         $this->authorizeInvoice($invoice);
 
-        $invoice->load([
+        return $this->streamPdf($invoice);
+    }
+
+    /** Public signed link for WhatsApp sharing (no login). */
+    public function pdfPublic(Invoice $invoice)
+    {
+        return $this->streamPdf($invoice);
+    }
+
+    protected function streamPdf(Invoice $invoice)
+    {
+        $invoice->load($this->documentRelations());
+
+        $filename = ($invoice->number ?? 'invoice-'.$invoice->id).'.pdf';
+
+        return Pdf::loadView('invoices.pdf', ['invoice' => $invoice])
+            ->setPaper('a4', 'portrait')
+            ->download($filename);
+    }
+
+    /** @return list<string> */
+    protected function documentRelations(): array
+    {
+        return [
             'items.product.translations',
             'wholesaleDistributor',
             'plumber',
@@ -50,7 +64,14 @@ class InvoiceDocumentController extends Controller
             'returns.items.product.translations',
             'returns.fromUser',
             'returns.toUser',
-        ]);
+        ];
+    }
+
+    public function download(Invoice $invoice): StreamedResponse
+    {
+        $this->authorizeInvoice($invoice);
+
+        $invoice->load($this->documentRelations());
 
         $html = view('invoices.document', [
             'invoice' => $invoice,

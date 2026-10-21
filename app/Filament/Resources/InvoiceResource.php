@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\SystemLabel;
 use App\Support\AdminPermissions;
 use App\Support\StorePermissions;
+use App\Services\CustomerWhatsAppNotifier;
 use App\Services\InvoiceAdjustmentService;
 use App\Services\InvoiceReuseService;
 use Filament\Forms;
@@ -325,6 +326,21 @@ class InvoiceResource extends Resource
                         ->icon('heroicon-o-printer')
                         ->url(fn (Invoice $record) => route('admin.invoices.print', $record))
                         ->openUrlInNewTab(),
+                    Tables\Actions\Action::make('pdf')
+                        ->label('PDF')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('danger')
+                        ->url(fn (Invoice $record) => route('admin.invoices.pdf', $record))
+                        ->openUrlInNewTab(),
+                    Tables\Actions\Action::make('whatsapp')
+                        ->label('واتساب')
+                        ->icon('heroicon-o-chat-bubble-left-right')
+                        ->color('success')
+                        ->url(fn (Invoice $record) => app(CustomerWhatsAppNotifier::class)->invoiceChatUrl($record))
+                        ->openUrlInNewTab()
+                        ->visible(fn (Invoice $record) => filled(
+                            app(CustomerWhatsAppNotifier::class)->invoiceChatUrl($record)
+                        )),
                     Tables\Actions\Action::make('issue_sub_invoice')
                         ->label('فاتورة فرعية — تاجر قطاعي')
                         ->icon('heroicon-o-document-duplicate')

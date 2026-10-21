@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.2",
         "astrotomic/laravel-translatable": "^11.16",
+        "barryvdh/laravel-dompdf": "^3.1",
         "bezhansalleh/filament-language-switch": "^3.1",
         "dedoc/scramble": "^0.13.30",
         "filament/filament": "^3.2",

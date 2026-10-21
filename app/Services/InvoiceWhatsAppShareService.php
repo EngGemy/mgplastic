@@ -231,6 +231,11 @@ class InvoiceWhatsAppShareService
             $msg->line('راجع الفاتورة:')->line($shareUrl);
         }
 
+        $pdfUrl = $this->notifier->invoicePdfUrl($invoice);
+        if ($pdfUrl) {
+            $msg->line('تحميل PDF:')->line($pdfUrl);
+        }
+
         return $msg->openInApp(DeepLink::for('invoice', $invoice->id))->footer()->toString();
     }
 

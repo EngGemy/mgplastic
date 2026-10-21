@@ -41,6 +41,7 @@ Route::middleware(['web', 'auth'])
     ->name('admin.invoices.')
     ->group(function () {
         Route::get('{invoice}/print', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'print'])->name('print');
+        Route::get('{invoice}/pdf', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'pdf'])->name('pdf');
         Route::get('{invoice}/download', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'download'])->name('download');
         Route::get('{invoice}/export', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'exportJson'])->name('export');
     });
@@ -68,6 +69,10 @@ Route::get('/orders/{order}/share', [\App\Http\Controllers\Web\OrderShareControl
 Route::get('/invoices/{invoice}/share', [\App\Http\Controllers\Web\InvoiceShareController::class, 'show'])
     ->middleware('signed')
     ->name('invoices.share');
+
+Route::get('/invoices/{invoice}/pdf', [\App\Http\Controllers\Admin\InvoiceDocumentController::class, 'pdfPublic'])
+    ->middleware('signed')
+    ->name('invoices.pdf');
 
 if (AdminPanelPath::hidesLegacyAdminUrl()) {
     Route::any('admin/{path?}', fn () => abort(404))
