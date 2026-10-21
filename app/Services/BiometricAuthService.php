@@ -124,6 +124,10 @@ class BiometricAuthService
             throw new \DomainException('فشل التحقق البيومتري — unlock_token أو التوقيع غير صالح');
         }
 
+        if (! $user->is_active) {
+            throw new \DomainException('حسابك موقوف أو تم حذفه — سجّل الدخول من جديد');
+        }
+
         if (! $user->isNetworkStore() && method_exists($user, 'isApprovedAndActive') && ! $user->isApprovedAndActive()) {
             throw new \DomainException($user->is_approved
                 ? 'حسابك موقوف — تواصل مع الدعم'

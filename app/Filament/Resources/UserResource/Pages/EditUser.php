@@ -13,6 +13,7 @@ class EditUser extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            \App\Filament\Support\UserForceLogoutActions::headerAction(),
             Actions\DeleteAction::make(),
         ];
     }

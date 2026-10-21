@@ -59,6 +59,15 @@ class LoginController extends Controller
             ], 200);
         }
 
+        // Never issue tokens for deactivated accounts (app must not stay signed in).
+        if (! $user->is_active) {
+            return response()->json([
+                'status' => false,
+                'message' => 'حسابك موقوف — تواصل مع الدعم',
+                'code' => 'account_revoked',
+            ], 403);
+        }
+
         // Network stores may log in while pending approval to manage their profile.
         $isNetworkStore = $user->isNetworkStore();
 
@@ -76,8 +85,6 @@ class LoginController extends Controller
         $message = 'تم تسجيل الدخول بنجاح';
         if ($isNetworkStore && ! $user->is_approved) {
             $message = 'تم تسجيل الدخول. متجرك لم يُفعَّل بعد — بانتظار موافقة الإدارة.';
-        } elseif ($isNetworkStore && ! $user->is_active) {
-            $message = 'تم تسجيل الدخول. نشاط المتجر موقوف حالياً.';
         }
 
         return response()->json([

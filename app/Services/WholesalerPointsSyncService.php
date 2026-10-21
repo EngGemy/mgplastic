@@ -21,6 +21,11 @@ class WholesalerPointsSyncService
             return;
         }
 
+        $cacheKey = 'wholesaler_points_synced:'.$wholesaler->id;
+        if (\Illuminate\Support\Facades\Cache::store('array')->has($cacheKey)) {
+            return;
+        }
+
         Invoice::query()
             ->where('wholesale_distributor_id', $wholesaler->id)
             ->where('invoice_type', 'wholesale_pos')
@@ -29,6 +34,8 @@ class WholesalerPointsSyncService
             ->with('items')
             ->orderBy('id')
             ->each(fn (Invoice $invoice) => $this->ensureIncomingReceipt($invoice, $wholesaler));
+
+        \Illuminate\Support\Facades\Cache::store('array')->put($cacheKey, true, 120);
     }
 
     public function ensureIncomingReceipt(Invoice $invoice, User $wholesaler): void

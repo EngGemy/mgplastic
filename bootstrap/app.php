@@ -19,13 +19,64 @@ return Application::configure(basePath: dirname(__DIR__))
         __DIR__.'/../app/Console/Commands',
     ])
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->prependToGroup('api', \App\Http\Middleware\ResolveLocale::class);
+        $middleware->api(
+            prepend: [
+                \App\Http\Middleware\ResolveLocale::class,
+            ],
+            append: [
+                // Reject deleted/inactive Sanctum users + purge orphan tokens.
+                \App\Http\Middleware\EnsureApiUserIsValid::class,
+            ],
+        );
         $middleware->alias([
             'role.api' => \App\Http\Middleware\EnsureApiRole::class,
             'ai.gateway' => \App\Http\Middleware\EnsureAiGatewayToken::class,
+            'api.user.valid' => \App\Http\Middleware\EnsureApiUserIsValid::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            $bearer = $request->bearerToken();
+            $code = 'unauthenticated';
+            $message = 'Unauthenticated.';
+
+            if (filled($bearer)) {
+                try {
+                    $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($bearer);
+                } catch (\Throwable) {
+                    $accessToken = null;
+                }
+
+                if ($accessToken) {
+                    $tokenable = $accessToken->tokenable;
+                    if (! $tokenable instanceof \App\Models\User
+                        || ! $tokenable->is_active
+                        || ! \App\Models\User::query()->whereKey($tokenable->id)->where('is_active', true)->exists()) {
+                        $accessToken->delete();
+                        if ($tokenable instanceof \App\Models\User) {
+                            $tokenable->tokens()->delete();
+                        }
+                        $code = 'account_revoked';
+                        $message = 'حسابك موقوف أو تم حذفه — سجّل الدخول من جديد';
+                    }
+                } else {
+                    // Token already wiped by Sanctum callback / middleware → still tell the app to clear session.
+                    $code = 'account_revoked';
+                    $message = 'حسابك موقوف أو تم حذفه — سجّل الدخول من جديد';
+                }
+            }
+
+            return response()->json([
+                'status' => false,
+                'message' => $message,
+                'code' => $code,
+            ], 401);
+        });
+
         $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, $request) {
             if (! $request->is('api/*') && ! $request->expectsJson()) {
                 return null;

@@ -498,9 +498,10 @@ class UserResource extends Resource
                     ->color('danger')
                     ->visible(fn ($record) => (bool) $record?->is_active)
                     ->requiresConfirmation()
-                    ->action(fn ($record) =>
-                    $record->forceFill(['is_active' => false, 'deactivated_at' => now()])->save()
-                    ),
+                    ->action(function ($record) {
+                        $record->forceFill(['is_active' => false, 'deactivated_at' => now()])->save();
+                        app(\App\Services\ForceLogoutService::class)->revokeAll($record);
+                    }),
 
                 Tables\Actions\Action::make('activate')
                     ->label('تفعيل')
@@ -512,6 +513,7 @@ class UserResource extends Resource
                     $record->forceFill(['is_active' => true, 'deactivated_at' => null])->save()
                     ),
 
+                \App\Filament\Support\UserForceLogoutActions::tableAction(),
                 \App\Filament\Support\UserNotificationActions::tableAction(),
                 \App\Filament\Support\CustomerWhatsAppActions::welcomeTableAction(),
 

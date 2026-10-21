@@ -71,6 +71,8 @@ class ViewUser extends ViewRecord
                     $this->refreshFormData(['is_approved', 'approved_at', 'is_active']);
                 }),
 
+            \App\Filament\Support\UserForceLogoutActions::headerAction(),
+
             Actions\EditAction::make()->label('تعديل البيانات'),
         ];
     }

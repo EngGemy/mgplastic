@@ -34,11 +34,11 @@ class WarehouseDashboard extends BaseDashboard
 
     protected function getHeaderWidgets(): array
     {
+        // CRM already includes points/stock cards — skip duplicate points panel.
         return [
-            \App\Filament\Widgets\LowStockAlertWidget::class,
-            \App\Filament\Warehouse\Widgets\WarehousePointsPanelWidget::class,
             \App\Filament\Widgets\MgCrmDashboardWidget::class,
             \App\Filament\Warehouse\Widgets\WarehouseQuickLinksWidget::class,
+            \App\Filament\Widgets\LowStockAlertWidget::class,
         ];
     }
 

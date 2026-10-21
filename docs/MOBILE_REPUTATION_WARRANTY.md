@@ -67,15 +67,77 @@
 }
 ```
 
-Aliases:
-- `GET /plumber/badges`
-- `GET /plumber/streak`
-
 ### UX شاشة السمعة
 - دائرة الدرجة (0–100) + لون المستوى رمادي/أسود (ماسي بإبراز خفيف).
 - سلسلة بلهب + `freezes_available`.
 - شارات مكتسبة / مقفلة مع شريط `progress`.
 - بطاقة «فتح الضمان» من `unlock_warranty`.
+
+---
+
+## 2b) الشارات فقط
+
+`GET /api/v1/mobile/plumber/badges`
+
+```json
+{
+  "status": true,
+  "message": "الشارات",
+  "data": {
+    "earned": [
+      {
+        "id": 1,
+        "key": "first_order",
+        "name_ar": "أول طلب",
+        "description_ar": "أول توزيع مؤكد",
+        "tier": "common",
+        "icon": "star"
+      }
+    ],
+    "locked": [
+      {
+        "id": 2,
+        "key": "orders_10",
+        "name_ar": "10 طلبات",
+        "description_ar": "10 توزيعات مؤكدة",
+        "tier": "common",
+        "icon": "star",
+        "progress": { "current": 3, "target": 10, "percent": 30 }
+      }
+    ]
+  }
+}
+```
+
+`tier`: `common` | `rare` | `epic` | `legendary`
+
+---
+
+## 2c) السلسلة فقط
+
+`GET /api/v1/mobile/plumber/streak`
+
+```json
+{
+  "status": true,
+  "message": "السلسلة",
+  "data": {
+    "current_weeks": 4,
+    "best_weeks": 6,
+    "freezes_available": 1,
+    "week_active": true,
+    "ends_at": "2026-10-24T23:59:59+02:00"
+  }
+}
+```
+
+| حقل | معنى |
+|-----|------|
+| `current_weeks` | السلسلة الحالية |
+| `best_weeks` | أفضل سلسلة |
+| `freezes_available` | فرص التجميد المتبقية |
+| `week_active` | هل نشط هذا الأسبوع (سبت→جمعة طرابلس) |
+| `ends_at` | نهاية الأسبوع الحالي |
 
 ---
 
@@ -160,30 +222,68 @@ POST /api/v1/mobile/plumber/warranties
 
 ## 5) احتفال الشارة / المستوى
 
-عند تأكيد توزيع POS أو تنفيذ طلب سباك، الحقول الإضافية (غير كاسرة):
+تظهر داخل `data` بعد:
+
+| متى | المسار |
+|-----|--------|
+| بيع POS قطاعي→سباك | `POST /trader/pos/checkout` |
+| تنفيذ طلب سباك | `POST /trader/orders/{id}/fulfill` |
 
 ```json
 {
-  "new_badges": [{ "key": "orders_10", "name_ar": "10 طلبات", "tier": "common" }],
-  "score_delta": 3,
-  "level_changed": false
+  "status": true,
+  "data": {
+    "new_badges": [
+      { "id": 2, "key": "orders_10", "name_ar": "10 طلبات", "tier": "common", "icon": "star" }
+    ],
+    "score_delta": 3,
+    "level_changed": false
+  }
 }
 ```
 
-اعرض شاشة احتفال عند `new_badges.length > 0` أو `level_changed`.
+| حقل | استخدام |
+|-----|---------|
+| `new_badges[]` | احتفال إن `length > 0` |
+| `score_delta` | فرق الدرجة بعد إعادة الحساب |
+| `level_changed` | `true` → انتقال مستوى |
 
-### شارة السباك للتاجر
-في `OrderResource` لطلبات القطاعي→سباك:
+### شارة السباك للتاجر (`plumber_badge`)
+في ردود الطلبات عندما `channel = retail_to_plumber`:
 
 ```json
-"plumber_badge": {
-  "level": "gold",
-  "top_badges": [{ "key": "trusted_pro", "name_ar": "محترف موثوق", "tier": "epic" }],
-  "streak_weeks": 4
+{
+  "id": 55,
+  "channel": "retail_to_plumber",
+  "requester": { "id": 9, "name": "أحمد الترهوني" },
+  "plumber_badge": {
+    "level": "gold",
+    "top_badges": [
+      { "key": "trusted_pro", "name_ar": "محترف موثوق", "tier": "epic", "icon": "badge" }
+    ],
+    "streak_weeks": 4
+  },
+  "items": [{ "points_per_unit": null, "line_points": null }]
 }
 ```
 
-`GET /trader/plumbers/{id}/reputation` و `/distributor/plumbers/{id}/reputation` — مستوى + شارات + عدد ضمانات نشطة فقط (بدون نقاط منتج).
+نظرة سريعة بدون فتح الطلب:
+`GET /trader/plumbers/{id}/reputation` · `GET /distributor/plumbers/{id}/reputation`
+
+```json
+{
+  "data": {
+    "id": 9,
+    "name": "أحمد الترهوني",
+    "score": 72,
+    "level": "gold",
+    "level_label": "ذهبي",
+    "badges": [],
+    "active_warranties": 2,
+    "plumber_badge": { "level": "gold", "top_badges": [], "streak_weeks": 4 }
+  }
+}
+```
 
 ---
 

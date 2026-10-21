@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
+use App\Models\InvoiceDistributionItem;
 use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\WalletAccount;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class NetworkInventoryService
 {
@@ -30,36 +32,52 @@ class NetworkInventoryService
             return collect();
         }
 
-        app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
+        $cacheKey = 'net_inv:wholesaler:'.$wholesaler->id;
 
-        $byProduct = [];
+        return Cache::store('array')->remember($cacheKey, 120, function () use ($wholesaler) {
+            app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
 
-        $invoices = Invoice::query()
-            ->where('wholesale_distributor_id', $wholesaler->id)
-            ->where('invoice_type', 'wholesale_pos')
-            ->where('invoice_flow', 'incoming')
-            ->where('status', 'approved')
-            ->with(['items.product.translations', 'items.product.category'])
-            ->orderBy('created_at')
-            ->get();
+            $byProduct = [];
 
-        foreach ($invoices as $invoice) {
-            $tier1 = $invoice->distributions()
-                ->where('tier', 1)
-                ->where('to_user_id', $wholesaler->id)
-                ->whereIn('status', ['confirmed', 'points_awarded'])
-                ->first();
+            $invoices = Invoice::query()
+                ->where('wholesale_distributor_id', $wholesaler->id)
+                ->where('invoice_type', 'wholesale_pos')
+                ->where('invoice_flow', 'incoming')
+                ->where('status', 'approved')
+                ->with([
+                    'items.product.translations',
+                    'items.product.category',
+                    'distributions' => fn ($q) => $q
+                        ->where('tier', 1)
+                        ->where('to_user_id', $wholesaler->id)
+                        ->whereIn('status', ['confirmed', 'points_awarded']),
+                ])
+                ->orderBy('created_at')
+                ->get();
 
-            if (! $tier1) {
-                continue;
+            $pairs = [];
+            foreach ($invoices as $invoice) {
+                $tier1 = $invoice->distributions->first();
+                if (! $tier1) {
+                    continue;
+                }
+                foreach ($invoice->items as $item) {
+                    $pairs[] = [(int) $item->id, (int) $tier1->id, $item];
+                }
             }
 
-            foreach ($invoice->items as $item) {
-                $this->appendStockSlot($byProduct, $item, $tier1->id, 2);
-            }
-        }
+            $availableByPair = $this->bulkAvailableForTier(
+                collect($pairs)->map(fn ($p) => ['invoice_item_id' => $p[0], 'parent_distribution_id' => $p[1]])->all(),
+                tier: 2,
+            );
 
-        return collect(array_values($byProduct))->sortBy('name')->values();
+            foreach ($pairs as [$itemId, $parentId, $item]) {
+                $available = (int) ($availableByPair["{$itemId}:{$parentId}"] ?? 0);
+                $this->appendStockSlot($byProduct, $item, $parentId, 2, $available);
+            }
+
+            return collect(array_values($byProduct))->sortBy('name')->values();
+        });
     }
 
     /**
@@ -110,11 +128,61 @@ class NetworkInventoryService
     }
 
     /**
+     * Prefetch available qty for many (invoice_item_id, parent_distribution_id) pairs.
+     *
+     * @param  list<array{invoice_item_id:int, parent_distribution_id:int}>  $pairs
+     * @return array<string, int> key "{invoice_item_id}:{parent_distribution_id}"
+     */
+    private function bulkAvailableForTier(array $pairs, int $tier): array
+    {
+        if ($pairs === [] || $tier < 2) {
+            return [];
+        }
+
+        $itemIds = array_values(array_unique(array_map(fn ($p) => (int) $p['invoice_item_id'], $pairs)));
+        $parentIds = array_values(array_unique(array_map(fn ($p) => (int) $p['parent_distribution_id'], $pairs)));
+
+        $parentNets = InvoiceDistributionItem::query()
+            ->whereIn('distribution_id', $parentIds)
+            ->whereIn('invoice_item_id', $itemIds)
+            ->get(['distribution_id', 'invoice_item_id', 'quantity', 'returned_quantity'])
+            ->keyBy(fn ($row) => $row->invoice_item_id.':'.$row->distribution_id);
+
+        $confirmed = InvoiceDistributionItem::query()
+            ->selectRaw('invoice_distribution_items.invoice_item_id, invoice_distributions.parent_distribution_id, SUM(invoice_distribution_items.quantity - COALESCE(invoice_distribution_items.returned_quantity, 0)) as confirmed_qty')
+            ->join('invoice_distributions', 'invoice_distributions.id', '=', 'invoice_distribution_items.distribution_id')
+            ->where('invoice_distributions.tier', $tier)
+            ->whereIn('invoice_distributions.parent_distribution_id', $parentIds)
+            ->whereIn('invoice_distributions.status', ['confirmed', 'points_awarded'])
+            ->whereIn('invoice_distribution_items.invoice_item_id', $itemIds)
+            ->groupBy('invoice_distribution_items.invoice_item_id', 'invoice_distributions.parent_distribution_id')
+            ->get()
+            ->keyBy(fn ($row) => $row->invoice_item_id.':'.$row->parent_distribution_id);
+
+        $out = [];
+        foreach ($pairs as $pair) {
+            $itemId = (int) $pair['invoice_item_id'];
+            $parentId = (int) $pair['parent_distribution_id'];
+            $key = "{$itemId}:{$parentId}";
+            $parent = $parentNets->get($key);
+            if (! $parent) {
+                $out[$key] = 0;
+                continue;
+            }
+            $parentNet = (int) $parent->quantity - (int) ($parent->returned_quantity ?? 0);
+            $already = (int) ($confirmed->get($key)?->confirmed_qty ?? 0);
+            $out[$key] = max(0, $parentNet - $already);
+        }
+
+        return $out;
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $byProduct
      */
-    private function appendStockSlot(array &$byProduct, InvoiceItem $item, int $parentDistributionId, int $tier): void
+    private function appendStockSlot(array &$byProduct, InvoiceItem $item, int $parentDistributionId, int $tier, ?int $availableOverride = null): void
     {
-        $available = $item->availableQuantityForTier($tier, $parentDistributionId);
+        $available = $availableOverride ?? $item->availableQuantityForTier($tier, $parentDistributionId);
 
         if ($available <= 0) {
             return;

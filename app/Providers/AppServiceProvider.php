@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ServiceProvider;
 use BezhanSalleh\FilamentLanguageSwitch\LanguageSwitch;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -36,6 +37,30 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Gate::policy(InvoiceDistribution::class, InvoiceDistributionPolicy::class);
+
+        // Hard stop: Sanctum must not authenticate deleted or inactive users.
+        Sanctum::authenticateAccessTokensUsing(function ($accessToken, bool $isValid) {
+            if (! $isValid || ! $accessToken) {
+                return false;
+            }
+
+            $tokenable = $accessToken->tokenable;
+
+            if (! $tokenable instanceof \App\Models\User) {
+                $accessToken->delete();
+
+                return false;
+            }
+
+            if (! $tokenable->is_active
+                || ! \App\Models\User::query()->whereKey($tokenable->id)->where('is_active', true)->exists()) {
+                $accessToken->delete();
+
+                return false;
+            }
+
+            return true;
+        });
 
         Validator::resolver(fn ($translator, $data, $rules, $messages, $attributes) => new ArabicValidator($translator, $data, $rules, $messages, $attributes));
 

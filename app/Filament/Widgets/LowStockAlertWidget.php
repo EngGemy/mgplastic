@@ -13,6 +13,8 @@ class LowStockAlertWidget extends Widget
 
     protected static ?int $sort = -200;
 
+    protected static bool $isLazy = true;
+
     protected int|string|array $columnSpan = 'full';
 
     /** @var list<array{product_id:int, name:string, available_qty:int, image:?string}> */

@@ -56,10 +56,14 @@ class WarehouseReturnResource extends Resource
             return null;
         }
 
-        $count = InvoiceReturn::query()
-            ->where('to_user_id', $user->id)
-            ->where('status', InvoiceReturnStatus::PENDING)
-            ->count();
+        $count = (int) \Illuminate\Support\Facades\Cache::store('array')->remember(
+            'nav_badge:returns_pending:'.$user->id,
+            60,
+            fn () => InvoiceReturn::query()
+                ->where('to_user_id', $user->id)
+                ->where('status', InvoiceReturnStatus::PENDING)
+                ->count()
+        );
 
         return $count > 0 ? (string) $count : null;
     }

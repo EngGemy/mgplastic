@@ -42,7 +42,11 @@ class DistributorOrderResource extends Resource
             return null;
         }
 
-        $count = Order::query()->incomingFor($user)->where('status', 'placed')->count();
+        $count = (int) \Illuminate\Support\Facades\Cache::store('array')->remember(
+            'nav_badge:orders_placed:'.$user->id,
+            60,
+            fn () => Order::query()->incomingFor($user)->where('status', 'placed')->count()
+        );
 
         return $count > 0 ? (string) $count : null;
     }
