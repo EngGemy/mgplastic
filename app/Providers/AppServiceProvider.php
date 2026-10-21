@@ -38,7 +38,10 @@ class AppServiceProvider extends ServiceProvider
 
         Gate::policy(InvoiceDistribution::class, InvoiceDistributionPolicy::class);
 
-        // Hard stop: Sanctum must not authenticate deleted or inactive users.
+        // Hard stop: Sanctum must not authenticate deleted / inactive / unverified users.
+        // Do NOT delete tokens here — auth:sanctum may run before EnsureApiUserIsValid
+        // (middleware priority). Leaving the row lets the AuthenticationException renderer
+        // (and EnsureApiUserIsValid) return account_revoked / otp_required then purge.
         Sanctum::authenticateAccessTokensUsing(function ($accessToken, bool $isValid) {
             if (! $isValid || ! $accessToken) {
                 return false;
@@ -47,20 +50,14 @@ class AppServiceProvider extends ServiceProvider
             $tokenable = $accessToken->tokenable;
 
             if (! $tokenable instanceof \App\Models\User) {
-                $accessToken->delete();
-
                 return false;
             }
 
             if (! $tokenable->is_active
                 || ! \App\Models\User::query()->whereKey($tokenable->id)->where('is_active', true)->exists()) {
-                $accessToken->delete();
-
                 return false;
             }
 
-            // Do not delete here — EnsureApiUserIsValid / exception renderer
-            // return a clear otp_required payload, then wipe tokens.
             if (! $tokenable->is_phone_verified
                 || ! \App\Models\User::query()->whereKey($tokenable->id)->where('is_phone_verified', true)->exists()) {
                 return false;

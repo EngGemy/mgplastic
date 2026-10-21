@@ -22,9 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(
             prepend: [
                 \App\Http\Middleware\ResolveLocale::class,
-            ],
-            append: [
-                // Reject deleted/inactive Sanctum users + purge orphan tokens.
+                // Must run before auth:sanctum (Authenticate has higher default priority
+                // and would otherwise sort ahead of an "append" middleware).
                 \App\Http\Middleware\EnsureApiUserIsValid::class,
             ],
         );
@@ -32,6 +31,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'role.api' => \App\Http\Middleware\EnsureApiRole::class,
             'ai.gateway' => \App\Http\Middleware\EnsureAiGatewayToken::class,
             'api.user.valid' => \App\Http\Middleware\EnsureApiUserIsValid::class,
+        ]);
+        $middleware->priority([
+            \App\Http\Middleware\ResolveLocale::class,
+            \App\Http\Middleware\EnsureApiUserIsValid::class,
+            \Illuminate\Auth\Middleware\Authenticate::class,
+            \Illuminate\Routing\Middleware\ThrottleRequests::class,
+            \Illuminate\Routing\Middleware\ThrottleRequestsWithRedis::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
