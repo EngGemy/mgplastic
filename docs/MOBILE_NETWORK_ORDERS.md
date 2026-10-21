@@ -81,6 +81,8 @@ Possible action names:
 |--------|-----|-----------------|
 | `confirm` | supplier | `POST …/confirm` |
 | `ship` | supplier | `POST …/ship` |
+| `receive` | **buyer only** | `POST …/receive` — تأكيد الاستلام من المستلم |
+| `deliver` | ❌ removed | المورّد لا يؤكّد الاستلام؛ استخدم `receive` |
 | `deliver` | supplier (جملة only) | `POST …/deliver` |
 | `reject` | supplier | `POST …/reject` |
 | `receive` | buyer | `POST …/receive` |

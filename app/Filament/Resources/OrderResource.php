@@ -78,15 +78,13 @@ class OrderResource extends Resource
         return $user !== null && (int) $user->id === (int) $record->requester_id;
     }
 
-    /** Wholesaler / factory supplier can mark non-plumber orders as delivered. */
+    /** @deprecated Receipt is buyer-only — always false. */
     public static function canMarkDeliveredAsSupplier(Order $record): bool
     {
-        return static::isSupplierSide($record)
-            && ! $record->isPlumberChannel()
-            && in_array($record->status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true);
+        return false;
     }
 
-    /** Buyer confirms receipt (also allowed while shipping/confirmed). */
+    /** Buyer (المستلم) confirms receipt — never the supplier. */
     public static function canMarkReceivedAsBuyer(Order $record): bool
     {
         return static::isBuyerSide($record)

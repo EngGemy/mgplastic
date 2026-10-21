@@ -57,7 +57,7 @@ class OrderDeliverLockAndWarehouseReturnBlockTest extends TestCase
 
         $orders->confirm($order, $wholesaler);
 
-        $first = $orders->deliver($order->fresh(), $wholesaler);
+        $first = $orders->deliver($order->fresh(), $retail);
         $this->assertSame(OrderStatus::DELIVERED, $first->status);
 
         $stockAfterFirst = (int) app(NetworkInventoryService::class)
@@ -69,7 +69,10 @@ class OrderDeliverLockAndWarehouseReturnBlockTest extends TestCase
             $orders->deliver($order->fresh(), $retail);
             $this->fail('Second deliver/receive should be rejected');
         } catch (\DomainException $e) {
-            $this->assertStringContainsString('التسليم', $e->getMessage());
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'التسليم')
+                || str_contains($e->getMessage(), 'الاستلام')
+            );
         }
 
         $stockAfterSecond = (int) app(NetworkInventoryService::class)

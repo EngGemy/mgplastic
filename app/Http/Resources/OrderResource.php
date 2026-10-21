@@ -229,13 +229,7 @@ class OrderResource extends JsonResource
                 }
                 $actions[] = 'reject';
             }
-            if (in_array($status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
-                if (! $needsStockGate || $resolveStock()) {
-                    $actions[] = 'deliver';
-                } else {
-                    $blocked[] = ['action' => 'deliver', 'reason' => $fulfillReason];
-                }
-            }
+            // Supplier never confirms receipt — only ship/reject. Buyer uses `receive`.
             if ($status === OrderStatus::SHIPPING && $needsStockGate && ! $resolveStock()) {
                 $actions[] = 'reject';
             }
@@ -243,11 +237,8 @@ class OrderResource extends JsonResource
 
         if ($isBuyer) {
             if (in_array($status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
-                if (! $needsStockGate || $resolveStock()) {
-                    $actions[] = 'receive';
-                } else {
-                    $blocked[] = ['action' => 'receive', 'reason' => $fulfillReason];
-                }
+                // Buyer receipt: stock already checked at ship/fulfill; allow receive always when status allows.
+                $actions[] = 'receive';
             }
             if (in_array($status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
                 $actions[] = 'cancel';

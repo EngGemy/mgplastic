@@ -162,10 +162,8 @@ class OrderService
     }
 
     /**
-     * Mark order delivered — callable by buyer (receipt) or supplier (hand-over).
-     * Stock moves to the buyer via the distribution pipeline.
-     *
-     * Locked inside the transaction so concurrent deliver + receive cannot mint stock twice.
+     * Confirm receipt — ONLY the buyer (requester / الطرف المستلم).
+     * Stock moves to the buyer via the distribution pipeline (unless already transferred on fulfill).
      *
      * @throws \DomainException
      */
@@ -174,31 +172,41 @@ class OrderService
         return DB::transaction(function () use ($order, $actor) {
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
 
+            $this->assertBuyer($locked, $actor);
+
             $this->assertStatus(
                 $locked,
                 [OrderStatus::SHIPPING, OrderStatus::CONFIRMED],
-                'لا يمكن تأكيد التسليم قبل تأكيد أو شحن الطلب',
+                'لا يمكن تأكيد الاستلام قبل تأكيد أو شحن الطلب',
             );
 
             $locked->loadMissing('items', 'requester', 'supplier');
 
-            $reference = $this->fulfilStock($locked, $actor);
+            // Plumber fulfill may already move stock while leaving status=shipping.
+            $alreadyTransferred = filled($locked->delivered_reference)
+                || filled($locked->delivered_invoice_id);
 
-            // Plumber channel credits points via tier-3 distribution — skip double credit.
-            if (! $locked->isPlumberChannel()) {
-                $this->creditRequesterPoints($locked, $actor, $reference['invoice_id'] ?? null);
+            if ($alreadyTransferred) {
+                $reference = [
+                    'invoice_id' => $locked->delivered_invoice_id,
+                    'reference' => $locked->delivered_reference,
+                ];
+            } else {
+                $reference = $this->fulfilStock($locked, $actor);
+
+                // Plumber channel credits points via tier-3 distribution — skip double credit.
+                if (! $locked->isPlumberChannel()) {
+                    $this->creditRequesterPoints($locked, $actor, $reference['invoice_id'] ?? null);
+                }
             }
 
             $locked->update([
                 'status' => OrderStatus::DELIVERED,
                 'delivered_at' => now(),
                 'delivered_by' => $actor->id,
-                'delivered_invoice_id' => $reference['invoice_id'] ?? null,
-                'delivered_reference' => $reference['reference'] ?? null,
+                'delivered_invoice_id' => $reference['invoice_id'] ?? $locked->delivered_invoice_id,
+                'delivered_reference' => $reference['reference'] ?? $locked->delivered_reference,
             ]);
-
-            $bySupplier = (int) $actor->id === (int) $locked->supplier_id
-                || ($locked->isFactoryChannel() && in_array($actor->role, ['super_admin', 'admin'], true));
 
             $points = (int) $locked->total_points;
             $pointsNote = $points > 0
@@ -209,17 +217,15 @@ class OrderService
 
             $this->notifyRequester(
                 $locked,
-                $bySupplier ? 'تم تسليم طلبك ✓' : 'تم استلام طلبك ✓',
-                "طلب رقم {$locked->order_number} تم تسليمه{$pointsNote}",
+                'تم استلام طلبك ✓',
+                "طلب رقم {$locked->order_number} تم تأكيد استلامه{$pointsNote}",
                 'success',
             );
 
             $this->notifySupplierAndAdmins(
                 $locked,
-                'تم تسليم الطلب ✓',
-                $bySupplier
-                    ? "طلب رقم {$locked->order_number} تم تسليمه للمشتري {$locked->requester?->name}."
-                    : "طلب رقم {$locked->order_number} تم استلامه وتأكيده من {$locked->requester?->name}.",
+                'تم استلام الطلب ✓',
+                "طلب رقم {$locked->order_number} تم استلامه وتأكيده من {$locked->requester?->name}.",
                 'success',
             );
 
@@ -1117,23 +1123,27 @@ class OrderService
 
             $reference = $this->fulfilRetailToPlumber($locked, $lines);
 
+            // Stock/points moved — wait for plumber (buyer) to confirm receipt.
             $locked->update([
-                'status' => OrderStatus::DELIVERED,
-                'delivered_at' => now(),
-                'delivered_by' => $actor->id,
+                'status' => OrderStatus::SHIPPING,
+                'shipped_at' => $locked->shipped_at ?? now(),
+                'shipped_by' => $locked->shipped_by ?? $actor->id,
                 'delivered_reference' => $reference['reference'] ?? null,
+                'delivered_invoice_id' => null,
+                'delivered_at' => null,
+                'delivered_by' => null,
             ]);
 
             $order = $locked;
 
             $points = (int) $order->total_points;
-            $pointsNote = $points > 0 ? " وتم إضافة {$points} نقطة لمحفظتك." : '.';
+            $pointsNote = $points > 0 ? " ({$points} نقطة بانتظار تأكيد استلامك)" : '';
 
             $this->notifyRequester(
                 $order,
-                'تم تنفيذ طلبك ✓',
-                "طلب رقم {$order->order_number} تم تحويله لفاتورة وتسليمه{$pointsNote}",
-                'success',
+                'طلبك جاهز للاستلام ✓',
+                "طلب رقم {$order->order_number} تم تجهيزه من التاجر{$pointsNote}. أكّد الاستلام لإتمام الطلب.",
+                'info',
             );
 
             $fresh = $order->fresh(['items', 'requester', 'supplier']);
@@ -1155,6 +1165,14 @@ class OrderService
 
         if ((int) $actor->id !== (int) $order->supplier_id) {
             throw new \DomainException('يمكن للمورّد فقط تنفيذ هذه العملية');
+        }
+    }
+
+    /** Receipt is always the counterparty (requester), never the supplier. */
+    protected function assertBuyer(Order $order, User $actor): void
+    {
+        if ((int) $actor->id !== (int) $order->requester_id) {
+            throw new \DomainException('يمكن للمستلم (صاحب الطلب) فقط تأكيد الاستلام');
         }
     }
 

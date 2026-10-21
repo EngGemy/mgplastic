@@ -92,15 +92,13 @@ class MobileNetworkOrdersApiTest extends TestCase
             ->assertJsonPath('data.status', OrderStatus::CONFIRMED);
 
         $actions = $confirm->json('data.available_actions') ?? [];
-        $this->assertTrue(
-            in_array('deliver', $actions, true) || in_array('ship', $actions, true),
-            'Expected deliver or ship after confirm, got: '.json_encode([
-                'actions' => $actions,
-                'blocked' => $confirm->json('data.blocked_actions'),
-            ], JSON_UNESCAPED_UNICODE)
-        );
+        $this->assertContains('ship', $actions);
+        $this->assertNotContains('deliver', $actions);
 
         Sanctum::actingAs($retail);
+        $detail = $this->getJson("/api/v1/mobile/trader/orders/{$orderId}")->assertOk();
+        $this->assertContains('receive', $detail->json('data.available_actions') ?? []);
+
         $this->getJson('/api/v1/mobile/notifications?order_id='.$orderId)
             ->assertOk()
             ->assertJsonPath('data.items.0.order_id', $orderId)
@@ -146,7 +144,7 @@ class MobileNetworkOrdersApiTest extends TestCase
             ->assertJsonPath('data.status', OrderStatus::CANCELLED);
     }
 
-    public function test_wholesaler_can_deliver_retail_order_via_api(): void
+    public function test_retail_buyer_receives_order_supplier_cannot_deliver(): void
     {
         $wholesaler = User::factory()->create([
             'role' => 'wholesale_distributor',
@@ -185,10 +183,13 @@ class MobileNetworkOrdersApiTest extends TestCase
         Sanctum::actingAs($wholesaler);
         $this->postJson("/api/v1/mobile/distributor/orders/{$orderId}/confirm")->assertOk();
         $this->postJson("/api/v1/mobile/distributor/orders/{$orderId}/deliver")
+            ->assertForbidden();
+
+        Sanctum::actingAs($retail);
+        $this->postJson("/api/v1/mobile/trader/orders/{$orderId}/receive")
             ->assertOk()
             ->assertJsonPath('data.status', OrderStatus::DELIVERED);
 
-        Sanctum::actingAs($retail);
         $this->getJson('/api/v1/mobile/trader/notifications/summary')
             ->assertOk()
             ->assertJsonPath('data.unread', fn ($n) => $n >= 1);

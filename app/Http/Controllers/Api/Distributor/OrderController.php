@@ -366,17 +366,10 @@ class OrderController extends Controller
 
     public function deliver(Request $request, Order $order): JsonResponse
     {
-        if (! $this->isSupplier($order, $request->user()) || $order->isPlumberChannel()) {
-            return $this->error('يمكن للمورّد فقط تسليم هذا الطلب', 403);
-        }
-
-        if (! in_array($order->status, [OrderStatus::CONFIRMED, OrderStatus::SHIPPING], true)) {
-            return $this->error('لا يمكن التسليم قبل تأكيد أو شحن الطلب', 422);
-        }
-
-        return $this->transition(
-            fn () => $this->orders->deliver($order, $request->user()),
-            'تم تسليم الطلب وإضافة الكميات لمخزون المشتري',
+        // Receipt is always confirmed by the buyer (receive). Kept for old clients → clear error.
+        return $this->error(
+            'تأكيد الاستلام يتم من الطرف المستلم فقط — استخدم POST …/receive من حساب المشتري',
+            403,
         );
     }
 

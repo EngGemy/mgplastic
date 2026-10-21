@@ -47,6 +47,7 @@ class ProductCatalogController extends Controller
             ],
             'filters' => [
                 'order_unit' => $orderUnit,
+                'product_family' => $this->requestedProductFamily($request),
                 'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
                 'search' => $request->query('q') ?? $request->query('search'),
             ],
@@ -62,32 +63,69 @@ class ProductCatalogController extends Controller
         $lang = $this->language($request);
         app()->setLocale($lang);
 
+        $asSystems = $request->boolean('systems')
+            || in_array(strtolower((string) $request->query('view')), ['systems', 'tree'], true);
+
         $categories = ProductCategory::query()
-            ->with('translations')
+            ->with(['translations', 'children.translations', 'children' => fn ($q) => $q->withCount('products')])
             ->withCount('products')
             ->orderBy('id')
-            ->get()
-            ->map(fn (ProductCategory $c) => [
-                'id' => (int) $c->id,
-                'name' => localized_name($c, 'name', 'تصنيف #'.$c->id),
-                'slug' => $c->slug,
-                'image' => $c->image,
-                'image_url' => $c->image ? asset('storage/'.ltrim($c->image, '/')) : null,
-                'products_count' => (int) $c->products_count,
-                'parent_id' => $c->parent_id ? (int) $c->parent_id : null,
-            ])
-            ->values();
+            ->get();
 
-        return $this->success(['items' => $categories], 'تصنيفات منتجات MG');
+        if ($asSystems) {
+            $systems = $categories
+                ->whereNull('parent_id')
+                ->values()
+                ->map(fn (ProductCategory $c) => [
+                    'id' => (int) $c->id,
+                    'name' => localized_name($c, 'name', 'تصنيف #'.$c->id),
+                    'slug' => $c->slug,
+                    'image' => $c->image,
+                    'image_url' => $c->image ? asset('storage/'.ltrim($c->image, '/')) : null,
+                    'products_count' => (int) $c->products_count + (int) $c->children->sum('products_count'),
+                    'is_accessories' => $c->isAccessoriesFamily(),
+                    'children' => $c->children->map(fn (ProductCategory $child) => [
+                        'id' => (int) $child->id,
+                        'name' => localized_name($child, 'name', 'تصنيف #'.$child->id),
+                        'slug' => $child->slug,
+                        'image' => $child->image,
+                        'image_url' => $child->image ? asset('storage/'.ltrim($child->image, '/')) : null,
+                        'products_count' => (int) $child->products_count,
+                        'parent_id' => (int) $c->id,
+                        'is_accessories' => $child->isAccessoriesFamily(),
+                    ])->values(),
+                ]);
+
+            return $this->success(['items' => $systems], 'أنظمة / تصنيفات رئيسية للمنتجات');
+        }
+
+        $items = $categories->map(fn (ProductCategory $c) => [
+            'id' => (int) $c->id,
+            'name' => localized_name($c, 'name', 'تصنيف #'.$c->id),
+            'slug' => $c->slug,
+            'image' => $c->image,
+            'image_url' => $c->image ? asset('storage/'.ltrim($c->image, '/')) : null,
+            'products_count' => (int) $c->products_count,
+            'parent_id' => $c->parent_id ? (int) $c->parent_id : null,
+            'is_accessories' => $c->isAccessoriesFamily(),
+        ])->values();
+
+        return $this->success(['items' => $items], 'تصنيفات منتجات MG');
     }
 
     protected function catalogQuery(Request $request, bool $applyOrderUnit = true): Builder
     {
         $query = Product::query()
-            ->with(['translations', 'images', 'category.translations']);
+            ->with(['translations', 'images', 'category.translations', 'category.parent.translations']);
 
         if ($request->filled('category_id')) {
-            $query->where('product_category_id', (int) $request->query('category_id'));
+            $catId = (int) $request->query('category_id');
+            $ids = ProductCategory::query()
+                ->whereKey($catId)
+                ->orWhere('parent_id', $catId)
+                ->pluck('id')
+                ->all();
+            $query->whereIn('product_category_id', $ids === [] ? [$catId] : $ids);
         }
 
         if ($request->filled('q') || $request->filled('search')) {
@@ -121,7 +159,46 @@ class ProductCatalogController extends Controller
             }
         }
 
+        // POS filter: pipes vs accessories (ملحقات)
+        $family = $this->requestedProductFamily($request);
+        if ($family !== null) {
+            $accessoryIds = \App\Models\ProductCategory::query()
+                ->with('parent')
+                ->get()
+                ->filter(fn (\App\Models\ProductCategory $c) => $c->isAccessoriesFamily())
+                ->pluck('id')
+                ->all();
+
+            if ($family === 'accessory') {
+                $query->whereIn('product_category_id', $accessoryIds === [] ? [0] : $accessoryIds);
+            } else {
+                $query->where(function ($q) use ($accessoryIds) {
+                    $q->whereNull('product_category_id');
+                    if ($accessoryIds !== []) {
+                        $q->orWhereNotIn('product_category_id', $accessoryIds);
+                    }
+                });
+            }
+        }
+
         return $query;
+    }
+
+    /** @return 'pipe'|'accessory'|null */
+    protected function requestedProductFamily(Request $request): ?string
+    {
+        $raw = strtolower(trim((string) (
+            $request->query('product_family')
+            ?? $request->query('family')
+            ?? $request->query('product_type')
+            ?? ''
+        )));
+
+        return match ($raw) {
+            'pipe', 'pipes', 'مواسير' => 'pipe',
+            'accessory', 'accessories', 'ملحقات', 'fitting', 'fittings' => 'accessory',
+            default => null,
+        };
     }
 
     /** @return 'box'|'piece'|null */
@@ -189,9 +266,17 @@ class ProductCatalogController extends Controller
             'awards_points' => $product->awardsPoints(),
             'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
             'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
+            'is_accessory' => $product->isAccessories(),
+            'product_family' => $product->isAccessories() ? 'accessory' : 'pipe',
             'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
             'category_name' => $product->category
                 ? localized_name($product->category, 'name', '')
+                : null,
+            'parent_category_id' => $product->category?->parent_id
+                ? (int) $product->category->parent_id
+                : null,
+            'parent_category_name' => $product->category?->parent
+                ? localized_name($product->category->parent, 'name', '')
                 : null,
         ];
 

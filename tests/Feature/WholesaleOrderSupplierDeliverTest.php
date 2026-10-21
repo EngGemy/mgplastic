@@ -18,7 +18,7 @@ class WholesaleOrderSupplierDeliverTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_wholesaler_can_mark_order_delivered_and_stock_moves_to_retail(): void
+    public function test_retail_buyer_confirms_receipt_and_stock_moves(): void
     {
         $wholesaler = User::factory()->create([
             'role' => 'wholesale_distributor',
@@ -56,15 +56,10 @@ class WholesaleOrderSupplierDeliverTest extends TestCase
         $orders->confirm($order, $wholesaler);
 
         $this->actingAs($wholesaler);
-        $this->assertTrue(OrderResource::canMarkDeliveredAsSupplier($order->fresh()));
+        $this->assertFalse(OrderResource::canMarkDeliveredAsSupplier($order->fresh()));
 
-        $delivered = $orders->deliver($order->fresh(), $wholesaler);
-
-        $this->assertSame(OrderStatus::DELIVERED, $delivered->status);
-        $this->assertSame($wholesaler->id, (int) $delivered->delivered_by);
-
-        $retailStock = app(NetworkInventoryService::class)->stockForRetailTrader($retail->fresh());
-        $this->assertSame(5, (int) $retailStock->first()['available_qty']);
+        $this->expectException(\DomainException::class);
+        $orders->deliver($order->fresh(), $wholesaler);
     }
 
     public function test_buyer_receive_helper_stays_available_after_confirm(): void
@@ -106,8 +101,12 @@ class WholesaleOrderSupplierDeliverTest extends TestCase
         $this->actingAs($retail);
         $this->assertTrue(OrderResource::canMarkReceivedAsBuyer($order->fresh()));
 
+        $delivered = app(OrderService::class)->deliver($order->fresh(), $retail);
+        $this->assertSame(OrderStatus::DELIVERED, $delivered->status);
+        $this->assertSame($retail->id, (int) $delivered->delivered_by);
+
         $this->actingAs($wholesaler);
-        $this->assertTrue(OrderResource::canMarkDeliveredAsSupplier($order->fresh()));
+        $this->assertFalse(OrderResource::canMarkDeliveredAsSupplier($order->fresh()));
     }
 
     public function test_ship_fails_when_wholesaler_has_no_stock(): void
