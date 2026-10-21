@@ -144,25 +144,20 @@ class PhoneOtpService
     }
 
     /**
-     * Channels available to the mobile UI (labels included).
+     * Channels shown on the mobile OTP picker (always WhatsApp + SMS).
+     * Delivery still respects enabledChannels() inside issue().
      *
      * @return list<array{key: string, label: string, icon: string}>
      */
     public function channelOptions(): array
     {
-        $map = [
-            'whatsapp' => ['key' => 'whatsapp', 'label' => 'واتساب', 'icon' => 'whatsapp'],
-            'sms' => ['key' => 'sms', 'label' => 'رسالة SMS', 'icon' => 'sms'],
+        // Product contract: UI always offers both channels.
+        // Do not filter by OTP_CHANNELS here — a production env set to
+        // "whatsapp" alone was hiding SMS from mobile/settings.
+        return [
+            ['key' => 'whatsapp', 'label' => 'واتساب', 'icon' => 'whatsapp'],
+            ['key' => 'sms', 'label' => 'رسالة SMS', 'icon' => 'sms'],
         ];
-
-        $out = [];
-        foreach ($this->enabledChannels() as $key) {
-            if (isset($map[$key])) {
-                $out[] = $map[$key];
-            }
-        }
-
-        return $out;
     }
 
     /**
@@ -211,12 +206,19 @@ class PhoneOtpService
     }
 
     /**
+     * Channels allowed for actual OTP delivery (OTP_CHANNELS env).
+     * Default = both. Set OTP_CHANNELS=whatsapp to disable SMS delivery.
+     *
      * @return list<string>
      */
     public function enabledChannels(): array
     {
-        $raw = (string) config('services.otp.channels', 'whatsapp,sms');
+        $raw = trim((string) config('services.otp.channels', 'whatsapp,sms'));
         $allowed = ['whatsapp', 'sms'];
+
+        if ($raw === '') {
+            return $allowed;
+        }
 
         $channels = [];
         foreach (explode(',', $raw) as $part) {
@@ -226,6 +228,6 @@ class PhoneOtpService
             }
         }
 
-        return array_values($channels);
+        return $channels === [] ? $allowed : array_values($channels);
     }
 }

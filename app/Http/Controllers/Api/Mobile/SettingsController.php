@@ -61,6 +61,11 @@ class SettingsController extends Controller
                     'verify' => url('/api/v1/auth/verify-otp'),
                     'resend' => url('/api/v1/auth/resend-otp'),
                 ],
+                'forgot_password' => [
+                    'send' => url('/api/v1/auth/forgot-password/send-otp'),
+                    'verify' => url('/api/v1/auth/forgot-password/verify-otp'),
+                    'reset' => url('/api/v1/auth/forgot-password/reset'),
+                ],
             ],
             'biometric' => [
                 'enabled' => true,
