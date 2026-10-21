@@ -49,7 +49,9 @@ class OtpGateFlowTest extends TestCase
             ->assertJsonPath('requires_otp', true)
             ->assertJsonPath('otp_sent', false)
             ->assertJsonPath('token', null)
-            ->assertJsonStructure(['otp_ticket', 'otp_channels']);
+            ->assertJsonPath('data.token', null)
+            ->assertJsonPath('data.otp_sent', false)
+            ->assertJsonStructure(['otp_ticket', 'otp_channels', 'data' => ['otp_ticket', 'otp_channels']]);
 
         Http::assertNothingSent();
     }
@@ -115,9 +117,33 @@ class OtpGateFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('code', 'otp_verified')
             ->assertJsonPath('prompt_biometric', true)
-            ->assertJsonStructure(['token']);
+            ->assertJsonPath('data.prompt_biometric', true)
+            ->assertJsonStructure(['token', 'data' => ['token', 'prompt_biometric']]);
 
         $this->assertTrue((bool) $user->fresh()->is_phone_verified);
+    }
+
+    public function test_verified_login_includes_prompt_biometric(): void
+    {
+        $user = User::factory()->create([
+            'phone' => '0912000444',
+            'password' => bcrypt('secret123'),
+            'is_phone_verified' => true,
+            'is_active' => true,
+            'is_approved' => true,
+            'role' => 'plumber',
+        ]);
+
+        $this->postJson('/api/v1/auth/login', [
+            'phone' => '0912000444',
+            'password' => 'secret123',
+        ])
+            ->assertOk()
+            ->assertJsonPath('code', 'login_ok')
+            ->assertJsonPath('requires_otp', false)
+            ->assertJsonPath('prompt_biometric', true)
+            ->assertJsonPath('data.prompt_biometric', true)
+            ->assertJsonStructure(['token']);
     }
 
     public function test_store_register_does_not_return_token_before_otp(): void

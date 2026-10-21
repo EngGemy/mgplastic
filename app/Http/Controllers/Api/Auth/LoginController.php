@@ -54,8 +54,11 @@ class LoginController extends Controller
         }
 
         // Gate: phone must be verified via OTP before any Sanctum token.
+        // Do NOT auto-send OTP — app must show channel picker then POST /auth/send-otp.
         if (! $this->isPhoneVerified($user)) {
             $otp = app(PhoneOtpService::class);
+            $ticket = app(OtpTicketService::class)->issue($user);
+            $channels = $otp->channelOptions();
 
             return response()->json([
                 'status' => true,
@@ -64,11 +67,19 @@ class LoginController extends Controller
                 'requires_otp' => true,
                 'otp_sent' => false,
                 'token' => null,
-                'otp_ticket' => app(OtpTicketService::class)->issue($user),
-                'otp_channels' => $otp->channelOptions(),
+                'otp_ticket' => $ticket,
+                'otp_channels' => $channels,
                 'otp_ticket_ttl_minutes' => OtpTicketService::TTL_MINUTES,
                 'user' => $this->userPayload($user),
-                // Never return plaintext OTP — app must open channel-choice then OTP screen.
+                'data' => [
+                    'token' => null,
+                    'requires_otp' => true,
+                    'otp_sent' => false,
+                    'otp_ticket' => $ticket,
+                    'otp_channels' => $channels,
+                    'otp_ticket_ttl_minutes' => OtpTicketService::TTL_MINUTES,
+                    'user' => $this->userPayload($user),
+                ],
             ], 200);
         }
 
@@ -95,14 +106,23 @@ class LoginController extends Controller
             ->where('is_active', true)
             ->exists();
 
+        $promptBiometric = ! $hasBiometric;
+
         return response()->json([
             'status' => true,
             'message' => $message,
             'code' => 'login_ok',
             'requires_otp' => false,
+            'otp_sent' => false,
             'token' => $token,
             'user' => $this->userPayload($user),
-            'prompt_biometric' => ! $hasBiometric,
+            'prompt_biometric' => $promptBiometric,
+            'data' => [
+                'token' => $token,
+                'requires_otp' => false,
+                'prompt_biometric' => $promptBiometric,
+                'user' => $this->userPayload($user),
+            ],
         ], 200);
     }
 

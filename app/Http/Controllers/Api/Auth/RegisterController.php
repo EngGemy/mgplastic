@@ -27,6 +27,9 @@ class RegisterController extends Controller
         ]);
 
         $otp = app(PhoneOtpService::class);
+        $ticket = app(OtpTicketService::class)->issue($user);
+        $channels = $otp->channelOptions();
+        $fresh = $user->fresh();
 
         return response()->json([
             'status' => true,
@@ -35,12 +38,18 @@ class RegisterController extends Controller
             'requires_otp' => true,
             'otp_sent' => false,
             'token' => null,
-            'otp_ticket' => app(OtpTicketService::class)->issue($user),
-            'otp_channels' => $otp->channelOptions(),
+            'otp_ticket' => $ticket,
+            'otp_channels' => $channels,
+            'otp_ticket_ttl_minutes' => OtpTicketService::TTL_MINUTES,
+            'user' => $fresh,
             'data' => [
-                'user' => $user->fresh(),
+                'user' => $fresh,
                 'token' => null,
                 'requires_otp' => true,
+                'otp_sent' => false,
+                'otp_ticket' => $ticket,
+                'otp_channels' => $channels,
+                'otp_ticket_ttl_minutes' => OtpTicketService::TTL_MINUTES,
             ],
         ]);
     }

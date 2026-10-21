@@ -85,6 +85,13 @@ class PlumberRegisterController extends Controller
 
         $roleLabel = $request->role === 'plumber' ? 'السباك' : 'البائع';
         $otp = app(PhoneOtpService::class);
+        $ticket = app(OtpTicketService::class)->issue($user);
+        $channels = $otp->channelOptions();
+        $fresh = $user->fresh(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']);
+        $location = [
+            'country' => $user->country ? ['id' => $user->country->id, 'name' => $user->country->{$nameCol}] : null,
+            'city' => $user->city ? ['id' => $user->city->id, 'name' => $user->city->{$nameCol}] : null,
+        ];
 
         return response()->json([
             'status' => true,
@@ -93,16 +100,19 @@ class PlumberRegisterController extends Controller
             'requires_otp' => true,
             'otp_sent' => false,
             'token' => null,
-            'otp_ticket' => app(OtpTicketService::class)->issue($user),
-            'otp_channels' => $otp->channelOptions(),
+            'otp_ticket' => $ticket,
+            'otp_channels' => $channels,
+            'otp_ticket_ttl_minutes' => OtpTicketService::TTL_MINUTES,
+            'user' => $fresh,
             'data' => [
-                'user' => $user->fresh(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']),
+                'user' => $fresh,
                 'requires_otp' => true,
+                'otp_sent' => false,
                 'token' => null,
-                'location' => [
-                    'country' => $user->country ? ['id' => $user->country->id, 'name' => $user->country->{$nameCol}] : null,
-                    'city' => $user->city ? ['id' => $user->city->id, 'name' => $user->city->{$nameCol}] : null,
-                ],
+                'otp_ticket' => $ticket,
+                'otp_channels' => $channels,
+                'otp_ticket_ttl_minutes' => OtpTicketService::TTL_MINUTES,
+                'location' => $location,
             ],
         ], 201);
     }

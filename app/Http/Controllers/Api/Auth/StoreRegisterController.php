@@ -124,26 +124,35 @@ class StoreRegisterController extends Controller
 
         $roleLabel = $role === 'retail_trader' ? 'تاجر التجزئة' : 'موزّع الجملة';
         $otp = app(PhoneOtpService::class);
+        $ticket = app(\App\Services\OtpTicketService::class)->issue($user);
+        $channels = $otp->channelOptions();
+        $storeStatus = [
+            'code' => 'pending_approval',
+            'is_approved' => false,
+            'is_active' => true,
+            'is_public' => false,
+            'notice' => 'متجرك لم يُفعَّل بعد — طلبك قيد مراجعة الإدارة.',
+        ];
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => "تم تسجيل {$roleLabel}. اختر طريقة إرسال رمز التحقق — حسابك بانتظار موافقة الإدارة بعد التوثيق.",
             'code' => 'otp_required',
             'requires_otp' => true,
             'otp_sent' => false,
             'token' => null,
-            'otp_ticket' => app(\App\Services\OtpTicketService::class)->issue($user),
-            'otp_channels' => $otp->channelOptions(),
-            'store_status' => [
-                'code' => 'pending_approval',
-                'is_approved' => false,
-                'is_active' => true,
-                'is_public' => false,
-                'notice' => 'متجرك لم يُفعَّل بعد — طلبك قيد مراجعة الإدارة.',
-            ],
-            'data'    => [
+            'otp_ticket' => $ticket,
+            'otp_channels' => $channels,
+            'otp_ticket_ttl_minutes' => \App\Services\OtpTicketService::TTL_MINUTES,
+            'store_status' => $storeStatus,
+            'data' => [
                 'token' => null,
                 'requires_otp' => true,
+                'otp_sent' => false,
+                'otp_ticket' => $ticket,
+                'otp_channels' => $channels,
+                'otp_ticket_ttl_minutes' => \App\Services\OtpTicketService::TTL_MINUTES,
+                'store_status' => $storeStatus,
                 'store' => new NetworkStoreResource($user),
             ],
         ], 201);

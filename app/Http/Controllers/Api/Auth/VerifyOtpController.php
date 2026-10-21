@@ -147,25 +147,37 @@ class VerifyOtpController extends Controller
             ->where('is_active', true)
             ->exists();
 
+        $promptBiometric = ! $hasBiometric;
+        $fresh = $user->fresh();
+
         $payload = [
             'status' => true,
             'message' => 'تم توثيق الهاتف بنجاح',
             'code' => 'otp_verified',
             'token' => $token,
-            'user' => $user->fresh(),
-            'prompt_biometric' => ! $hasBiometric,
+            'user' => $fresh,
+            'prompt_biometric' => $promptBiometric,
             'requires_otp' => false,
+            'otp_sent' => false,
+            'data' => [
+                'token' => $token,
+                'requires_otp' => false,
+                'prompt_biometric' => $promptBiometric,
+                'user' => $fresh,
+            ],
         ];
 
         if ($user->isNetworkStore()) {
             $status = $user->networkStoreStatus();
-            $payload['store_status'] = [
+            $storeStatus = [
                 'code' => $status['code'],
                 'is_approved' => (bool) $user->is_approved,
                 'is_active' => (bool) $user->is_active,
                 'is_public' => $status['is_public'],
                 'notice' => $status['message'],
             ];
+            $payload['store_status'] = $storeStatus;
+            $payload['data']['store_status'] = $storeStatus;
             if ($status['message']) {
                 $payload['message'] = $status['message'];
             }
