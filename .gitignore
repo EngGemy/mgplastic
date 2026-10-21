@@ -23,6 +23,9 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 
+# Local / handoff docs (not for remote)
+/docs/
+
 # Deployment temp
 public/index.php.cpanel
 
