@@ -49,6 +49,17 @@ class EnsureApiUserIsValid
             return $this->revokedResponse();
         }
 
+        if (! $this->isPhoneVerified($tokenable)) {
+            $tokenable->tokens()->delete();
+
+            return response()->json([
+                'status' => false,
+                'message' => 'يجب توثيق الهاتف قبل استخدام التطبيق',
+                'code' => 'otp_required',
+                'requires_otp' => true,
+            ], 403);
+        }
+
         return $next($request);
     }
 
@@ -57,6 +68,14 @@ class EnsureApiUserIsValid
         return User::query()
             ->whereKey($user->id)
             ->where('is_active', true)
+            ->exists();
+    }
+
+    protected function isPhoneVerified(User $user): bool
+    {
+        return User::query()
+            ->whereKey($user->id)
+            ->where('is_phone_verified', true)
             ->exists();
     }
 

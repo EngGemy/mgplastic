@@ -71,7 +71,7 @@ class WhatsAppSafetyTest extends TestCase
         Mail::assertSent(WhatsAppLimitReachedMail::class);
 
         $user = User::factory()->create(['phone' => '0916126065']);
-        app(PhoneOtpService::class)->issue($user, 'login');
+        app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
 
         Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendText')
             && ($r['session'] ?? '') === 'session_test_abc');

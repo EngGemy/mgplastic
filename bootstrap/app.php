@@ -44,6 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
             $code = 'unauthenticated';
             $message = 'Unauthenticated.';
 
+            $status = 401;
+
             if (filled($bearer)) {
                 try {
                     $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($bearer);
@@ -53,7 +55,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
                 if ($accessToken) {
                     $tokenable = $accessToken->tokenable;
-                    if (! $tokenable instanceof \App\Models\User
+                    if ($tokenable instanceof \App\Models\User && ! $tokenable->is_phone_verified) {
+                        $tokenable->tokens()->delete();
+                        $code = 'otp_required';
+                        $message = 'يجب توثيق الهاتف قبل استخدام التطبيق';
+                        $status = 403;
+                    } elseif (! $tokenable instanceof \App\Models\User
                         || ! $tokenable->is_active
                         || ! \App\Models\User::query()->whereKey($tokenable->id)->where('is_active', true)->exists()) {
                         $accessToken->delete();
@@ -63,10 +70,6 @@ return Application::configure(basePath: dirname(__DIR__))
                         $code = 'account_revoked';
                         $message = 'حسابك موقوف أو تم حذفه — سجّل الدخول من جديد';
                     }
-                } else {
-                    // Token already wiped by Sanctum callback / middleware → still tell the app to clear session.
-                    $code = 'account_revoked';
-                    $message = 'حسابك موقوف أو تم حذفه — سجّل الدخول من جديد';
                 }
             }
 
@@ -74,7 +77,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 'status' => false,
                 'message' => $message,
                 'code' => $code,
-            ], 401);
+                'requires_otp' => $code === 'otp_required',
+            ], $status);
         });
 
         $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, $request) {

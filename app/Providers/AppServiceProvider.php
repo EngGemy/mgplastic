@@ -59,6 +59,13 @@ class AppServiceProvider extends ServiceProvider
                 return false;
             }
 
+            // Do not delete here — EnsureApiUserIsValid / exception renderer
+            // return a clear otp_required payload, then wipe tokens.
+            if (! $tokenable->is_phone_verified
+                || ! \App\Models\User::query()->whereKey($tokenable->id)->where('is_phone_verified', true)->exists()) {
+                return false;
+            }
+
             return true;
         });
 

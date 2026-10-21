@@ -13,7 +13,10 @@ class PasswordResetByPhoneController extends Controller
 {
     public function sendOtp(Request $request)
     {
-        $request->validate(['phone' => 'required|string']);
+        $request->validate([
+            'phone' => 'required|string',
+            'channel' => ['nullable', 'string', 'in:whatsapp,sms'],
+        ]);
 
         $user = User::findByPhone((string) $request->phone);
 
@@ -32,8 +35,12 @@ class PasswordResetByPhoneController extends Controller
             ], 429);
         }
 
+        $otp = app(PhoneOtpService::class);
+        $channel = $otp->normalizeChannel($request->input('channel'))
+            ?? ($otp->enabledChannels()[0] ?? null);
+
         try {
-            app(PhoneOtpService::class)->issue($user, reason: 'forgot');
+            $otp->issue($user, reason: 'forgot', channel: $channel);
         } catch (ValidationException $e) {
             return response()->json([
                 'status' => false,
@@ -44,6 +51,7 @@ class PasswordResetByPhoneController extends Controller
         return response()->json([
             'status' => true,
             'message' => 'تم إرسال رمز التحقق',
+            'channel' => $channel,
         ]);
     }
 

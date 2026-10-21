@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\User;
+use App\Services\OtpTicketService;
 use App\Services\PhoneOtpService;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 
 class RegisterController extends Controller
 {
@@ -21,26 +21,26 @@ class RegisterController extends Controller
             'phone' => $phone,
             'password' => Hash::make($request->password),
             'role' => 'customer',
+            'is_phone_verified' => false,
             'otp_code' => null,
             'otp_expires_at' => null,
         ]);
 
-        try {
-            app(PhoneOtpService::class)->issue($user, reason: 'register');
-        } catch (ValidationException $e) {
-            return response()->json([
-                'status' => false,
-                'message' => collect($e->errors())->flatten()->first()
-                    ?: 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق',
-            ], 429);
-        }
+        $otp = app(PhoneOtpService::class);
 
         return response()->json([
             'status' => true,
-            'message' => 'تم التسجيل — تم إرسال رمز التحقق',
+            'message' => 'تم التسجيل — اختر طريقة إرسال رمز التحقق',
+            'code' => 'otp_required',
+            'requires_otp' => true,
+            'otp_sent' => false,
+            'token' => null,
+            'otp_ticket' => app(OtpTicketService::class)->issue($user),
+            'otp_channels' => $otp->channelOptions(),
             'data' => [
                 'user' => $user->fresh(),
-                'token' => $user->createToken('auth_token')->plainTextToken,
+                'token' => null,
+                'requires_otp' => true,
             ],
         ]);
     }

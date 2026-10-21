@@ -53,10 +53,20 @@ class SettingsController extends Controller
             'ios_wallet_visibility' => [
                 'show_wallet' => AppFlag::getBool('ios_wallet_enabled', true),
             ],
+            'otp' => [
+                'channels' => app(\App\Services\PhoneOtpService::class)->channelOptions(),
+                'ticket_ttl_minutes' => \App\Services\OtpTicketService::TTL_MINUTES,
+                'endpoints' => [
+                    'send' => url('/api/v1/auth/send-otp'),
+                    'verify' => url('/api/v1/auth/verify-otp'),
+                    'resend' => url('/api/v1/auth/resend-otp'),
+                ],
+            ],
             'biometric' => [
                 'enabled' => true,
                 'challenge_ttl_seconds' => 120,
                 'methods' => ['unlock_token', 'public_key_signature'],
+                'prompt_after_otp' => true,
                 'endpoints' => [
                     'register' => url('/api/v1/mobile/biometric/register'),
                     'challenge' => url('/api/v1/mobile/biometric/challenge'),

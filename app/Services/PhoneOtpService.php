@@ -21,17 +21,16 @@ class PhoneOtpService
     ) {}
 
     /**
-     * Issue a 6-digit OTP and deliver via configured channels (whatsapp and/or sms).
-     * Success = at least one enabled channel delivered. Never notifies admins.
+     * Issue a 6-digit OTP and deliver via ONE chosen channel (whatsapp|sms).
+     * Caller must pass an explicit channel — never blast both without user choice.
      *
-     * Constraint (Marsol): /public/sms/send is blocked (unverified account).
-     * Marsol OTP API (/public/otp/initiate) generates its own code and cannot
-     * accept our local OTP — so WhatsApp carries the local code, SMS may carry
-     * a different Marsol-generated code. matches() accepts either.
+     * Constraint (Marsol): SMS uses Marsol OTP API (own code). WhatsApp uses local hashed OTP.
+     * matches() accepts either.
      *
-     * @return array{otp: string, expires_at: Carbon}
+     * @param  'whatsapp'|'sms'  $channel
+     * @return array{channel: string, expires_at: Carbon, otp_expires_at: string}
      */
-    public function issue(User $user, string $reason = 'login'): array
+    public function issue(User $user, string $reason = 'login', ?string $channel = null): array
     {
         $limiterKey = 'otp:'.$reason.':'.($user->phone ?: $user->id);
 
@@ -42,16 +41,21 @@ class PhoneOtpService
             ]);
         }
 
-        $channels = $this->enabledChannels();
-        if ($channels === []) {
+        $channel = $this->normalizeChannel($channel);
+        if ($channel === null) {
             throw ValidationException::withMessages([
-                'phone' => ['تعذّر إرسال رمز التحقق — حاول لاحقاً'],
+                'channel' => ['اختر طريقة الإرسال: واتساب أو رسالة SMS'],
+            ]);
+        }
+
+        if (! in_array($channel, $this->enabledChannels(), true)) {
+            throw ValidationException::withMessages([
+                'channel' => ['طريقة الإرسال غير متاحة حاليًا'],
             ]);
         }
 
         $otp = (string) random_int(100000, 999999);
         $expiresAt = Carbon::now()->addMinutes(5);
-        // Meta-style short OTP — text only (no brand card). RLM inside WhatsAppNotifier::send.
         $text = WhatsAppMessage::otp($otp);
 
         $whatsappOk = false;
@@ -60,7 +64,7 @@ class PhoneOtpService
         $marsolResendToken = null;
         $marsolExpiration = 300;
 
-        if (in_array('whatsapp', $channels, true)) {
+        if ($channel === 'whatsapp') {
             try {
                 $whatsappOk = $this->whatsapp->send((string) $user->phone, $text, null);
             } catch (\Throwable $e) {
@@ -70,9 +74,15 @@ class PhoneOtpService
                 ]);
                 $whatsappOk = false;
             }
+
+            if (! $whatsappOk) {
+                throw ValidationException::withMessages([
+                    'channel' => ['تعذّر إرسال رمز التحقق عبر واتساب — جرّب SMS'],
+                ]);
+            }
         }
 
-        if (in_array('sms', $channels, true)) {
+        if ($channel === 'sms') {
             try {
                 $issued = $this->issueMarsolPhoneOtp((string) $user->phone, 6, 300, 'WEB', 'AR', 'CODE');
                 if ($issued && ! empty($issued['requestId'])) {
@@ -88,22 +98,19 @@ class PhoneOtpService
                 ]);
                 $smsOk = false;
             }
-        }
 
-        $wantWa = in_array('whatsapp', $channels, true);
-        $wantSms = in_array('sms', $channels, true);
-        $success = ($wantWa && $whatsappOk) || ($wantSms && $smsOk);
-
-        if (! $success) {
-            throw ValidationException::withMessages([
-                'phone' => ['تعذّر إرسال رمز التحقق — حاول لاحقاً'],
-            ]);
+            if (! $smsOk) {
+                throw ValidationException::withMessages([
+                    'channel' => ['تعذّر إرسال رمز التحقق عبر SMS — جرّب واتساب'],
+                ]);
+            }
         }
 
         RateLimiter::hit($limiterKey, 3600);
 
         $user->forceFill([
-            'otp_code' => Hash::make($otp),
+            // Keep local hash only when WhatsApp carries our code; SMS uses Marsol verify.
+            'otp_code' => $channel === 'whatsapp' ? Hash::make($otp) : null,
             'otp_expires_at' => $expiresAt,
             'otp_last_sent_at' => now(),
             'otp_attempts' => 0,
@@ -114,10 +121,48 @@ class PhoneOtpService
                 : null,
         ])->save();
 
-        return [
-            'otp' => $otp,
+        $result = [
+            'channel' => $channel,
             'expires_at' => $expiresAt,
+            'otp_expires_at' => $expiresAt->toIso8601String(),
         ];
+
+        // Tests only — never expose OTP in production API responses.
+        if (app()->runningUnitTests() && $channel === 'whatsapp') {
+            $result['otp'] = $otp;
+        }
+
+        return $result;
+    }
+
+    /** @return 'whatsapp'|'sms'|null */
+    public function normalizeChannel(?string $channel): ?string
+    {
+        $name = strtolower(trim((string) $channel));
+
+        return in_array($name, ['whatsapp', 'sms'], true) ? $name : null;
+    }
+
+    /**
+     * Channels available to the mobile UI (labels included).
+     *
+     * @return list<array{key: string, label: string, icon: string}>
+     */
+    public function channelOptions(): array
+    {
+        $map = [
+            'whatsapp' => ['key' => 'whatsapp', 'label' => 'واتساب', 'icon' => 'whatsapp'],
+            'sms' => ['key' => 'sms', 'label' => 'رسالة SMS', 'icon' => 'sms'],
+        ];
+
+        $out = [];
+        foreach ($this->enabledChannels() as $key) {
+            if (isset($map[$key])) {
+                $out[] = $map[$key];
+            }
+        }
+
+        return $out;
     }
 
     /**

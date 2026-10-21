@@ -128,6 +128,10 @@ class BiometricAuthService
             throw new \DomainException('حسابك موقوف أو تم حذفه — سجّل الدخول من جديد');
         }
 
+        if (! $user->is_phone_verified) {
+            throw new \DomainException('يجب توثيق الهاتف قبل تفعيل البصمة');
+        }
+
         if (! $user->isNetworkStore() && method_exists($user, 'isApprovedAndActive') && ! $user->isApprovedAndActive()) {
             throw new \DomainException($user->is_approved
                 ? 'حسابك موقوف — تواصل مع الدعم'

@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\City;
+use App\Services\OtpTicketService;
 use App\Services\PhoneOtpService;
-use Illuminate\Validation\ValidationException;
 
 class PlumberRegisterController extends Controller
 {
@@ -73,6 +73,7 @@ class PlumberRegisterController extends Controller
                 'profile_photo' => $imagePath,
                 'otp_code' => null,
                 'otp_expires_at' => null,
+                'is_phone_verified' => false,
                 'is_approved' => true,
                 'is_active' => true,
             ]);
@@ -82,25 +83,22 @@ class PlumberRegisterController extends Controller
         $user->load(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']);
         $nameCol = app()->getLocale() === 'ar' ? 'name_ar' : 'name_en';
 
-        try {
-            app(PhoneOtpService::class)->issue($user, reason: 'register');
-        } catch (ValidationException $e) {
-            return response()->json([
-                'status' => false,
-                'message' => collect($e->errors())->flatten()->first()
-                    ?: 'تم إنشاء الحساب لكن تعذّر إرسال رمز التحقق — حاول لاحقاً',
-            ], 429);
-        }
-
         $roleLabel = $request->role === 'plumber' ? 'السباك' : 'البائع';
+        $otp = app(PhoneOtpService::class);
 
         return response()->json([
             'status' => true,
-            'message' => "تم تسجيل {$roleLabel} — تم إرسال رمز التحقق",
+            'message' => "تم تسجيل {$roleLabel} — اختر طريقة إرسال رمز التحقق",
+            'code' => 'otp_required',
             'requires_otp' => true,
+            'otp_sent' => false,
+            'token' => null,
+            'otp_ticket' => app(OtpTicketService::class)->issue($user),
+            'otp_channels' => $otp->channelOptions(),
             'data' => [
                 'user' => $user->fresh(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']),
                 'requires_otp' => true,
+                'token' => null,
                 'location' => [
                     'country' => $user->country ? ['id' => $user->country->id, 'name' => $user->country->{$nameCol}] : null,
                     'city' => $user->city ? ['id' => $user->city->id, 'name' => $user->city->{$nameCol}] : null,

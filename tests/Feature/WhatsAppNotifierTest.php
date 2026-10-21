@@ -87,11 +87,10 @@ class WhatsAppNotifierTest extends TestCase
         });
     }
 
-    public function test_otp_whatsapp_fails_sms_succeeds(): void
+    public function test_otp_sms_channel_stores_marsol_request(): void
     {
-        $this->enableWaha();
+        $this->enableWaha(['services.otp.channels' => 'sms,whatsapp']);
         Http::fake([
-            'https://waha.test/api/sendText' => Http::response(['error' => 'down'], 500),
             'https://api.marsol.ly/public/senderIds' => Http::response([
                 ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
             ]),
@@ -107,20 +106,19 @@ class WhatsAppNotifierTest extends TestCase
             'is_phone_verified' => false,
         ]);
 
-        $meta = app(PhoneOtpService::class)->issue($user, 'login');
+        $meta = app(PhoneOtpService::class)->issue($user, 'login', 'sms');
 
         $fresh = $user->fresh();
-        $this->assertTrue(Hash::check($meta['otp'], $fresh->otp_code));
+        $this->assertSame('sms', $meta['channel']);
+        $this->assertNull($fresh->otp_code);
         $this->assertSame('req-sms-1', $fresh->marsol_otp_request_id);
     }
 
-    public function test_otp_both_channels_fail_does_not_keep_otp(): void
+    public function test_otp_channel_fail_does_not_keep_otp(): void
     {
-        $this->enableWaha();
+        $this->enableWaha(['services.otp.channels' => 'whatsapp']);
         Http::fake([
             'https://waha.test/api/sendText' => Http::response(['error' => 'down'], 500),
-            'https://api.marsol.ly/public/senderIds' => Http::response([]),
-            'https://api.marsol.ly/public/otp/initiate' => Http::response(['error' => 'fail'], 500),
         ]);
 
         $user = User::factory()->create([
@@ -130,10 +128,10 @@ class WhatsAppNotifierTest extends TestCase
         ]);
 
         try {
-            app(PhoneOtpService::class)->issue($user, 'login');
+            app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
             $this->fail('Expected ValidationException');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('تعذّر إرسال', collect($e->errors())->flatten()->first() ?? '');
+            $this->assertStringContainsString('واتساب', collect($e->errors())->flatten()->first() ?? '');
         }
 
         $fresh = $user->fresh();
@@ -151,7 +149,7 @@ class WhatsAppNotifierTest extends TestCase
 
         $user = User::factory()->create(['phone' => '0916126065']);
 
-        app(PhoneOtpService::class)->issue($user, 'login');
+        app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
 
         Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendText'));
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'marsol.ly'));
@@ -214,7 +212,7 @@ class WhatsAppNotifierTest extends TestCase
         ]);
 
         $user = User::factory()->create(['phone' => '0916126065']);
-        $meta = app(PhoneOtpService::class)->issue($user, 'login');
+        $meta = app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
 
         $this->assertTrue(app(PhoneOtpService::class)->matches($user->fresh(), $meta['otp']));
         $this->assertFalse(app(PhoneOtpService::class)->matches($user->fresh(), '000000'));

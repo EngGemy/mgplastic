@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\WalletAccount;
+use App\Services\OtpTicketService;
 use App\Services\PhoneOtpService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -43,23 +44,7 @@ class LoginController extends Controller
             ], 401);
         }
 
-        // If phone not verified -> SAME RESPONSE SHAPE + OTP
-        if (! $this->isPhoneVerified($user)) {
-            $otpMeta = app(PhoneOtpService::class)->issue($user, reason: 'login');
-
-            $user->is_phone_verified = false;
-
-            return response()->json([
-                'status' => true,
-                'message' => 'الهاتف غير موثّق — تم إرسال رمز التحقق',
-                'token' => null,
-                'user' => $this->userPayload($user),
-                'otp' => $otpMeta['otp'], // DEV ONLY — never log / forward to admins
-                'otp_expires_at' => $otpMeta['expires_at']->toIso8601String(),
-            ], 200);
-        }
-
-        // Never issue tokens for deactivated accounts (app must not stay signed in).
+        // Never issue tokens for deactivated accounts.
         if (! $user->is_active) {
             return response()->json([
                 'status' => false,
@@ -68,7 +53,25 @@ class LoginController extends Controller
             ], 403);
         }
 
-        // Network stores may log in while pending approval to manage their profile.
+        // Gate: phone must be verified via OTP before any Sanctum token.
+        if (! $this->isPhoneVerified($user)) {
+            $otp = app(PhoneOtpService::class);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'أكمل التحقق من الهاتف قبل الدخول',
+                'code' => 'otp_required',
+                'requires_otp' => true,
+                'otp_sent' => false,
+                'token' => null,
+                'otp_ticket' => app(OtpTicketService::class)->issue($user),
+                'otp_channels' => $otp->channelOptions(),
+                'otp_ticket_ttl_minutes' => OtpTicketService::TTL_MINUTES,
+                'user' => $this->userPayload($user),
+                // Never return plaintext OTP — app must open channel-choice then OTP screen.
+            ], 200);
+        }
+
         $isNetworkStore = $user->isNetworkStore();
 
         if (! $isNetworkStore && method_exists($user, 'isApprovedAndActive') && ! $user->isApprovedAndActive()) {
@@ -87,11 +90,19 @@ class LoginController extends Controller
             $message = 'تم تسجيل الدخول. متجرك لم يُفعَّل بعد — بانتظار موافقة الإدارة.';
         }
 
+        $hasBiometric = \App\Models\BiometricDevice::query()
+            ->where('user_id', $user->id)
+            ->where('is_active', true)
+            ->exists();
+
         return response()->json([
             'status' => true,
             'message' => $message,
+            'code' => 'login_ok',
+            'requires_otp' => false,
             'token' => $token,
             'user' => $this->userPayload($user),
+            'prompt_biometric' => ! $hasBiometric,
         ], 200);
     }
 
@@ -99,6 +110,7 @@ class LoginController extends Controller
     {
         $payload = $user->makeHidden(['otp_code', 'otp_expires_at'])->toArray();
         $payload['is_central_warehouse'] = (bool) $user->is_central_warehouse;
+        $payload['is_phone_verified'] = $this->isPhoneVerified($user);
 
         if ($user->role === User::ROLE_PLUMBER || $user->role === 'plumber') {
             $payload['balance_points'] = (int) (WalletAccount::query()

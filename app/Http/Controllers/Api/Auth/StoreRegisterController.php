@@ -12,7 +12,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Store self-registration (network stores).
@@ -119,21 +118,22 @@ class StoreRegisterController extends Controller
             return $user;
         });
 
-        try {
-            app(PhoneOtpService::class)->issue($user, reason: 'register');
-        } catch (ValidationException) {
-            // Account created — OTP can be resent via /auth/resend-otp
-        }
-
         $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);
 
         $this->notifyAdminsOfPendingStore($user);
 
         $roleLabel = $role === 'retail_trader' ? 'تاجر التجزئة' : 'موزّع الجملة';
+        $otp = app(PhoneOtpService::class);
 
         return response()->json([
             'status'  => true,
-            'message' => "تم تسجيل {$roleLabel}. تم إرسال رمز التحقق، وحسابك بانتظار موافقة الإدارة.",
+            'message' => "تم تسجيل {$roleLabel}. اختر طريقة إرسال رمز التحقق — حسابك بانتظار موافقة الإدارة بعد التوثيق.",
+            'code' => 'otp_required',
+            'requires_otp' => true,
+            'otp_sent' => false,
+            'token' => null,
+            'otp_ticket' => app(\App\Services\OtpTicketService::class)->issue($user),
+            'otp_channels' => $otp->channelOptions(),
             'store_status' => [
                 'code' => 'pending_approval',
                 'is_approved' => false,
@@ -142,7 +142,8 @@ class StoreRegisterController extends Controller
                 'notice' => 'متجرك لم يُفعَّل بعد — طلبك قيد مراجعة الإدارة.',
             ],
             'data'    => [
-                'token' => $user->createToken('auth_token')->plainTextToken,
+                'token' => null,
+                'requires_otp' => true,
                 'store' => new NetworkStoreResource($user),
             ],
         ], 201);
