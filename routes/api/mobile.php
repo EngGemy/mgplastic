@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
 use App\Http\Controllers\Api\Mobile\BiometricController;
 use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
+use App\Http\Controllers\Api\Mobile\HomeHighlightsController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
 use App\Http\Controllers\Api\Mobile\ProductCollectionController;
@@ -61,6 +62,9 @@ Route::prefix('v1/mobile')->group(function () {
     Route::get('product-collections', [ProductCollectionController::class, 'index']);
     Route::get('product-collections/{collection}', [ProductCollectionController::class, 'show']);
     Route::get('promo-banners', [PromoBannerController::class, 'index']);
+
+    // Wholesale home green-banner icons (المشاريع · الصرف · مياه الشرب)
+    Route::get('home/highlights', [HomeHighlightsController::class, 'index']);
 
     // Wallet visibility — apps read this to hide/show the wallet UI
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);
@@ -220,6 +224,7 @@ Route::prefix('v1/mobile')->group(function () {
 
         // MG catalog — order from wholesaler/warehouse
         Route::get('products', [TraderProductCatalogController::class, 'index']);
+        Route::get('products/types', [TraderProductCatalogController::class, 'types']);
         Route::get('products/categories', [TraderProductCatalogController::class, 'categories']);
 
         // Shop display products (non-MG / no points) + animation
@@ -314,6 +319,7 @@ Route::prefix('v1/mobile')->group(function () {
 
         // MG catalog — order from factory
         Route::get('products', [TraderProductCatalogController::class, 'index']);
+        Route::get('products/types', [TraderProductCatalogController::class, 'types']);
         Route::get('products/categories', [TraderProductCatalogController::class, 'categories']);
 
         // Shop display products (non-MG / no points) + animation

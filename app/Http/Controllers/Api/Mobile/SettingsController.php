@@ -98,6 +98,21 @@ class SettingsController extends Controller
                 'enabled' => (bool) config('testimonials.enabled', true),
                 'endpoint' => url('/api/v1/mobile/testimonials'),
             ],
+            'home' => [
+                'highlights' => url('/api/v1/mobile/home/highlights'),
+                'product_types' => [
+                    'trader' => url('/api/v1/mobile/trader/products/types'),
+                    'distributor' => url('/api/v1/mobile/distributor/products/types'),
+                ],
+                'systems' => [
+                    'trader' => url('/api/v1/mobile/trader/products/categories').'?systems=1',
+                    'distributor' => url('/api/v1/mobile/distributor/products/categories').'?systems=1',
+                ],
+                'sliders' => [
+                    'home' => url('/api/v1/sliders/home'),
+                    'store' => url('/api/v1/sliders/store'),
+                ],
+            ],
         ]);
     }
 }

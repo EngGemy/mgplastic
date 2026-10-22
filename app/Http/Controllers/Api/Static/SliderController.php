@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\Static;
 use App\Http\Controllers\Controller;
 use App\Models\Slider;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class SliderController extends Controller
@@ -13,14 +12,21 @@ class SliderController extends Controller
     /** Format a slider payload */
     protected function format(Slider $s): array
     {
-        // Prefer Storage::url so it respects disk config
-        $url = $s->image ? Storage::disk('public')->url($s->image) : null;
+        $url = $s->image_url;
 
         return [
-            'id'    => $s->id,
-            'type'  => $s->type,           // 'home' | 'store'
-            'image' => $url,               // full URL
-            'path'  => $s->image,          // stored path (optional)
+            'id' => $s->id,
+            'type' => $s->type, // 'home' | 'store'
+            'image' => $url,
+            'path' => $s->hasValidImage() ? $s->image : null,
+            // Optional overlay copy for mobile home hero (editable in admin).
+            'title' => $s->title,
+            'subtitle' => $s->description,
+            'button_text' => $s->cta_primary_text,
+            'link' => $s->cta_primary_url,
+            'tag' => $s->tag,
+            'cta_secondary_text' => $s->cta_secondary_text,
+            'cta_secondary_url' => $s->cta_secondary_url,
         ];
     }
 
