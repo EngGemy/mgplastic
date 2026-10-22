@@ -206,6 +206,7 @@ class BadgeResource extends Resource
                             ->schema([
                                 Forms\Components\ViewField::make('badge_preview')
                                     ->view('filament.forms.badge-preview')
+                                    ->viewData(fn (Get $get): array => ['get' => $get])
                                     ->dehydrated(false),
                             ])
                             ->extraAttributes(['class' => 'mg-badge-studio-wrap']),

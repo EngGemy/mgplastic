@@ -1,10 +1,13 @@
 @php
-    $name = trim((string) ($get('name_ar') ?: 'اسم الشارة'));
-    $desc = trim((string) ($get('description_ar') ?: 'وصف قصير يظهر للسباك عند الفوز بالشارة.'));
-    $tier = (string) ($get('tier') ?: 'common');
-    $icon = (string) ($get('icon') ?: 'star');
-    $key = trim((string) ($get('key') ?: 'badge_key'));
-    $active = (bool) ($get('is_active') ?? true);
+    /** @var \Filament\Forms\Get|null $get */
+    $get = $get ?? $getGetCallback ?? (isset($field) ? $field->getGetCallback() : null);
+
+    $name = trim((string) ($get ? ($get('name_ar') ?: 'اسم الشارة') : 'اسم الشارة'));
+    $desc = trim((string) ($get ? ($get('description_ar') ?: 'وصف قصير يظهر للسباك عند الفوز بالشارة.') : 'وصف قصير يظهر للسباك عند الفوز بالشارة.'));
+    $tier = (string) ($get ? ($get('tier') ?: 'common') : 'common');
+    $icon = (string) ($get ? ($get('icon') ?: 'star') : 'star');
+    $key = trim((string) ($get ? ($get('key') ?: 'badge_key') : 'badge_key'));
+    $active = (bool) ($get ? ($get('is_active') ?? true) : true);
 
     $tierMeta = match ($tier) {
         'legendary' => ['label' => 'أسطورية', 'class' => 'mg-badge-preview--legendary'],
