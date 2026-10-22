@@ -47,7 +47,8 @@ class NetworkInventoryService
                 ->where('status', 'approved')
                 ->with([
                     'items.product.translations',
-                    'items.product.category',
+                    'items.product.category.translations',
+                    'items.product.category.parent.translations',
                     'items.product.tags',
                     'distributions' => fn ($q) => $q
                         ->where('tier', 1)
@@ -108,7 +109,8 @@ class NetworkInventoryService
             ->whereIn('status', ['confirmed', 'points_awarded'])
             ->with([
                 'items.invoiceItem.product.translations',
-                'items.invoiceItem.product.category',
+                'items.invoiceItem.product.category.translations',
+                'items.invoiceItem.product.category.parent.translations',
                 'items.invoiceItem.product.tags',
             ])
             ->orderBy('confirmed_at')
@@ -197,12 +199,20 @@ class NetworkInventoryService
 
         if (! isset($byProduct[$productId])) {
             $group = $this->resolveStockGroup($product);
+            $category = $product?->relationLoaded('category') ? $product->category : $product?->category;
+            if ($category && ! $category->relationLoaded('translations')) {
+                $category->loadMissing('translations', 'parent.translations');
+            }
 
             $byProduct[$productId] = [
                 'product_id' => $productId,
                 'name' => localized_name($product, 'name', "منتج #{$productId}"),
                 'image' => $product?->main_image,
                 'category_id' => $product?->product_category_id,
+                'category_name' => $category
+                    ? localized_name($category, 'name', $category->slug ?? 'تصنيف')
+                    : 'بدون تصنيف',
+                'is_accessories' => (bool) ($category?->isAccessoriesFamily()),
                 'tags' => $group['tags'],
                 'tag' => $group['tag'],
                 'group_key' => $group['key'],
@@ -341,7 +351,7 @@ class NetworkInventoryService
     }
 
     /**
-     * Sort POS stock so same tag / piece-type sit together (أكواع، تيهات، …).
+     * Sort POS stock: category → tag → name (ملحقات خاصة).
      *
      * @param  Collection<int, array<string, mixed>>  $stock
      * @return Collection<int, array<string, mixed>>
@@ -350,6 +360,9 @@ class NetworkInventoryService
     {
         return $stock
             ->sortBy([
+                // Accessories categories first, then alpha category → tag → name.
+                fn (array $row) => (bool) ($row['is_accessories'] ?? false) ? 0 : 1,
+                fn (array $row) => mb_strtolower((string) ($row['category_name'] ?? '')),
                 fn (array $row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
                 fn (array $row) => mb_strtolower((string) ($row['name'] ?? '')),
             ])
@@ -357,7 +370,7 @@ class NetworkInventoryService
     }
 
     /**
-     * Group flat stock rows for POS UIs / mobile sections.
+     * Flat tag groups (BC for mobile).
      *
      * @param  Collection<int, array<string, mixed>>  $stock
      * @return list<array{key:string, tag:string, name:string, product_type:?string, items:list<array<string, mixed>>}>
@@ -381,6 +394,92 @@ class NetworkInventoryService
         }
 
         return array_values($grouped);
+    }
+
+    /**
+     * Accessories browse tree: Category → Tag → products (sorted under each other).
+     *
+     * @param  Collection<int, array<string, mixed>>  $stock
+     * @return list<array{
+     *   category_id:?int,
+     *   category_name:string,
+     *   is_accessories:bool,
+     *   items_count:int,
+     *   tags: list<array{key:string, tag:string, name:string, product_type:?string, items_count:int, items:list<array<string, mixed>>}>
+     * }>
+     */
+    public function groupStockByCategoryThenTag(Collection $stock): array
+    {
+        $byCategory = [];
+
+        foreach ($this->sortStockByTag($stock) as $row) {
+            $catId = (int) ($row['category_id'] ?? 0);
+            $catKey = $catId > 0 ? (string) $catId : 'none';
+
+            if (! isset($byCategory[$catKey])) {
+                $byCategory[$catKey] = [
+                    'category_id' => $catId > 0 ? $catId : null,
+                    'category_name' => (string) ($row['category_name'] ?? 'بدون تصنيف'),
+                    'is_accessories' => (bool) ($row['is_accessories'] ?? false),
+                    'items_count' => 0,
+                    'tags' => [],
+                ];
+            }
+
+            $tagKey = (string) ($row['group_key'] ?? 'other');
+            if (! isset($byCategory[$catKey]['tags'][$tagKey])) {
+                $byCategory[$catKey]['tags'][$tagKey] = [
+                    'key' => $tagKey,
+                    'tag' => (string) ($row['tag'] ?? $row['group_name'] ?? 'أخرى'),
+                    'name' => (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى'),
+                    'product_type' => $row['product_type'] ?? null,
+                    'items_count' => 0,
+                    'items' => [],
+                ];
+            }
+
+            $byCategory[$catKey]['tags'][$tagKey]['items'][] = $row;
+            $byCategory[$catKey]['tags'][$tagKey]['items_count']++;
+            $byCategory[$catKey]['items_count']++;
+        }
+
+        // Prefer accessories categories first, then alpha.
+        $list = array_values($byCategory);
+        usort($list, function (array $a, array $b) {
+            $acc = ((int) $b['is_accessories']) <=> ((int) $a['is_accessories']);
+            if ($acc !== 0) {
+                return $acc;
+            }
+
+            return strcmp(
+                mb_strtolower($a['category_name']),
+                mb_strtolower($b['category_name']),
+            );
+        });
+
+        foreach ($list as &$cat) {
+            $cat['tags'] = array_values($cat['tags']);
+        }
+        unset($cat);
+
+        return $list;
+    }
+
+    /**
+     * Display group for POS/catalog: exact tag (e.g. «كوع 1 بوصة»), not piece-type bucket.
+     *
+     * @return array{
+     *   tags: list<string>,
+     *   tag: string,
+     *   key: string,
+     *   name: string,
+     *   product_type: ?string,
+     *   product_type_name: ?string
+     * }
+     */
+    public function resolveProductGroup(?Product $product): array
+    {
+        return $this->resolveStockGroup($product);
     }
 
     /**
@@ -409,7 +508,7 @@ class NetworkInventoryService
             $type = app(ProductTypeService::class)->resolveForProduct($product);
         }
 
-        // Prefer an actual product tag that matches a known piece-type, else first tag, else type, else أخرى.
+        // Prefer a tag that matches the resolved piece-type keywords, else first tag.
         $primaryTag = null;
         if ($type) {
             foreach ($tags as $tagName) {
@@ -429,8 +528,9 @@ class NetworkInventoryService
             return [
                 'tags' => $tags,
                 'tag' => $primaryTag,
-                'key' => $type['key'] ?? ('tag:'.Str::slug($primaryTag, '_')),
-                'name' => $type['name'] ?? $primaryTag,
+                // One section per tag label so «كوع 1 بوصة» stays together under the category.
+                'key' => 'tag:'.Str::slug($primaryTag, '_'),
+                'name' => $primaryTag,
                 'product_type' => $type['key'] ?? null,
                 'product_type_name' => $type['name'] ?? null,
             ];
@@ -454,6 +554,36 @@ class NetworkInventoryService
             'name' => 'أخرى',
             'product_type' => null,
             'product_type_name' => null,
+        ];
+    }
+
+    /**
+     * Normalize flat catalog rows then build tag + category→tag trees for mobile.
+     *
+     * @param  Collection<int, array<string, mixed>>  $items
+     * @return array{groups: list<array<string, mixed>>, categories: list<array<string, mixed>>}
+     */
+    public function groupCatalogBrowse(Collection $items): array
+    {
+        $normalized = $items->map(function (array $row) {
+            $row['product_id'] = (int) ($row['product_id'] ?? $row['id'] ?? 0);
+            $row['category_id'] = isset($row['category_id']) ? (int) $row['category_id'] : null;
+            $row['category_name'] = (string) ($row['category_name']
+                ?? $row['parent_category_name']
+                ?? 'بدون تصنيف');
+            $row['is_accessories'] = (bool) ($row['is_accessories']
+                ?? $row['is_accessory']
+                ?? false);
+            $row['group_key'] = (string) ($row['group_key'] ?? 'other');
+            $row['group_name'] = (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى');
+            $row['tag'] = (string) ($row['tag'] ?? $row['group_name'] ?? 'أخرى');
+
+            return $row;
+        });
+
+        return [
+            'groups' => $this->groupStockByTag($normalized),
+            'categories' => $this->groupStockByCategoryThenTag($normalized),
         ];
     }
 }

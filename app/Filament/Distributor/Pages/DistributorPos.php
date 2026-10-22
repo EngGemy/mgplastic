@@ -132,7 +132,9 @@ class DistributorPos extends Page
                 'product_id' => $row['product_id'],
                 'name' => $name,
                 'category_id' => $product->product_category_id,
-                'category_name' => $product->category?->translate('ar')?->name ?? '',
+                'category_name' => $row['category_name']
+                    ?? ($product->category?->translate('ar')?->name ?: 'بدون تصنيف'),
+                'is_accessories' => (bool) ($row['is_accessories'] ?? $product->category?->isAccessoriesFamily()),
                 'tags' => $row['tags'] ?? $product->tags->pluck('name')->values()->all(),
                 'tag' => $row['tag'] ?? ($product->tags->first()?->name ?: 'أخرى'),
                 'group_key' => $row['group_key'] ?? 'other',
@@ -179,15 +181,45 @@ class DistributorPos extends Page
                     return str_contains(mb_strtolower((string) ($row['group_name'] ?? '')), $term);
                 });
             })
+            ->sortBy([
+                fn ($row) => (bool) ($row['is_accessories'] ?? false) ? 0 : 1,
+                fn ($row) => mb_strtolower((string) ($row['category_name'] ?? '')),
+                fn ($row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
+                fn ($row) => mb_strtolower((string) ($row['name'] ?? '')),
+            ])
             ->values();
     }
 
-    /** @return Collection<string, Collection<int, array<string, mixed>>> */
+    /**
+     * @return Collection<int, array{category_name:?string, tags: Collection}>
+     */
     public function getGroupedStockProperty(): Collection
     {
-        return $this->filteredStock
-            ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
-            ->sortKeys();
+        $rows = $this->filteredStock;
+
+        if ($this->selectedCategoryId) {
+            return collect([
+                [
+                    'category_name' => null,
+                    'tags' => $rows
+                        ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+                        ->sortKeys(),
+                ],
+            ]);
+        }
+
+        return $rows
+            ->groupBy(fn ($r) => (string) ($r['category_name'] ?? 'بدون تصنيف'))
+            ->sortKeys()
+            ->map(fn (Collection $catRows, string $catName) => [
+                'category_name' => $catName,
+                'is_accessories' => (bool) ($catRows->first()['is_accessories'] ?? false),
+                'tags' => $catRows
+                    ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+                    ->sortKeys(),
+            ])
+            ->sortByDesc(fn ($block) => (int) ($block['is_accessories'] ?? false))
+            ->values();
     }
 
     public function getCartPointsProperty(): int

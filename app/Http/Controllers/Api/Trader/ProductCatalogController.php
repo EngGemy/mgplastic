@@ -7,10 +7,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductTag;
+use App\Services\NetworkInventoryService;
 use App\Services\ProductTypeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 /**
  * Paginated product catalog for retail traders when placing a supply order
@@ -25,36 +27,132 @@ class ProductCatalogController extends Controller
         $lang = $this->language($request);
         app()->setLocale($lang);
 
-        $orderUnit = $this->requestedOrderUnit($request);
-        $baseQuery = $this->catalogQuery($request, applyOrderUnit: false);
+        $payload = $this->buildCatalogPayload($request);
 
+        return $this->success($payload, 'كتالوج منتجات MG — تصنيف ثم تاج للملحقات');
+    }
+
+    /**
+     * Shared catalog payload for trader / distributor / plumber.
+     *
+     * Accessories (or ?grouped=1 / view=grouped): full Category → Tag → products tree.
+     * Pipes: paginated flat list + groups for the current page.
+     *
+     * @param  callable(Product): array<string, mixed>|null  $mapProduct
+     * @return array<string, mixed>
+     */
+    protected function buildCatalogPayload(Request $request, ?callable $mapProduct = null): array
+    {
+        $mapProduct ??= fn (Product $product) => $this->mapCatalogProduct($product);
+
+        $orderUnit = $this->requestedOrderUnit($request);
+        $family = $this->requestedProductFamily($request);
+        $groupedView = $this->wantsGroupedBrowse($request, $family);
+
+        $baseQuery = $this->catalogQuery($request, applyOrderUnit: false);
         $boxCount = (clone $baseQuery)->where('pieces_per_box', '>', 0)->count();
         $pieceCount = (clone $baseQuery)->where(function ($q) {
             $q->whereNull('pieces_per_box')->orWhere('pieces_per_box', '<=', 0);
         })->count();
 
-        $query = $this->catalogQuery($request, applyOrderUnit: true)->latest('id');
+        $filters = [
+            'order_unit' => $orderUnit,
+            'product_family' => $family,
+            'product_type' => $this->requestedPieceType($request),
+            'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
+            'search' => $request->query('q') ?? $request->query('search'),
+            'grouped' => $groupedView,
+            'tags' => $this->requestedTags($request),
+        ];
+
+        $units = [
+            'all' => $boxCount + $pieceCount,
+            'box' => $boxCount,
+            'piece' => $pieceCount,
+        ];
+
+        $inventory = app(NetworkInventoryService::class);
+
+        if ($groupedView) {
+            $limit = min(max((int) $request->integer('per_page', 500), 1), 500);
+            $products = $this->catalogQuery($request, applyOrderUnit: true)
+                ->limit($limit)
+                ->get();
+
+            $items = $products
+                ->map(fn (Product $product) => $mapProduct($product))
+                ->values();
+            $items = $this->sortCatalogItems($items);
+            $trees = $inventory->groupCatalogBrowse($items);
+
+            return [
+                'items' => $items,
+                'groups' => $trees['groups'],
+                'categories' => $trees['categories'],
+                'view' => 'grouped',
+                'units' => $units,
+                'filters' => $filters,
+                'pagination' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $items->count(),
+                    'total' => $items->count(),
+                    'from' => $items->isEmpty() ? null : 1,
+                    'to' => $items->isEmpty() ? null : $items->count(),
+                    'has_more' => false,
+                    'next_page' => null,
+                    'prev_page' => null,
+                ],
+            ];
+        }
+
         $perPage = min(max((int) $request->integer('per_page', 20), 1), 50);
-        $page = $query->paginate($perPage);
+        $page = $this->catalogQuery($request, applyOrderUnit: true)->latest('id')->paginate($perPage);
+        $items = collect($page->items())
+            ->map(fn (Product $product) => $mapProduct($product))
+            ->values();
+        $items = $this->sortCatalogItems($items);
+        $trees = $inventory->groupCatalogBrowse($items);
 
-        $items = collect($page->items())->map(fn (Product $product) => $this->mapCatalogProduct($product))->values();
-
-        return $this->success([
+        return [
             'items' => $items,
-            'units' => [
-                'all' => $boxCount + $pieceCount,
-                'box' => $boxCount,
-                'piece' => $pieceCount,
-            ],
-            'filters' => [
-                'order_unit' => $orderUnit,
-                'product_family' => $this->requestedProductFamily($request),
-                'product_type' => $this->requestedPieceType($request),
-                'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
-                'search' => $request->query('q') ?? $request->query('search'),
-            ],
+            'groups' => $trees['groups'],
+            'categories' => $trees['categories'],
+            'view' => 'paginated',
+            'units' => $units,
+            'filters' => $filters,
             'pagination' => $this->paginationMeta($page),
-        ], 'كتالوج منتجات MG — صناديق / قطع (بدون نقاط للمنتج)');
+        ];
+    }
+
+    protected function wantsGroupedBrowse(Request $request, ?string $family): bool
+    {
+        if ($request->boolean('grouped')) {
+            return true;
+        }
+
+        $view = strtolower((string) $request->query('view', ''));
+        if (in_array($view, ['grouped', 'tags', 'tree', 'accessories'], true)) {
+            return true;
+        }
+
+        return $family === 'accessory';
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $items
+     * @return Collection<int, array<string, mixed>>
+     */
+    protected function sortCatalogItems(Collection $items): Collection
+    {
+        return $items
+            ->sortBy([
+                fn (array $row) => (bool) ($row['is_accessories'] ?? $row['is_accessory'] ?? false) ? 0 : 1,
+                fn (array $row) => mb_strtolower((string) ($row['category_name'] ?? $row['parent_category_name'] ?? '')),
+                fn (array $row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
+                fn (array $row) => mb_strtolower((string) ($row['name'] ?? '')),
+            ])
+            ->values();
     }
 
     /**
@@ -262,10 +360,12 @@ class ProductCatalogController extends Controller
         // Network apps see totals on orders only — not the per-unit rate (decimal UX).
         // mg_no_points = MG catalog without loyalty points (still orderable).
         $piecesPerBox = (int) ($product->pieces_per_box ?? 0);
-        $pieceType = app(ProductTypeService::class)->resolveForProduct($product);
+        $group = app(NetworkInventoryService::class)->resolveProductGroup($product);
+        $isAccessory = $product->isAccessories();
 
         $item = [
             'id' => (int) $product->id,
+            'product_id' => (int) $product->id,
             'name' => localized_name($product, 'name', 'منتج #'.$product->id),
             'description' => api_plain_string(localized_name($product, 'description', '')),
             'image' => $image,
@@ -278,10 +378,15 @@ class ProductCatalogController extends Controller
             'awards_points' => $product->awardsPoints(),
             'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
             'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
-            'is_accessory' => $product->isAccessories(),
-            'product_family' => $product->isAccessories() ? 'accessory' : 'pipe',
-            'product_type' => $pieceType['key'] ?? null,
-            'product_type_name' => $pieceType['name'] ?? null,
+            'is_accessory' => $isAccessory,
+            'is_accessories' => $isAccessory,
+            'product_family' => $isAccessory ? 'accessory' : 'pipe',
+            'product_type' => $group['product_type'],
+            'product_type_name' => $group['product_type_name'],
+            'tags' => $group['tags'],
+            'tag' => $group['tag'],
+            'group_key' => $group['key'],
+            'group_name' => $group['name'],
             'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
             'category_name' => $product->category
                 ? localized_name($product->category, 'name', '')

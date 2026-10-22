@@ -48,18 +48,44 @@ trait HandlesNetworkPosCart
                 });
             })
             ->sortBy([
+                fn ($row) => (bool) ($row['is_accessories'] ?? false) ? 0 : 1,
+                fn ($row) => mb_strtolower((string) ($row['category_name'] ?? '')),
                 fn ($row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
                 fn ($row) => mb_strtolower((string) ($row['name'] ?? '')),
             ])
             ->values();
     }
 
-    /** @return Collection<string, Collection<int, array<string, mixed>>> */
+    /**
+     * @return Collection<int, array{category_name:?string, tags: Collection}>
+     */
     public function getGroupedStockProperty(): Collection
     {
-        return $this->filteredStock
-            ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
-            ->sortKeys();
+        $rows = $this->filteredStock;
+
+        if ($this->selectedCategoryId) {
+            return collect([
+                [
+                    'category_name' => null,
+                    'tags' => $rows
+                        ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+                        ->sortKeys(),
+                ],
+            ]);
+        }
+
+        return $rows
+            ->groupBy(fn ($r) => (string) ($r['category_name'] ?? 'بدون تصنيف'))
+            ->sortKeys()
+            ->map(fn (Collection $catRows, string $catName) => [
+                'category_name' => $catName,
+                'is_accessories' => (bool) ($catRows->first()['is_accessories'] ?? false),
+                'tags' => $catRows
+                    ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+                    ->sortKeys(),
+            ])
+            ->sortByDesc(fn ($block) => (int) ($block['is_accessories'] ?? false))
+            ->values();
     }
 
     protected function categoryMatchesChild(array $row, int $categoryId): bool

@@ -39,49 +39,25 @@ class ProductCatalogController extends TraderProductCatalogController
                 ->keyBy('product_id');
         }
 
-        $orderUnit = $this->requestedOrderUnit($request);
-        $baseQuery = $this->catalogQuery($request, applyOrderUnit: false);
-
-        $boxCount = (clone $baseQuery)->where('pieces_per_box', '>', 0)->count();
-        $pieceCount = (clone $baseQuery)->where(function ($q) {
-            $q->whereNull('pieces_per_box')->orWhere('pieces_per_box', '<=', 0);
-        })->count();
-
-        // Same ordering / filters as trader|distributor pipes catalog.
-        $perPage = min(max((int) $request->integer('per_page', 20), 1), 100);
-        $query = $this->catalogQuery($request, applyOrderUnit: true)->latest('id');
-        $page = $query->paginate($perPage);
-
-        $items = collect($page->items())->map(function (Product $product) use ($stock) {
+        $payload = $this->buildCatalogPayload($request, function (Product $product) use ($stock) {
             $available = null;
             if ($stock instanceof Collection) {
                 $available = (int) ($stock->get($product->id)['available_qty'] ?? 0);
             }
 
             return $this->mapCatalogProduct($product, $available);
-        })->values();
+        });
 
-        return $this->success([
-            'items' => $items,
-            'retail_trader_id' => $shopId,
-            'stock_mode' => $shopId !== null,
-            'units' => [
-                'all' => $boxCount + $pieceCount,
-                'box' => $boxCount,
-                'piece' => $pieceCount,
-            ],
-            'filters' => [
-                'order_unit' => $orderUnit,
-                'product_family' => $this->requestedProductFamily($request),
-                'product_type' => $this->requestedPieceType($request),
-                'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
-                'search' => $request->query('q') ?? $request->query('search'),
-                'retail_trader_id' => $shopId,
-            ],
-            'pagination' => $this->paginationMeta($page),
-        ], $shopId
-            ? 'كتالوج MG للمحل — كل المنتجات مع المخزون المتاح'
-            : 'كتالوج منتجات MG');
+        $payload['retail_trader_id'] = $shopId;
+        $payload['stock_mode'] = $shopId !== null;
+        $payload['filters']['retail_trader_id'] = $shopId;
+
+        return $this->success(
+            $payload,
+            $shopId
+                ? 'كتالوج MG للمحل — تصنيف ثم تاج مع المخزون'
+                : 'كتالوج منتجات MG — تصنيف ثم تاج'
+        );
     }
 
     /**

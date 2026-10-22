@@ -346,7 +346,7 @@ class TraderPos extends Page
         $colors = ['blue', 'green', 'amber', 'purple', 'teal', 'indigo', 'pink', 'red'];
 
         $this->catalogCache = Product::query()
-            ->with(['translations', 'category.translations', 'tags'])
+            ->with(['translations', 'category.translations', 'category.parent.translations', 'tags'])
             ->orderBy('id')
             ->get()
             ->map(function (Product $product) use ($stockByProduct, $colors) {
@@ -358,11 +358,17 @@ class TraderPos extends Page
                 $imageUrl = $product->display_image_url
                     ?? ($image ? asset('storage/'.ltrim((string) $image, '/')) : null);
                 $initials = collect(explode(' ', $name))->take(2)->map(fn ($w) => mb_substr($w, 0, 1))->implode('');
+                $categoryName = $stock['category_name']
+                    ?? ($product->category
+                        ? localized_name($product->category, 'name', $product->category->slug ?? 'تصنيف')
+                        : 'بدون تصنيف');
 
                 return [
                     'product_id' => $product->id,
                     'name' => $name,
                     'category_id' => $product->product_category_id,
+                    'category_name' => $categoryName,
+                    'is_accessories' => (bool) ($stock['is_accessories'] ?? $product->category?->isAccessoriesFamily()),
                     'tags' => $stock['tags'] ?? $product->tags->pluck('name')->values()->all(),
                     'tag' => $stock['tag'] ?? ($product->tags->first()?->name ?: 'أخرى'),
                     'group_key' => $stock['group_key'] ?? 'other',
@@ -377,6 +383,8 @@ class TraderPos extends Page
                 ];
             })
             ->sortBy([
+                fn ($r) => (bool) ($r['is_accessories'] ?? false) ? 0 : 1,
+                fn ($r) => mb_strtolower((string) ($r['category_name'] ?? '')),
                 fn ($r) => mb_strtolower((string) ($r['group_name'] ?? 'ىىى')),
                 fn ($r) => mb_strtolower((string) $r['name']),
             ])
@@ -430,12 +438,42 @@ class TraderPos extends Page
             ->values();
     }
 
-    /** @return Collection<string, Collection<int, array<string, mixed>>> */
+    /**
+     * Nested browse tree for POS:
+     * - All categories: Category → Tag → products
+     * - One category selected: Tag → products only
+     *
+     * @return Collection<int, array{category_name:?string, tags: Collection<string, Collection<int, array>>}>
+     */
     public function getGroupedStockProperty(): Collection
     {
-        return $this->filteredStock
-            ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
-            ->sortKeys();
+        $rows = $this->filteredStock;
+
+        // Single category filter → only tag sections.
+        if ($this->selectedCategoryId) {
+            return collect([
+                [
+                    'category_name' => null,
+                    'tags' => $rows
+                        ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+                        ->sortKeys(),
+                ],
+            ]);
+        }
+
+        // Accessories-first: category then tags under each.
+        return $rows
+            ->groupBy(fn ($r) => (string) ($r['category_name'] ?? 'بدون تصنيف'))
+            ->sortKeys()
+            ->map(fn (Collection $catRows, string $catName) => [
+                'category_name' => $catName,
+                'is_accessories' => (bool) ($catRows->first()['is_accessories'] ?? false),
+                'tags' => $catRows
+                    ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+                    ->sortKeys(),
+            ])
+            ->sortByDesc(fn ($block) => (int) ($block['is_accessories'] ?? false))
+            ->values();
     }
 
     public function getCartPointsProperty(): int

@@ -113,38 +113,54 @@
             @endif
 
             <section class="pos-products" @if($this->categories->isEmpty()) style="grid-column: span 2" @endif>
-                <p class="pos-side-title">مخزونك — مجمّع حسب التاج (كوع / تيه / …)</p>
+                <p class="pos-side-title">مخزونك — تصنيف ثم تاج (ملحقات مرتّبة)</p>
                 @if($stock->isEmpty())
                     <p class="pos-empty">لا يوجد مخزون متاح — استلم فواتير وارد أولاً</p>
                 @else
-                    <div style="display:flex;flex-direction:column;gap:14px">
-                        @foreach($groupedStock as $groupName => $groupRows)
-                            <div>
-                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:7px 10px;border-radius:8px;background:#ecfdf5;border:1px solid #a7f3d0">
-                                    <strong style="font-size:13px;color:#065f46">{{ $groupName }}</strong>
-                                    <span style="font-size:11px;font-weight:700;color:#64748b">{{ number_format($groupRows->count()) }}</span>
-                                </div>
-                                <div class="pos-product-grid">
-                                    @foreach($groupRows as $row)
-                                        @php
-                                            $inCart = $cart[(string)$row['product_id']]['quantity'] ?? 0;
-                                            $remaining = (int)$row['available_qty'] - (int)$inCart;
-                                        @endphp
-                                        <button type="button"
-                                            wire:click="addProduct({{ $row['product_id'] }})"
-                                            class="pos-product-card {{ $remaining <= 0 ? 'pos-product-card--disabled' : '' }}"
-                                            @disabled($remaining <= 0)>
-                                            @if($row['image'])
-                                                <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($row['image']) }}" alt="" class="pos-product-img">
-                                            @else
-                                                <div class="pos-product-img pos-product-img--empty">📦</div>
-                                            @endif
-                                            <span class="pos-product-name">{{ $row['name'] }}</span>
-                                            <span class="pos-stock-badge">متوفر: {{ number_format($row['available_qty']) }}</span>
-                                            @if(\App\Support\PointsVisibility::canSeePerUnit())
-                                                <span class="pos-product-points">{{ number_format($row['points_per_unit'], 2) }} نقطة/وحدة</span>
-                                            @endif
-                                        </button>
+                    <div style="display:flex;flex-direction:column;gap:16px">
+                        @foreach($groupedStock as $catBlock)
+                            @php
+                                $catName = $catBlock['category_name'] ?? null;
+                                $tagGroups = $catBlock['tags'] ?? collect();
+                            @endphp
+                            <div wire:key="cat-{{ md5((string) ($catName ?? 'one')) }}">
+                                @if($catName)
+                                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 12px;border-radius:8px;background:#065f46;color:#fff">
+                                        <strong style="font-size:13px">{{ $catName }}</strong>
+                                        <span style="font-size:11px;font-weight:700;opacity:.85">{{ number_format($tagGroups->sum(fn ($g) => $g->count())) }} صنف · حسب التاج</span>
+                                    </div>
+                                @endif
+                                <div style="display:flex;flex-direction:column;gap:12px">
+                                    @foreach($tagGroups as $groupName => $groupRows)
+                                        <div wire:key="tag-{{ md5(($catName ?? '').'|'.$groupName) }}">
+                                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:7px 10px;border-radius:8px;background:#ecfdf5;border:1px solid #a7f3d0">
+                                                <strong style="font-size:13px;color:#065f46">{{ $groupName }}</strong>
+                                                <span style="font-size:11px;font-weight:700;color:#64748b">{{ number_format($groupRows->count()) }}</span>
+                                            </div>
+                                            <div class="pos-product-grid">
+                                                @foreach($groupRows as $row)
+                                                    @php
+                                                        $inCart = $cart[(string)$row['product_id']]['quantity'] ?? 0;
+                                                        $remaining = (int)$row['available_qty'] - (int)$inCart;
+                                                    @endphp
+                                                    <button type="button"
+                                                        wire:click="addProduct({{ $row['product_id'] }})"
+                                                        class="pos-product-card {{ $remaining <= 0 ? 'pos-product-card--disabled' : '' }}"
+                                                        @disabled($remaining <= 0)>
+                                                        @if($row['image'])
+                                                            <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($row['image']) }}" alt="" class="pos-product-img">
+                                                        @else
+                                                            <div class="pos-product-img pos-product-img--empty">📦</div>
+                                                        @endif
+                                                        <span class="pos-product-name">{{ $row['name'] }}</span>
+                                                        <span class="pos-stock-badge">متوفر: {{ number_format($row['available_qty']) }}</span>
+                                                        @if(\App\Support\PointsVisibility::canSeePerUnit())
+                                                            <span class="pos-product-points">{{ number_format($row['points_per_unit'], 2) }} نقطة/وحدة</span>
+                                                        @endif
+                                                    </button>
+                                                @endforeach
+                                            </div>
+                                        </div>
                                     @endforeach
                                 </div>
                             </div>

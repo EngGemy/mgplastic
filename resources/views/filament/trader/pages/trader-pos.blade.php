@@ -133,7 +133,15 @@
 .pos-products-head span { font-size:11px; font-weight:700; color:var(--pos-muted); }
 
 .pos-list { display:flex; flex-direction:column; gap:8px; }
-.pos-tag-group { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+.pos-cat-block { display:flex; flex-direction:column; gap:10px; margin-bottom:18px; }
+.pos-cat-head {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:10px 12px; border-radius:12px;
+  background:linear-gradient(120deg,#0d2d6e,#1a56db); color:#fff;
+}
+.pos-cat-head strong { font-size:14px; font-weight:900; }
+.pos-cat-head span { font-size:11px; font-weight:700; opacity:.85; }
+.pos-tag-group { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; padding-inline-start:6px; }
 .pos-tag-head {
   display:flex; align-items:center; justify-content:space-between; gap:10px;
   padding:8px 10px; border-radius:10px;
@@ -393,51 +401,62 @@
                         </div>
                     @else
                         <div class="pos-list">
-                            @foreach($groupedStock as $groupName => $groupRows)
-                                <div class="pos-tag-group" wire:key="tag-{{ md5((string) $groupName) }}">
-                                    <div class="pos-tag-head">
-                                        <strong>{{ $groupName }}</strong>
-                                        <span>{{ number_format($groupRows->count()) }} صنف</span>
-                                    </div>
-                                    @foreach($groupRows as $row)
-                                        @php
-                                            $orderMode = $this->isWholesaleOrderMode();
-                                            $can = (bool) ($row['can_distribute'] ?? false);
-                                            $inCart = isset($this->cart[(string)$row['product_id']]);
-                                        @endphp
-                                        <div class="pos-row {{ ($can || $orderMode) ? '' : 'is-order' }}"
-                                             wire:click="handleProductClick({{ $row['product_id'] }})"
-                                             wire:key="p-{{ $row['product_id'] }}">
-                                            <div class="pos-row-media">
-                                                @if($inCart)
-                                                    <div class="pos-badge">{{ $this->cart[(string)$row['product_id']]['quantity'] }}</div>
-                                                @endif
-                                                @if($row['image'])
-                                                    <img src="{{ $row['image'] }}" class="pos-thumb" alt=""
-                                                         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                                                    <div class="pos-init {{ $row['color_class'] }}" style="display:none">{{ $row['initials'] }}</div>
-                                                @else
-                                                    <div class="pos-init {{ $row['color_class'] }}">{{ $row['initials'] }}</div>
-                                                @endif
+                            @foreach($groupedStock as $catBlock)
+                                @php
+                                    $catName = $catBlock['category_name'] ?? null;
+                                    $tagGroups = $catBlock['tags'] ?? collect();
+                                @endphp
+                                <div class="pos-cat-block" wire:key="cat-{{ md5((string) ($catName ?? 'one')) }}">
+                                    @if($catName)
+                                        <div class="pos-cat-head">
+                                            <strong>{{ $catName }}</strong>
+                                            <span>{{ number_format($tagGroups->sum(fn ($g) => $g->count())) }} صنف · حسب التاج</span>
+                                        </div>
+                                    @endif
+                                    @foreach($tagGroups as $groupName => $groupRows)
+                                        <div class="pos-tag-group" wire:key="tag-{{ md5(($catName ?? '').'|'.$groupName) }}">
+                                            <div class="pos-tag-head">
+                                                <strong>{{ $groupName }}</strong>
+                                                <span>{{ number_format($groupRows->count()) }} صنف</span>
                                             </div>
-                                            <div>
-                                                <p class="pos-row-name">{{ $row['name'] }}</p>
-                                                <div class="pos-row-meta">
-                                                    @if(!empty($row['tag']) && $row['tag'] !== $groupName)
-                                                        <span class="pos-pill">{{ $row['tag'] }}</span>
-                                                    @endif
-                                                    @if($orderMode)
-                                                        <span class="pos-pill pos-pill-warn">يُطلب من الجملة</span>
-                                                    @elseif($can)
-                                                        <span class="pos-pill pos-pill-ok">متاح {{ number_format($row['available_qty']) }}</span>
-                                                    @else
-                                                        <span class="pos-pill pos-pill-warn">غير متاح — اطلب من الجملة</span>
-                                                    @endif
+                                            @foreach($groupRows as $row)
+                                                @php
+                                                    $orderMode = $this->isWholesaleOrderMode();
+                                                    $can = (bool) ($row['can_distribute'] ?? false);
+                                                    $inCart = isset($this->cart[(string)$row['product_id']]);
+                                                @endphp
+                                                <div class="pos-row {{ ($can || $orderMode) ? '' : 'is-order' }}"
+                                                     wire:click="handleProductClick({{ $row['product_id'] }})"
+                                                     wire:key="p-{{ $row['product_id'] }}">
+                                                    <div class="pos-row-media">
+                                                        @if($inCart)
+                                                            <div class="pos-badge">{{ $this->cart[(string)$row['product_id']]['quantity'] }}</div>
+                                                        @endif
+                                                        @if($row['image'])
+                                                            <img src="{{ $row['image'] }}" class="pos-thumb" alt=""
+                                                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                                                            <div class="pos-init {{ $row['color_class'] }}" style="display:none">{{ $row['initials'] }}</div>
+                                                        @else
+                                                            <div class="pos-init {{ $row['color_class'] }}">{{ $row['initials'] }}</div>
+                                                        @endif
+                                                    </div>
+                                                    <div>
+                                                        <p class="pos-row-name">{{ $row['name'] }}</p>
+                                                        <div class="pos-row-meta">
+                                                            @if($orderMode)
+                                                                <span class="pos-pill pos-pill-warn">يُطلب من الجملة</span>
+                                                            @elseif($can)
+                                                                <span class="pos-pill pos-pill-ok">متاح {{ number_format($row['available_qty']) }}</span>
+                                                            @else
+                                                                <span class="pos-pill pos-pill-warn">غير متاح — اطلب من الجملة</span>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                    <button type="button" class="pos-row-action {{ ($can || $orderMode) ? 'add' : 'order' }}" tabindex="-1">
+                                                        {{ $orderMode ? 'إضافة للطلب' : ($can ? 'إضافة + كمية' : 'طلب جملة') }}
+                                                    </button>
                                                 </div>
-                                            </div>
-                                            <button type="button" class="pos-row-action {{ ($can || $orderMode) ? 'add' : 'order' }}" tabindex="-1">
-                                                {{ $orderMode ? 'إضافة للطلب' : ($can ? 'إضافة + كمية' : 'طلب جملة') }}
-                                            </button>
+                                            @endforeach
                                         </div>
                                     @endforeach
                                 </div>
