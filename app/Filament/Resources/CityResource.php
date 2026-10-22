@@ -42,34 +42,24 @@ class CityResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make(__('City'))
-                ->columns(2)
+            Forms\Components\Section::make('المدينة')
+                ->icon('heroicon-o-map-pin')
+                ->columns(12)
                 ->schema([
-                    // Use an options array (no record callbacks)
                     Forms\Components\Select::make('country_id')
-                        ->label(__('Country'))
+                        ->label('الدولة')
                         ->options(fn () => Country::query()
-                            ->orderBy('name_en')
-                            ->get()
-                            ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
+                            ->orderBy('name_ar')
+                            ->pluck('name_ar', 'id')
                             ->toArray()
                         )
                         ->searchable()
                         ->preload()
-                        ->required(),
-
-                    Forms\Components\TextInput::make('name_en')
-                        ->label(__('Name (EN)'))
                         ->required()
-                        ->maxLength(255)
-                        ->rule(function ($get, $record) {
-                            return Rule::unique('cities', 'name_en')
-                                ->where('country_id', (int) $get('country_id'))
-                                ->ignore($record?->id);
-                        }),
+                        ->columnSpan(4),
 
                     Forms\Components\TextInput::make('name_ar')
-                        ->label(__('Name (AR)'))
+                        ->label('الاسم بالعربية')
                         ->required()
                         ->maxLength(255)
                         ->extraAttributes(['dir' => 'rtl'])
@@ -77,7 +67,19 @@ class CityResource extends Resource
                             return Rule::unique('cities', 'name_ar')
                                 ->where('country_id', (int) $get('country_id'))
                                 ->ignore($record?->id);
-                        }),
+                        })
+                        ->columnSpan(4),
+
+                    Forms\Components\TextInput::make('name_en')
+                        ->label('الاسم بالإنجليزية')
+                        ->required()
+                        ->maxLength(255)
+                        ->rule(function ($get, $record) {
+                            return Rule::unique('cities', 'name_en')
+                                ->where('country_id', (int) $get('country_id'))
+                                ->ignore($record?->id);
+                        })
+                        ->columnSpan(4),
                 ]),
         ]);
     }
@@ -86,47 +88,38 @@ class CityResource extends Resource
     {
         return $table
             ->columns([
-                // ✅ Pure state (string), no $record needed
                 Tables\Columns\TextColumn::make('country_name_en')
-                    ->label(__('Country'))
-                    ->formatStateUsing(function ($state, $record) {
-                        // $state = name_en; switch to Arabic if locale=ar
-                        return app()->getLocale() === 'ar'
-                            ? ($record->country_name_ar ?? $state)
-                            : $state;
-                    })
+                    ->label('الدولة')
+                    ->formatStateUsing(fn ($state, $record) => $record->country_name_ar ?? $state)
                     ->sortable()
                     ->searchable(),
-
-                Tables\Columns\TextColumn::make('name_en')
-                    ->label(__('Name (EN)'))
-                    ->sortable()
-                    ->searchable(),
-
                 Tables\Columns\TextColumn::make('name_ar')
-                    ->label(__('Name (AR)'))
+                    ->label('العربية')
+                    ->sortable()
+                    ->searchable()
+                    ->weight('bold'),
+                Tables\Columns\TextColumn::make('name_en')
+                    ->label('English')
                     ->sortable()
                     ->searchable(),
-
                 Tables\Columns\TextColumn::make('updated_at')
-                    ->label(__('Updated at'))
+                    ->label('آخر تحديث')
                     ->dateTime()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('country_id')
-                    ->label(__('Country'))
+                    ->label('الدولة')
                     ->options(fn () => Country::query()
-                        ->orderBy('name_en')
-                        ->get()
-                        ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
+                        ->orderBy('name_ar')
+                        ->pluck('name_ar', 'id')
                         ->toArray()
                     )
                     ->searchable(),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('تعديل'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->defaultSort('country_id');
     }

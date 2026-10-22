@@ -37,6 +37,16 @@ class ReputationWarrantySettings extends Page implements HasForms
         return 'إعدادات السمعة والضمان';
     }
 
+    public function getHeading(): string
+    {
+        return 'إعدادات السمعة والضمان';
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'عتبات إصدار الضمان ونصوص الشروط — مفاتيح التفعيل العامة من ملف البيئة.';
+    }
+
     public static function canAccess(): bool
     {
         return in_array(auth()->user()?->role, ['super_admin', 'admin'], true);
@@ -60,16 +70,63 @@ class ReputationWarrantySettings extends Page implements HasForms
     {
         return $form
             ->schema([
-                Forms\Components\Toggle::make('reputation_enabled')->label('تفعيل السمعة')->disabled()->helperText('يُضبط من .env: REPUTATION_ENABLED'),
-                Forms\Components\Toggle::make('warranty_enabled')->label('تفعيل الضمان')->disabled()->helperText('يُضبط من .env: WARRANTY_ENABLED'),
-                Forms\Components\Select::make('min_level')->label('أدنى مستوى للضمان')->options([
-                    'bronze' => 'برونزي', 'silver' => 'فضي', 'gold' => 'ذهبي', 'diamond' => 'ماسي',
-                ]),
-                Forms\Components\TextInput::make('min_score')->label('أدنى درجة')->numeric(),
-                Forms\Components\TextInput::make('min_distributions')->label('أدنى توزيعات مؤكدة')->numeric(),
-                Forms\Components\TextInput::make('default_months')->label('مدة الضمان (أشهر)')->numeric(),
-                Forms\Components\Textarea::make('terms_ar')->label('نص الشروط')->rows(5)->columnSpanFull(),
-                Forms\Components\KeyValue::make('weights')->label('أوزان الدرجة (عرض فقط)')->disabled(),
+                Forms\Components\Section::make('حالة الأنظمة')
+                    ->description('التفعيل العام يُضبط من السيرفر (.env) — هنا للعرض فقط.')
+                    ->icon('heroicon-o-power')
+                    ->columns(2)
+                    ->schema([
+                        Forms\Components\Toggle::make('reputation_enabled')
+                            ->label('السمعة مفعّلة')
+                            ->disabled()
+                            ->helperText('REPUTATION_ENABLED'),
+                        Forms\Components\Toggle::make('warranty_enabled')
+                            ->label('الضمان مفعّل')
+                            ->disabled()
+                            ->helperText('WARRANTY_ENABLED'),
+                    ]),
+
+                Forms\Components\Section::make('شروط إصدار الضمان')
+                    ->icon('heroicon-o-shield-check')
+                    ->columns(12)
+                    ->schema([
+                        Forms\Components\Select::make('min_level')
+                            ->label('أدنى مستوى سمعة')
+                            ->native(false)
+                            ->options([
+                                'bronze' => 'برونزي',
+                                'silver' => 'فضي',
+                                'gold' => 'ذهبي',
+                                'diamond' => 'ماسي',
+                            ])
+                            ->columnSpan(3),
+                        Forms\Components\TextInput::make('min_score')
+                            ->label('أدنى درجة')
+                            ->numeric()
+                            ->columnSpan(3),
+                        Forms\Components\TextInput::make('min_distributions')
+                            ->label('أدنى توزيعات مؤكدة')
+                            ->numeric()
+                            ->columnSpan(3),
+                        Forms\Components\TextInput::make('default_months')
+                            ->label('مدة الضمان (أشهر)')
+                            ->numeric()
+                            ->columnSpan(3),
+                        Forms\Components\Textarea::make('terms_ar')
+                            ->label('نص الشروط بالعربية')
+                            ->rows(6)
+                            ->extraAttributes(['dir' => 'rtl'])
+                            ->columnSpanFull(),
+                    ]),
+
+                Forms\Components\Section::make('أوزان درجة السمعة')
+                    ->description('للمرجع فقط — التعديل من config/reputation.php')
+                    ->icon('heroicon-o-scale')
+                    ->collapsed()
+                    ->schema([
+                        Forms\Components\KeyValue::make('weights')
+                            ->label('الأوزان')
+                            ->disabled(),
+                    ]),
             ])
             ->statePath('data');
     }

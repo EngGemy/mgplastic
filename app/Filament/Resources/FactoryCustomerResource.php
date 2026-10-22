@@ -35,26 +35,34 @@ class FactoryCustomerResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make()->schema([
-                Forms\Components\TextInput::make('company_name')
-                    ->label('اسم الشركة أو العميل')
-                    ->required()
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('contact_name')
-                    ->label('مسؤول التواصل')
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('phone')
-                    ->label('الهاتف')
-                    ->tel()
-                    ->maxLength(40),
-                Forms\Components\TextInput::make('address')
-                    ->label('العنوان')
-                    ->maxLength(255),
-                Forms\Components\Textarea::make('notes')
-                    ->label('ملاحظة')
-                    ->rows(3)
-                    ->columnSpanFull(),
-            ])->columns(2),
+            Forms\Components\Section::make('بيانات العميل')
+                ->description('عملاء المصنع المرتبطون بعروض الأسعار.')
+                ->icon('heroicon-o-building-office-2')
+                ->columns(12)
+                ->schema([
+                    Forms\Components\TextInput::make('company_name')
+                        ->label('اسم الشركة أو العميل')
+                        ->required()
+                        ->maxLength(255)
+                        ->columnSpan(6),
+                    Forms\Components\TextInput::make('contact_name')
+                        ->label('مسؤول التواصل')
+                        ->maxLength(255)
+                        ->columnSpan(6),
+                    Forms\Components\TextInput::make('phone')
+                        ->label('الهاتف')
+                        ->tel()
+                        ->maxLength(40)
+                        ->columnSpan(6),
+                    Forms\Components\TextInput::make('address')
+                        ->label('العنوان')
+                        ->maxLength(255)
+                        ->columnSpan(6),
+                    Forms\Components\Textarea::make('notes')
+                        ->label('ملاحظة داخلية')
+                        ->rows(3)
+                        ->columnSpanFull(),
+                ]),
         ]);
     }
 
@@ -78,15 +86,13 @@ class FactoryCustomerResource extends Resource
                 Tables\Columns\TextColumn::make('price_lists_count')
                     ->counts('priceLists')
                     ->label('عروض')
-                    ->badge(),
+                    ->badge()
+                    ->color('info'),
             ])
-            ->defaultSort('company_name')
             ->actions([
                 Tables\Actions\EditAction::make()->label('تعديل'),
-            ])
-            ->emptyStateHeading('لا يوجد عملاء مصنع')
-            ->emptyStateDescription('أضف شركة أو عميلاً من هنا، أو مباشرة من شاشة عرض السعر.')
-            ->emptyStateIcon('heroicon-o-building-office-2');
+                Tables\Actions\DeleteAction::make()->label('حذف'),
+            ]);
     }
 
     public static function getPages(): array

@@ -28,19 +28,20 @@ class CountryResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make(__('Country'))
+            Forms\Components\Section::make('الدولة')
+                ->icon('heroicon-o-globe-alt')
                 ->columns(2)
                 ->schema([
-                    Forms\Components\TextInput::make('name_en')
-                        ->label(__('Name (EN)'))
-                        ->required()
-                        ->maxLength(255),
-
                     Forms\Components\TextInput::make('name_ar')
-                        ->label(__('Name (AR)'))
+                        ->label('الاسم بالعربية')
                         ->required()
                         ->maxLength(255)
                         ->extraAttributes(['dir' => 'rtl']),
+
+                    Forms\Components\TextInput::make('name_en')
+                        ->label('الاسم بالإنجليزية')
+                        ->required()
+                        ->maxLength(255),
                 ]),
         ]);
     }
@@ -49,33 +50,33 @@ class CountryResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name_en')
-                    ->label(__('Name (EN)'))
-                    ->searchable()
-                    ->sortable(),
-
                 Tables\Columns\TextColumn::make('name_ar')
-                    ->label(__('Name (AR)'))
+                    ->label('العربية')
+                    ->searchable()
+                    ->sortable()
+                    ->weight('bold'),
+                Tables\Columns\TextColumn::make('name_en')
+                    ->label('English')
                     ->searchable()
                     ->sortable(),
-
                 Tables\Columns\TextColumn::make('cities_count')
-                    ->label(__('Cities'))
+                    ->label('المدن')
                     ->counts('cities')
+                    ->badge()
+                    ->color('info')
                     ->sortable(),
-
                 Tables\Columns\TextColumn::make('updated_at')
-                    ->label(__('Updated at'))
+                    ->label('آخر تحديث')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()->label('تعديل'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()->label('حذف المحدد'),
                 ]),
             ]);
     }

@@ -41,16 +41,42 @@ class WarrantyResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\TextInput::make('code')->label('الكود')->disabled(),
-            Forms\Components\TextInput::make('customer_name')->label('العميل')->disabled(),
-            Forms\Components\TextInput::make('customer_phone')->label('هاتف العميل')->disabled(),
-            Forms\Components\Select::make('status')->label('الحالة')->options([
-                'active' => 'ساري',
-                'expired' => 'منتهٍ',
-                'revoked' => 'ملغى',
-                'claimed' => 'مطالبة',
-            ])->disabled(),
-            Forms\Components\Textarea::make('revoked_reason')->label('سبب الإلغاء')->visibleOn('edit'),
+            Forms\Components\Section::make('بيانات الضمان')
+                ->icon('heroicon-o-shield-check')
+                ->columns(12)
+                ->schema([
+                    Forms\Components\TextInput::make('code')
+                        ->label('الكود')
+                        ->disabled()
+                        ->columnSpan(4),
+                    Forms\Components\Select::make('status')
+                        ->label('الحالة')
+                        ->options([
+                            'active' => 'ساري',
+                            'expired' => 'منتهٍ',
+                            'revoked' => 'ملغى',
+                            'claimed' => 'مطالبة',
+                        ])
+                        ->disabled()
+                        ->columnSpan(4),
+                    Forms\Components\Placeholder::make('plumber')
+                        ->label('السباك')
+                        ->content(fn (?Warranty $record) => $record?->plumber?->name ?? '—')
+                        ->columnSpan(4),
+                    Forms\Components\TextInput::make('customer_name')
+                        ->label('العميل')
+                        ->disabled()
+                        ->columnSpan(6),
+                    Forms\Components\TextInput::make('customer_phone')
+                        ->label('هاتف العميل')
+                        ->disabled()
+                        ->columnSpan(6),
+                    Forms\Components\Textarea::make('revoked_reason')
+                        ->label('سبب الإلغاء')
+                        ->visible(fn (?Warranty $record) => $record?->status === 'revoked')
+                        ->disabled()
+                        ->columnSpanFull(),
+                ]),
         ]);
     }
 
@@ -62,7 +88,22 @@ class WarrantyResource extends Resource
                 Tables\Columns\TextColumn::make('plumber.name')->label('السباك')->searchable(),
                 Tables\Columns\TextColumn::make('customer_name')->label('العميل')->searchable(),
                 Tables\Columns\TextColumn::make('customer_phone')->label('هاتف')->searchable()->formatStateUsing(fn ($state, Warranty $r) => $r->maskedPhone()),
-                Tables\Columns\BadgeColumn::make('status')->label('الحالة'),
+                Tables\Columns\TextColumn::make('status')
+                    ->label('الحالة')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state) => match ($state) {
+                        'expired' => 'منتهٍ',
+                        'revoked' => 'ملغى',
+                        'claimed' => 'مطالبة',
+                        default => 'ساري',
+                    })
+                    ->color(fn (?string $state) => match ($state) {
+                        'active' => 'success',
+                        'expired' => 'gray',
+                        'revoked' => 'danger',
+                        'claimed' => 'warning',
+                        default => 'gray',
+                    }),
                 Tables\Columns\TextColumn::make('issued_at')->label('الإصدار')->date(),
                 Tables\Columns\TextColumn::make('expires_at')->label('الانتهاء')->date(),
             ])

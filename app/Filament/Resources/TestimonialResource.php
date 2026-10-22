@@ -47,26 +47,108 @@ class TestimonialResource extends Resource
     {
         $roles = (array) config('testimonials.roles', []);
 
-        return $form->schema([
-            Forms\Components\TextInput::make('name_ar')->label('الاسم')->required()->maxLength(120),
-            Forms\Components\Select::make('role_key')->label('الصفة')->options($roles)->required()
-                ->reactive()
-                ->afterStateUpdated(fn ($state, Forms\Set $set) => $set('role_label_ar', $roles[$state] ?? '')),
-            Forms\Components\TextInput::make('role_label_ar')->label('وصف الصفة')->required(),
-            Forms\Components\TextInput::make('city_ar')->label('المدينة')->maxLength(80),
-            Forms\Components\Textarea::make('body_ar')->label('نص الشهادة')->required()->rows(4)->columnSpanFull(),
-            Forms\Components\TextInput::make('product_hint')->label('المنتج المذكور')->maxLength(160),
-            Forms\Components\TextInput::make('rating')->label('التقييم')->numeric()->minValue(5)->maxValue(5)->default(5)->disabled(),
-            Forms\Components\Select::make('source')->label('المصدر')->options([
-                'manual' => 'يدوي',
-                'gemini' => 'Gemini',
-                'seed' => 'بذرة',
-            ])->default('manual'),
-            Forms\Components\Toggle::make('is_active')->label('نشط')->default(true),
-            Forms\Components\Toggle::make('is_featured')->label('مميّز')->default(false),
-            Forms\Components\TextInput::make('sort_order')->label('ترتيب')->numeric()->default(0),
-            Forms\Components\DateTimePicker::make('published_at')->label('تاريخ النشر')->default(now()),
-        ])->columns(2);
+        return $form
+            ->schema([
+                Forms\Components\Group::make()
+                    ->schema([
+                        Forms\Components\Section::make('صاحب الشهادة')
+                            ->icon('heroicon-o-user')
+                            ->columns(12)
+                            ->schema([
+                                Forms\Components\TextInput::make('name_ar')
+                                    ->label('الاسم')
+                                    ->required()
+                                    ->maxLength(120)
+                                    ->extraAttributes(['dir' => 'rtl'])
+                                    ->columnSpan(6),
+
+                                Forms\Components\TextInput::make('city_ar')
+                                    ->label('المدينة')
+                                    ->maxLength(80)
+                                    ->columnSpan(6),
+
+                                Forms\Components\Select::make('role_key')
+                                    ->label('الصفة')
+                                    ->options($roles)
+                                    ->required()
+                                    ->native(false)
+                                    ->live()
+                                    ->afterStateUpdated(fn ($state, Forms\Set $set) => $set('role_label_ar', $roles[$state] ?? ''))
+                                    ->columnSpan(6),
+
+                                Forms\Components\TextInput::make('role_label_ar')
+                                    ->label('وصف الصفة الظاهر')
+                                    ->required()
+                                    ->columnSpan(6),
+                            ]),
+
+                        Forms\Components\Section::make('نص الشهادة')
+                            ->icon('heroicon-o-chat-bubble-bottom-center-text')
+                            ->schema([
+                                Forms\Components\Textarea::make('body_ar')
+                                    ->label('النص')
+                                    ->required()
+                                    ->rows(5)
+                                    ->extraAttributes(['dir' => 'rtl'])
+                                    ->columnSpanFull(),
+
+                                Forms\Components\TextInput::make('product_hint')
+                                    ->label('المنتج المذكور (اختياري)')
+                                    ->maxLength(160)
+                                    ->columnSpanFull(),
+                            ]),
+                    ])
+                    ->columnSpan(['lg' => 8]),
+
+                Forms\Components\Group::make()
+                    ->schema([
+                        Forms\Components\Section::make('النشر')
+                            ->icon('heroicon-o-rocket-launch')
+                            ->schema([
+                                Forms\Components\TextInput::make('rating')
+                                    ->label('التقييم')
+                                    ->numeric()
+                                    ->minValue(5)
+                                    ->maxValue(5)
+                                    ->default(5)
+                                    ->disabled()
+                                    ->dehydrated()
+                                    ->helperText('ثابت 5★ حسب سياسة الموقع'),
+
+                                Forms\Components\Select::make('source')
+                                    ->label('المصدر')
+                                    ->native(false)
+                                    ->options([
+                                        'manual' => 'يدوي',
+                                        'gemini' => 'Gemini',
+                                        'seed' => 'بذرة',
+                                    ])
+                                    ->default('manual'),
+
+                                Forms\Components\Toggle::make('is_active')
+                                    ->label('نشط')
+                                    ->default(true)
+                                    ->inline(false),
+
+                                Forms\Components\Toggle::make('is_featured')
+                                    ->label('مميّز في الواجهة')
+                                    ->default(false)
+                                    ->inline(false),
+
+                                Forms\Components\TextInput::make('sort_order')
+                                    ->label('ترتيب')
+                                    ->numeric()
+                                    ->default(0),
+
+                                Forms\Components\DateTimePicker::make('published_at')
+                                    ->label('تاريخ النشر')
+                                    ->default(now())
+                                    ->seconds(false),
+                            ]),
+                    ])
+                    ->columnSpan(['lg' => 4]),
+            ])
+            ->columns(12);
     }
 
     public static function table(Table $table): Table
@@ -78,7 +160,7 @@ class TestimonialResource extends Resource
                 Tables\Columns\TextColumn::make('city_ar')->label('المدينة')->toggleable(),
                 Tables\Columns\TextColumn::make('product_hint')->label('المنتج')->limit(24)->toggleable(),
                 Tables\Columns\TextColumn::make('rating')->label('★')->alignCenter(),
-                Tables\Columns\BadgeColumn::make('source')->label('المصدر'),
+                Tables\Columns\TextColumn::make('source')->label('المصدر')->badge(),
                 Tables\Columns\IconColumn::make('is_featured')->label('مميّز')->boolean(),
                 Tables\Columns\IconColumn::make('is_active')->label('نشط')->boolean(),
                 Tables\Columns\TextColumn::make('published_at')->label('النشر')->since()->sortable(),

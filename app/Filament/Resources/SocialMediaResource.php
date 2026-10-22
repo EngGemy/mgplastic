@@ -26,52 +26,49 @@ class SocialMediaResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make(__('Link'))
-                ->columns(2)
+            Forms\Components\Section::make('رابط التواصل')
+                ->description('يظهر في إعدادات التطبيق وصفحة التواصل.')
+                ->icon('heroicon-o-share')
+                ->columns(12)
                 ->schema([
                     Forms\Components\Select::make('platform')
-                        ->label(__('Platform'))
+                        ->label('المنصة')
                         ->options([
-                            'facebook'  => __('Facebook'),
-                            'instagram' => __('Instagram'),
-                            'x'         => __('X (Twitter)'),
-                            'tiktok'    => __('TikTok'),
-                            'youtube'   => __('YouTube'),
-                            'linkedin'  => __('LinkedIn'),
-                            'whatsapp'  => __('WhatsApp'),
-                            'website'   => __('Website'),
-                            'other'     => __('Other'),
+                            'facebook' => 'Facebook',
+                            'instagram' => 'Instagram',
+                            'x' => 'X (Twitter)',
+                            'tiktok' => 'TikTok',
+                            'youtube' => 'YouTube',
+                            'linkedin' => 'LinkedIn',
+                            'whatsapp' => 'WhatsApp',
+                            'website' => 'الموقع',
+                            'other' => 'أخرى',
                         ])
                         ->native(false)
                         ->searchable()
-                        ->required(),
+                        ->required()
+                        ->columnSpan(4),
 
                     Forms\Components\TextInput::make('url')
-                        ->label(__('URL'))
+                        ->label('الرابط')
                         ->url()
                         ->required()
                         ->maxLength(2048)
-                        ->columnSpanFull(),
+                        ->prefixIcon('heroicon-o-link')
+                        ->columnSpan(8),
 
-                    Forms\Components\Tabs::make(__('Translations'))
-                        ->columnSpanFull()
-                        ->tabs([
-                            Forms\Components\Tabs\Tab::make(__('English'))
-                                ->schema([
-                                    Forms\Components\TextInput::make('name_en')
-                                        ->label(__('Name (EN)'))
-                                        ->required()
-                                        ->maxLength(255),
-                                ]),
-                            Forms\Components\Tabs\Tab::make(__('Arabic'))
-                                ->schema([
-                                    Forms\Components\TextInput::make('name_ar')
-                                        ->label(__('Name (AR)'))
-                                        ->required()
-                                        ->maxLength(255)
-                                        ->extraAttributes(['dir' => 'rtl']),
-                                ]),
-                        ]),
+                    Forms\Components\TextInput::make('name_ar')
+                        ->label('الاسم بالعربية')
+                        ->required()
+                        ->maxLength(255)
+                        ->extraAttributes(['dir' => 'rtl'])
+                        ->columnSpan(6),
+
+                    Forms\Components\TextInput::make('name_en')
+                        ->label('الاسم بالإنجليزية')
+                        ->required()
+                        ->maxLength(255)
+                        ->columnSpan(6),
                 ]),
         ]);
     }
@@ -81,57 +78,45 @@ class SocialMediaResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('platform')
-                    ->label(__('Platform'))
+                    ->label('المنصة')
                     ->badge()
-                    ->formatStateUsing(function ($state) {
-                        $map = [
-                            'facebook'  => __('Facebook'),
-                            'instagram' => __('Instagram'),
-                            'x'         => __('X (Twitter)'),
-                            'tiktok'    => __('TikTok'),
-                            'youtube'   => __('YouTube'),
-                            'linkedin'  => __('LinkedIn'),
-                            'whatsapp'  => __('WhatsApp'),
-                            'website'   => __('Website'),
-                            'other'     => __('Other'),
-                        ];
-                        return $map[$state] ?? ucfirst((string) $state);
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'facebook' => 'Facebook',
+                        'instagram' => 'Instagram',
+                        'x' => 'X',
+                        'tiktok' => 'TikTok',
+                        'youtube' => 'YouTube',
+                        'linkedin' => 'LinkedIn',
+                        'whatsapp' => 'WhatsApp',
+                        'website' => 'الموقع',
+                        'other' => 'أخرى',
+                        default => ucfirst((string) $state),
                     })
                     ->sortable()
                     ->searchable(),
-
-                Tables\Columns\TextColumn::make('name_en')
-                    ->label(__('Name (EN)'))
-                    ->state(fn ($record) => optional($record?->translate('en'))->name)
-                    ->wrap()
-                    ->toggleable(),
-
                 Tables\Columns\TextColumn::make('name_ar')
-                    ->label(__('Name (AR)'))
+                    ->label('الاسم')
                     ->state(fn ($record) => optional($record?->translate('ar'))->name)
                     ->wrap()
-                    ->toggleable(),
-
+                    ->weight('bold'),
                 Tables\Columns\TextColumn::make('url')
-                    ->label(__('URL'))
+                    ->label('الرابط')
                     ->url(fn ($state) => $state, true)
-                    ->limit(50)
+                    ->limit(40)
                     ->searchable(),
-
                 Tables\Columns\TextColumn::make('updated_at')
-                    ->label(__('Updated at'))
+                    ->label('آخر تحديث')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->filters([])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('تعديل'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()->label('حذف المحدد'),
                 ]),
             ]);
     }

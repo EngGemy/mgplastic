@@ -68,48 +68,66 @@ class PointRuleResource extends Resource
         };
 
         return $form->schema([
-            Forms\Components\Section::make(__('Scope'))
+            Forms\Components\Section::make('نطاق القاعدة')
+                ->description('قاعدة عامة لكل المتاجر، أو مخصّصة لمتجر معيّن.')
+                ->icon('heroicon-o-adjustments-horizontal')
+                ->columns(12)
                 ->schema([
                     Forms\Components\Select::make('vendor_store_id')
-                        ->label(__('Vendor Store (optional)'))
+                        ->label('متجر البائع (اختياري)')
                         ->searchable()
                         ->options($optionsFn)
                         ->getSearchResultsUsing($searchFn)
                         ->getOptionLabelUsing($labelFn)
-                        ->helperText(__('Leave empty for a global rule.')),
+                        ->helperText('اتركه فارغًا لقاعدة عامة.')
+                        ->columnSpan(5),
                     Forms\Components\TextInput::make('name')
-                        ->label(__('Name'))
+                        ->label('اسم القاعدة')
                         ->maxLength(100)
-                        ->placeholder(__('Autumn promo 1.5%')),
-                    Forms\Components\Toggle::make('is_active')->label(__('Active'))->default(true),
-                ])->columns(3)->icon('heroicon-o-adjustments-horizontal'),
+                        ->placeholder('عرض خريف 1.5%')
+                        ->columnSpan(5),
+                    Forms\Components\Toggle::make('is_active')
+                        ->label('مفعّلة')
+                        ->default(true)
+                        ->inline(false)
+                        ->columnSpan(2),
+                ]),
 
-            Forms\Components\Section::make(__('Rule'))
+            Forms\Components\Section::make('حساب النقاط')
+                ->icon('heroicon-o-sparkles')
+                ->columns(12)
                 ->schema([
                     Forms\Components\Select::make('type')
-                        ->label(__('Type'))
-                        ->options(['percent' => __('Percent'), 'fixed' => __('Fixed')])
+                        ->label('النوع')
+                        ->options(['percent' => 'نسبة مئوية', 'fixed' => 'نقاط ثابتة'])
                         ->required()
-                        ->reactive(),
+                        ->native(false)
+                        ->live()
+                        ->columnSpan(4),
                     Forms\Components\TextInput::make('percent_rate')
-                        ->label(__('Percent rate (%)'))
+                        ->label('النسبة %')
                         ->numeric()->step('0.0001')
                         ->visible(fn ($get) => $get('type') === 'percent')
-                        ->helperText(__('e.g., 1.50 = 1.5% × (amount in currency units) points')),
+                        ->helperText('مثال: 1.50 = 1.5٪ من مبلغ الفاتورة')
+                        ->columnSpan(4),
                     Forms\Components\TextInput::make('fixed_points')
-                        ->label(__('Fixed points'))
+                        ->label('نقاط ثابتة')
                         ->numeric()
                         ->visible(fn ($get) => $get('type') === 'fixed')
-                        ->helperText(__('e.g., 200 points per invoice')),
-                ])->columns(3)->icon('heroicon-o-sparkles'),
+                        ->helperText('مثال: 200 نقطة لكل فاتورة')
+                        ->columnSpan(4),
+                ]),
 
-            Forms\Components\Section::make(__('Constraints'))
+            Forms\Components\Section::make('قيود التطبيق')
+                ->icon('heroicon-o-funnel')
+                ->columns(4)
+                ->collapsed()
                 ->schema([
-                    Forms\Components\TextInput::make('min_total_cents')->label(__('Min amount (¢)'))->numeric(),
-                    Forms\Components\TextInput::make('max_total_cents')->label(__('Max amount (¢)'))->numeric(),
-                    Forms\Components\DateTimePicker::make('starts_at')->label(__('Starts at')),
-                    Forms\Components\DateTimePicker::make('ends_at')->label(__('Ends at')),
-                ])->columns(4)->icon('heroicon-o-funnel'),
+                    Forms\Components\TextInput::make('min_total_cents')->label('حد أدنى للمبلغ (سنت)')->numeric(),
+                    Forms\Components\TextInput::make('max_total_cents')->label('حد أقصى للمبلغ (سنت)')->numeric(),
+                    Forms\Components\DateTimePicker::make('starts_at')->label('تبدأ في')->seconds(false),
+                    Forms\Components\DateTimePicker::make('ends_at')->label('تنتهي في')->seconds(false),
+                ]),
         ]);
     }
 
@@ -117,23 +135,26 @@ class PointRuleResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')->label(__('Name'))->weight('semibold')->searchable(),
+                Tables\Columns\TextColumn::make('name')->label('الاسم')->weight('semibold')->searchable(),
                 Tables\Columns\TextColumn::make('vendor_store_id')
-                    ->label(__('Vendor'))
-                    ->formatStateUsing(fn ($state, $record) => optional($record->vendorStore)->name ?: '-'),
-                Tables\Columns\TextColumn::make('type')->label(__('Type'))->badge(),
-                Tables\Columns\TextColumn::make('percent_rate')->label(__('%'))->toggleable(),
-                Tables\Columns\TextColumn::make('fixed_points')->label(__('Fixed'))->toggleable(),
-                Tables\Columns\IconColumn::make('is_active')->label(__('Active'))->boolean(),
-                Tables\Columns\TextColumn::make('starts_at')->label(__('Starts at'))->dateTime()->since()->toggleable(),
-                Tables\Columns\TextColumn::make('ends_at')->label(__('Ends at'))->dateTime()->since()->toggleable(),
+                    ->label('المتجر')
+                    ->formatStateUsing(fn ($state, $record) => optional($record->vendorStore)->name ?: 'عام'),
+                Tables\Columns\TextColumn::make('type')
+                    ->label('النوع')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state) => $state === 'fixed' ? 'ثابت' : 'نسبة'),
+                Tables\Columns\TextColumn::make('percent_rate')->label('%')->toggleable(),
+                Tables\Columns\TextColumn::make('fixed_points')->label('نقاط')->toggleable(),
+                Tables\Columns\IconColumn::make('is_active')->label('مفعّلة')->boolean(),
+                Tables\Columns\TextColumn::make('starts_at')->label('تبدأ')->dateTime()->since()->toggleable(),
+                Tables\Columns\TextColumn::make('ends_at')->label('تنتهي')->dateTime()->since()->toggleable(),
             ])
             ->actions([
-                Tables\Actions\EditAction::make()->label(__('Edit'))->icon('heroicon-o-pencil-square')->color('info'),
-                Tables\Actions\DeleteAction::make()->label(__('Delete')),
+                Tables\Actions\EditAction::make()->label('تعديل')->icon('heroicon-o-pencil-square')->color('info'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make()->label(__('New Rule'))->icon('heroicon-o-plus'),
+                Tables\Actions\CreateAction::make()->label('قاعدة جديدة')->icon('heroicon-o-plus'),
             ]);
     }
 

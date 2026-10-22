@@ -41,39 +41,39 @@ class PrivacyResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make()
-                ->columns(1)
+            Forms\Components\Section::make('سياسة الخصوصية')
+                ->icon('heroicon-o-document-text')
                 ->schema([
                     Forms\Components\TextInput::make('slug')
-                        ->label(__('Slug'))
+                        ->label('المعرّف (Slug)')
                         ->required()
                         ->unique(ignoreRecord: true)
                         ->maxLength(190),
 
-                    Forms\Components\Tabs::make(__('Translations'))
+                    Forms\Components\Tabs::make('الترجمات')
                         ->columnSpanFull()
                         ->tabs([
-                            Forms\Components\Tabs\Tab::make(__('English'))
-                                ->schema([
-                                    Forms\Components\TextInput::make('title_en')
-                                        ->label(__('Title (EN)'))
-                                        ->required()
-                                        ->maxLength(255),
-                                    Forms\Components\RichEditor::make('content_en')
-                                        ->label(__('Content (EN)'))
-                                        ->columnSpanFull(),
-                                ]),
-                            Forms\Components\Tabs\Tab::make(__('Arabic'))
+                            Forms\Components\Tabs\Tab::make('العربية')
                                 ->schema([
                                     Forms\Components\TextInput::make('title_ar')
-                                        ->label(__('Title (AR)'))
+                                        ->label('العنوان')
                                         ->required()
                                         ->maxLength(255)
                                         ->extraAttributes(['dir' => 'rtl']),
                                     Forms\Components\RichEditor::make('content_ar')
-                                        ->label(__('Content (AR)'))
+                                        ->label('المحتوى')
                                         ->columnSpanFull()
                                         ->extraAttributes(['dir' => 'rtl']),
+                                ]),
+                            Forms\Components\Tabs\Tab::make('English')
+                                ->schema([
+                                    Forms\Components\TextInput::make('title_en')
+                                        ->label('Title')
+                                        ->required()
+                                        ->maxLength(255),
+                                    Forms\Components\RichEditor::make('content_en')
+                                        ->label('Content')
+                                        ->columnSpanFull(),
                                 ]),
                         ]),
                 ]),

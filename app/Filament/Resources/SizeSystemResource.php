@@ -19,20 +19,28 @@ class SizeSystemResource extends Resource
 
     protected static ?string $model = SizeSystem::class;
 
-// app/Filament/Resources/SizeSystemResource.php
-    protected static ?string $navigationIcon = 'heroicon-o-cog'; // or 'heroicon-o-collection'
-    protected static ?string $navigationGroup = 'Settings';
-    protected static ?string $navigationLabel = 'Size Systems';
+    protected static ?string $navigationIcon = 'heroicon-o-cog-6-tooth';
+
     protected static ?int $navigationSort = 40;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'الإعدادات';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return 'أنظمة المقاسات';
+    }
 
     public static function getModelLabel(): string
     {
-        return __('Size System');
+        return 'نظام مقاسات';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return __('Size Systems');
+        return 'أنظمة المقاسات';
     }
 
     public static function getEloquentQuery(): Builder
@@ -43,27 +51,28 @@ class SizeSystemResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make(__('System'))
-                ->description(__('Define a size system (e.g. US / EU).'))
+            Forms\Components\Section::make('نظام المقاسات')
+                ->description('عرّف نظام مقاسات (مثل US / EU) ثم أضف المقاسات من تبويب المقاسات.')
+                ->icon('heroicon-o-cog-6-tooth')
                 ->columns(3)
                 ->schema([
                     Forms\Components\TextInput::make('code')
-                        ->label(__('Code'))
-                        ->helperText(__('Short unique code, e.g. "us" or "eu".'))
+                        ->label('الكود')
+                        ->helperText('قصير وفريد، مثل us أو eu')
                         ->required()
                         ->alphaDash()
                         ->maxLength(8)
                         ->unique(ignoreRecord: true),
 
-                    Forms\Components\TextInput::make('name_en')
-                        ->label(__('Name (EN)'))
-                        ->required()
-                        ->maxLength(50),
-
                     Forms\Components\TextInput::make('name_ar')
-                        ->label(__('Name (AR)'))
+                        ->label('الاسم بالعربية')
                         ->maxLength(50)
                         ->extraAttributes(['dir' => 'rtl']),
+
+                    Forms\Components\TextInput::make('name_en')
+                        ->label('الاسم بالإنجليزية')
+                        ->required()
+                        ->maxLength(50),
                 ]),
         ]);
     }
@@ -73,42 +82,38 @@ class SizeSystemResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('code')
-                    ->label(__('Code'))
+                    ->label('الكود')
                     ->badge()
                     ->sortable()
                     ->searchable(),
-
+                Tables\Columns\TextColumn::make('name_ar')
+                    ->label('العربية')
+                    ->wrap()
+                    ->searchable()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('name_en')
-                    ->label(__('Name (EN)'))
+                    ->label('English')
                     ->wrap()
                     ->searchable(),
-
-                Tables\Columns\TextColumn::make('name_ar')
-                    ->label(__('Name (AR)'))
-                    ->wrap()
-                    ->toggleable(),
-
                 Tables\Columns\TextColumn::make('sizes_count')
-                    ->label(__('Sizes'))
+                    ->label('المقاسات')
                     ->counts('sizes')
                     ->badge()
                     ->color('info')
                     ->sortable(),
-
                 Tables\Columns\TextColumn::make('updated_at')
-                    ->label(__('Updated'))
+                    ->label('آخر تحديث')
                     ->dateTime()
                     ->since()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->filters([])
             ->actions([
-                Tables\Actions\EditAction::make()->slideOver()->modalWidth('3xl'),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()->label('تعديل')->slideOver()->modalWidth('3xl'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->label(__('Add System'))
+                    ->label('إضافة نظام')
                     ->slideOver()
                     ->modalWidth('3xl'),
             ])
@@ -126,9 +131,9 @@ class SizeSystemResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListSizeSystems::route('/'),
+            'index' => Pages\ListSizeSystems::route('/'),
             'create' => Pages\CreateSizeSystem::route('/create'),
-            'edit'   => Pages\EditSizeSystem::route('/{record}/edit'),
+            'edit' => Pages\EditSizeSystem::route('/{record}/edit'),
         ];
     }
 }

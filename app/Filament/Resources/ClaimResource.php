@@ -29,45 +29,52 @@ class ClaimResource extends Resource
 
     public static function getNavigationLabel(): string
     {
-        return __('Claims');
+        return 'الشكاوى';
     }
 
     public static function getModelLabel(): string
     {
-        return __('Claim');
+        return 'شكوى';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return __('Claims');
+        return 'الشكاوى';
     }
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\TextInput::make('name')->label(__('Name'))->disabled(),
-            Forms\Components\TextInput::make('email')->label(__('Email'))->disabled(),
-            Forms\Components\TextInput::make('phone')->label(__('Phone'))->disabled(),
-            Forms\Components\Textarea::make('message')->label(__('Message'))->disabled()->columnSpanFull(),
+            Forms\Components\Section::make('بيانات المرسل')
+                ->icon('heroicon-o-user')
+                ->columns(3)
+                ->schema([
+                    Forms\Components\TextInput::make('name')->label('الاسم')->disabled(),
+                    Forms\Components\TextInput::make('email')->label('البريد')->disabled(),
+                    Forms\Components\TextInput::make('phone')->label('الهاتف')->disabled(),
+                ]),
+            Forms\Components\Section::make('الرسالة')
+                ->icon('heroicon-o-chat-bubble-left-right')
+                ->schema([
+                    Forms\Components\Textarea::make('message')->label('')->disabled()->rows(6)->columnSpanFull(),
+                ]),
         ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table->columns([
-            Tables\Columns\TextColumn::make('id')->label(__('ID'))->sortable(),
-            Tables\Columns\TextColumn::make('name')->label(__('Name'))->searchable()->sortable(),
-            Tables\Columns\TextColumn::make('email')->label(__('Email'))->searchable(),
-            Tables\Columns\TextColumn::make('phone')->label(__('Phone'))->searchable(),
-            Tables\Columns\TextColumn::make('created_at')->label(__('Submitted at'))->dateTime()->sortable(),
+            Tables\Columns\TextColumn::make('name')->label('الاسم')->searchable()->sortable()->weight('bold'),
+            Tables\Columns\TextColumn::make('email')->label('البريد')->searchable(),
+            Tables\Columns\TextColumn::make('phone')->label('الهاتف')->searchable()->placeholder('—'),
+            Tables\Columns\TextColumn::make('created_at')->label('تاريخ الإرسال')->dateTime()->sortable(),
         ])
-            ->filters([])
             ->actions([
-                Tables\Actions\ViewAction::make()->label(__('View')),
-                Tables\Actions\DeleteAction::make()->label(__('Delete')),
+                Tables\Actions\ViewAction::make()->label('عرض'),
+                Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->bulkActions([
-                Tables\Actions\DeleteBulkAction::make()->label(__('Delete Selected')),
+                Tables\Actions\DeleteBulkAction::make()->label('حذف المحدد'),
             ]);
     }
 
