@@ -51,13 +51,19 @@ class ProductCatalogController extends TraderProductCatalogController
         $payload['retail_trader_id'] = $shopId;
         $payload['stock_mode'] = $shopId !== null;
         $payload['filters']['retail_trader_id'] = $shopId;
+        $groups = $payload['groups'] ?? [];
 
-        return $this->success(
-            $payload,
-            $shopId
-                ? 'كتالوج MG للمحل — تصنيف ثم تاج مع المخزون'
-                : 'كتالوج منتجات MG — تصنيف ثم تاج'
-        );
+        return response()->json([
+            'status' => true,
+            'message' => $shopId
+                ? 'كتالوج MG للمحل — تاجات مرتّبة حسب الرقم'
+                : 'كتالوج منتجات MG — تاجات مرتّبة حسب الرقم',
+            'data' => $payload,
+            'items' => $payload['items'] ?? [],
+            'groups' => $groups,
+            'size_groups' => $payload['size_groups'] ?? $groups,
+            'filters' => $payload['filters'] ?? [],
+        ])->header('Content-Language', $lang);
     }
 
     /**

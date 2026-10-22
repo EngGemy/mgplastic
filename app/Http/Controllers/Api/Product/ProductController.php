@@ -67,54 +67,51 @@ class ProductController extends Controller
         $this->applyProductFilters($query, $request);
 
         // Accessories / grouped: return full tag tree (sorted), not a random page order.
-        if ($groupedAll) {
-            $products = (clone $query)->limit(500)->get();
-            $products = $this->sortProductsByTagNumber($products, $sizeOrder);
+        if ($groupedAll || $request->filled('category_id') || $request->filled('parent_id')) {
+            $products = $this->sortProductsByTagNumber((clone $query)->limit(500)->get(), $sizeOrder);
             $groups = $this->buildTagGroups($products, $sizeOrder);
 
-            return response()->json([
-                'status' => true,
-                'message' => 'منتجات مرتّبة حسب الرقم داخل التاج',
-                'data' => ProductResource::collection($products),
-                'groups' => $groups,
-                'size_groups' => $groups,
-                'filters' => [
+            return $this->productsListResponse(
+                products: $products,
+                groups: $groups,
+                sizeOrder: $sizeOrder,
+                lang: $lang,
+                message: 'منتجات مرتّبة حسب الرقم داخل التاج',
+                filters: [
                     'size_order' => $sizeOrder,
                     'grouped' => true,
                     'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
                 ],
-                'meta' => [
-                    'current_page' => 1,
-                    'last_page' => 1,
-                    'per_page' => $products->count(),
-                    'total' => $products->count(),
-                ],
-            ])->header('Content-Language', $lang);
+            );
         }
 
         $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
         $page = $query->latest('id')->paginate($perPage);
-        $groups = $this->buildTagGroups(
+        $allForGroups = $this->sortProductsByTagNumber(
             (clone $query)->with($this->productRelations())->limit(500)->get(),
             $sizeOrder,
         );
+        $groups = $this->buildTagGroups($allForGroups, $sizeOrder);
 
-        return response()->json([
-            'status' => true,
-            'data' => ProductResource::collection($page),
-            'groups' => $groups,
-            'size_groups' => $groups,
-            'filters' => [
+        return $this->productsListResponse(
+            products: collect($page->items()),
+            groups: $groups,
+            sizeOrder: $sizeOrder,
+            lang: $lang,
+            message: 'OK',
+            filters: [
                 'size_order' => $sizeOrder,
                 'grouped' => false,
             ],
-            'meta' => [
+            meta: [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
             ],
-        ])->header('Content-Language', $lang);
+            // BC: bare array still available as data when legacy=1
+            legacyList: $request->boolean('legacy'),
+        );
     }
 
     /**
@@ -240,56 +237,97 @@ class ProductController extends Controller
             || in_array(strtolower((string) $request->query('view', '')), ['grouped', 'tags', 'tree', 'accessories'], true)
             || in_array(strtolower((string) $request->query('product_family', $request->query('type', ''))), ['accessory', 'accessories', 'ملحقات'], true);
 
-        if ($forceGrouped) {
-            $products = $this->sortProductsByTagNumber((clone $query)->limit(500)->get(), $sizeOrder);
-            $groups = $this->buildTagGroups($products, $sizeOrder);
+        // Always return tag-sorted groups for category/system screens (ملحقات accordion).
+        $products = $this->sortProductsByTagNumber((clone $query)->limit(500)->get(), $sizeOrder);
+        $groups = $this->buildTagGroups($products, $sizeOrder);
 
-            $payload = [
-                'status' => true,
-                'message' => 'منتجات التصنيف — تاجات مرتّبة حسب الرقم',
-                'data' => ProductResource::collection($products),
-                'groups' => $groups,
-                'size_groups' => $groups,
-                'filters' => [
+        if ($forceGrouped || $perPage <= 0) {
+            return $this->productsListResponse(
+                products: $products,
+                groups: $groups,
+                sizeOrder: $sizeOrder,
+                lang: $lang,
+                message: 'منتجات التصنيف — تاجات مرتّبة حسب الرقم',
+                filters: [
                     'size_order' => $sizeOrder,
                     'category_id' => (int) $categoryId,
                     'grouped' => true,
                 ],
-            ];
-
-            if ($perPage > 0) {
-                $payload['meta'] = [
-                    'current_page' => 1,
-                    'last_page' => 1,
-                    'per_page' => $products->count(),
-                    'total' => $products->count(),
-                ];
-            }
-
-            return response()->json($payload)->header('Content-Language', $lang);
+            );
         }
 
         $page = $query->latest()->paginate($perPage);
-        $groups = $this->buildTagGroups(
-            (clone $query)->with($this->productRelations())->limit(500)->get(),
-            $sizeOrder,
-        );
 
-        return response()->json([
-            'status' => true,
-            'data' => ProductResource::collection($page),
-            'groups' => $groups,
-            'size_groups' => $groups,
-            'filters' => [
+        return $this->productsListResponse(
+            products: collect($page->items()),
+            groups: $groups,
+            sizeOrder: $sizeOrder,
+            lang: $lang,
+            message: 'OK',
+            filters: [
                 'size_order' => $sizeOrder,
                 'category_id' => (int) $categoryId,
+                'grouped' => false,
             ],
-            'meta' => [
+            meta: [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
             ],
+            legacyList: $request->boolean('legacy'),
+        );
+    }
+
+    /**
+     * Unified list payload so mobile always finds:
+     * - data.items (products sorted by tag number)
+     * - data.groups (tags sorted: 1 → 1.5 → 2 → 6 → 110 مم)
+     * - groups / size_groups also at root (easy access)
+     *
+     * @param  Collection<int, Product>  $products
+     * @param  list<array<string, mixed>>  $groups
+     * @param  array<string, mixed>  $filters
+     * @param  array<string, mixed>|null  $meta
+     */
+    private function productsListResponse(
+        Collection $products,
+        array $groups,
+        string $sizeOrder,
+        string $lang,
+        string $message,
+        array $filters,
+        ?array $meta = null,
+        bool $legacyList = false,
+    ): \Illuminate\Http\JsonResponse {
+        $items = ProductResource::collection($products)->resolve();
+        $meta ??= [
+            'current_page' => 1,
+            'last_page' => 1,
+            'per_page' => count($items),
+            'total' => count($items),
+        ];
+
+        $body = [
+            'items' => $items,
+            'groups' => $groups,
+            'size_groups' => $groups,
+            'filters' => $filters + ['size_order' => $sizeOrder],
+            'pagination' => $meta,
+            'meta' => $meta,
+        ];
+
+        return response()->json([
+            'status' => true,
+            'message' => $message,
+            // Object form (preferred for mobile tag accordion).
+            'data' => $legacyList ? $items : $body,
+            // Also expose at root — works whether app reads data.groups or groups.
+            'items' => $items,
+            'groups' => $groups,
+            'size_groups' => $groups,
+            'filters' => $body['filters'],
+            'meta' => $meta,
         ])->header('Content-Language', $lang);
     }
 

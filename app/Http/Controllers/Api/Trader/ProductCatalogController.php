@@ -29,8 +29,18 @@ class ProductCatalogController extends Controller
         app()->setLocale($lang);
 
         $payload = $this->buildCatalogPayload($request);
+        $groups = $payload['groups'] ?? [];
 
-        return $this->success($payload, 'كتالوج منتجات MG — تصنيف ثم تاج للملحقات');
+        // Expose groups at root AND inside data — mobile can read either path.
+        return response()->json([
+            'status' => true,
+            'message' => 'كتالوج منتجات MG — تاجات مرتّبة حسب الرقم (1→1.5→2→…)',
+            'data' => $payload,
+            'items' => $payload['items'] ?? [],
+            'groups' => $groups,
+            'size_groups' => $payload['size_groups'] ?? $groups,
+            'filters' => $payload['filters'] ?? [],
+        ])->header('Content-Language', $lang);
     }
 
     /**

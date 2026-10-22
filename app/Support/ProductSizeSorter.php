@@ -5,10 +5,8 @@ namespace App\Support;
 use App\Models\Product;
 
 /**
- * Numeric size ordering for POS/catalog.
- *
- * Inch sections: 1 → 1.5 → 3 → 6 بوصه
- * Then mm sections: 110 مم → 114 مم (after all inches).
+ * Sort product-tag accordion by the number written in the tag
+ * («1 بوصه» → «1.5 بوصه» → «2 بوصه» → «6 بوصه» → «110 مم» → «أخرى»).
  */
 class ProductSizeSorter
 {
@@ -58,15 +56,12 @@ class ProductSizeSorter
         ];
     }
 
-    /** @deprecated Use parseDetailed / resolve */
     public static function parse(?string $text): ?float
     {
         return self::parseDetailed($text)['value'] ?? null;
     }
 
     /**
-     * Prefer the number attached to بوصه/مم (not elbow angle like «كوع 90»).
-     *
      * @return array{value: float, unit: string, label: string, sort: float}|null
      */
     public static function parseDetailed(?string $text): ?array
@@ -86,15 +81,13 @@ class ProductSizeSorter
             '٫' => '.', '،' => '.',
             'ـ' => '',
         ]);
-        // Normalize common inch spellings.
         $t = str_replace(['بوصة', 'بوصه', 'بوص'], 'بوصه', $t);
 
         // 1½
         if (preg_match_all('/(\d+)\s*[½]/u', $t, $mm, PREG_SET_ORDER)) {
             $m = $mm[array_key_last($mm)];
-            $value = (float) $m[1] + 0.5;
 
-            return self::pack($value, 'inch', self::formatLabel($value).' بوصه');
+            return self::pack((float) $m[1] + 0.5, 'inch');
         }
 
         // 1 1/2
@@ -103,33 +96,42 @@ class ProductSizeSorter
             $den = (float) $m[3];
             $value = $den > 0 ? (float) $m[1] + ((float) $m[2] / $den) : (float) $m[1];
 
-            return self::pack($value, 'inch', self::formatLabel($value).' بوصه');
+            return self::pack($value, 'inch');
         }
 
-        // Explicit mm first (so «110 مم» never competes with inches).
-        if (preg_match_all('/(\d+(?:[.,]\d+)?)\s*(?:مم|mm)\b/u', $t, $mm, PREG_SET_ORDER)) {
+        // mm — do NOT use \b (breaks on Arabic).
+        if (preg_match_all('/(\d+(?:[.,]\d+)?)\s*(?:مم|mm)/u', $t, $mm, PREG_SET_ORDER)) {
             $m = $mm[array_key_last($mm)];
-            $value = (float) str_replace(',', '.', $m[1]);
 
-            return self::pack($value, 'mm', self::formatLabel($value).' مم');
+            return self::pack((float) str_replace(',', '.', $m[1]), 'mm');
         }
 
-        // Explicit inch / بوصه / "
+        // inch / بوصه / "
         if (preg_match_all('/(\d+(?:[.,]\d+)?)\s*(?:بوصه|inch|\bin\b|")/u', $t, $mm, PREG_SET_ORDER)) {
             $m = $mm[array_key_last($mm)];
-            $value = (float) str_replace(',', '.', $m[1]);
 
-            return self::pack($value, 'inch', self::formatLabel($value).' بوصه');
+            return self::pack((float) str_replace(',', '.', $m[1]), 'inch');
         }
 
-        // Whole label is only a number (size master data): «1.5» / «3»
+        // Whole label is only a number: «1.5» / «3» / «110»
         if (preg_match('/^\s*(\d+(?:[.,]\d+)?)\s*$/u', $t, $m)) {
             $value = (float) str_replace(',', '.', $m[1]);
-            // Heuristic: large numbers without unit → mm catalog sizes.
-            $unit = $value >= 20 ? 'mm' : 'inch';
-            $suffix = $unit === 'mm' ? ' مم' : ' بوصه';
 
-            return self::pack($value, $unit, self::formatLabel($value).$suffix);
+            return self::pack($value, $value >= 20 ? 'mm' : 'inch');
+        }
+
+        // Short size-like tags («110مم» without space): grab leading number + unit hint.
+        if (preg_match('/^\s*(\d+(?:[.,]\d+)?)\s*(.*)$/u', $t, $m)) {
+            $rest = trim($m[2]);
+            if ($rest === '' || str_contains($rest, 'بوصه') || str_contains($rest, 'inch')
+                || str_contains($rest, 'مم') || str_contains($rest, 'mm') || str_contains($rest, '"')) {
+                $value = (float) str_replace(',', '.', $m[1]);
+                $unit = (str_contains($rest, 'مم') || str_contains($rest, 'mm') || ($rest === '' && $value >= 20))
+                    ? 'mm'
+                    : 'inch';
+
+                return self::pack($value, $unit);
+            }
         }
 
         return null;
@@ -138,12 +140,11 @@ class ProductSizeSorter
     /**
      * @return array{value: float, unit: string, label: string, sort: float}
      */
-    protected static function pack(float $value, string $unit, string $label): array
+    protected static function pack(float $value, string $unit): array
     {
-        // Inches occupy 0…9999; mm after that so: 1 → 1.5 → 3 → 6 then 110 مم.
-        $sort = $unit === 'mm'
-            ? 10000.0 + $value
-            : $value;
+        $label = self::formatLabel($value).($unit === 'mm' ? ' مم' : ' بوصه');
+        // Inches 0…9999, then mm (so 1→1.5→6 then 110 مم).
+        $sort = $unit === 'mm' ? 10000.0 + $value : $value;
 
         return [
             'value' => $value,
@@ -158,23 +159,16 @@ class ProductSizeSorter
         return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
     }
 
-    /**
-     * Stable section key for accordion (size-only groups).
-     */
     public static function sizeGroupKey(?float $value, ?string $unit, ?string $label): string
     {
         if ($value === null) {
             return 'size:other';
         }
 
-        $unit = $unit ?: 'inch';
-
-        return 'size:'.$unit.':'.self::formatLabel($value);
+        return 'size:'.($unit ?: 'inch').':'.self::formatLabel($value);
     }
 
     /**
-     * Compare two rows / tag sections for size order.
-     *
      * @param  array<string, mixed>  $a
      * @param  array<string, mixed>  $b
      */
@@ -194,16 +188,14 @@ class ProductSizeSorter
             return $cat;
         }
 
-        $sortA = self::rowSortKey($a);
-        $sortB = self::rowSortKey($b);
-        $sizeCmp = self::compareNullableFloats($sortA, $sortB, $sizeOrder);
+        $sizeCmp = self::compareNullableFloats(self::rowSortKey($a), self::rowSortKey($b), $sizeOrder);
         if ($sizeCmp !== 0) {
             return $sizeCmp;
         }
 
         $tagName = strcmp(
-            mb_strtolower((string) ($a['group_name'] ?? $a['tag'] ?? $a['size_label'] ?? '')),
-            mb_strtolower((string) ($b['group_name'] ?? $b['tag'] ?? $b['size_label'] ?? '')),
+            mb_strtolower((string) ($a['tag'] ?? $a['group_name'] ?? '')),
+            mb_strtolower((string) ($b['tag'] ?? $b['group_name'] ?? '')),
         );
         if ($tagName !== 0) {
             return $tagName;
@@ -216,8 +208,6 @@ class ProductSizeSorter
     }
 
     /**
-     * Prefer the number written in the tag name (source of truth for accordion order).
-     *
      * @param  array<string, mixed>  $row
      */
     public static function rowSortKey(array $row): ?float
@@ -248,8 +238,7 @@ class ProductSizeSorter
     }
 
     /**
-     * Sort tag accordion sections by the number inside the tag name
-     * («1 بوصه» → «1.5 بوصه» → «3 بوصه» → «6 بوصه» → «110 مم»).
+     * Sort tag sections by number in tag name. Adds sort_index 0..n for the app.
      *
      * @param  list<array<string, mixed>>  $groups
      * @return list<array<string, mixed>>
@@ -261,6 +250,13 @@ class ProductSizeSorter
         usort($groups, function (array $a, array $b) use ($sizeOrder) {
             $nameA = (string) ($a['tag'] ?? $a['name'] ?? $a['group_name'] ?? '');
             $nameB = (string) ($b['tag'] ?? $b['name'] ?? $b['group_name'] ?? '');
+
+            // «أخرى» always last.
+            $otherA = self::isOtherTag($nameA);
+            $otherB = self::isOtherTag($nameB);
+            if ($otherA !== $otherB) {
+                return $otherA ? 1 : -1;
+            }
 
             $parsedA = self::parseDetailed($nameA);
             $parsedB = self::parseDetailed($nameB);
@@ -277,13 +273,34 @@ class ProductSizeSorter
             return strcmp(mb_strtolower($nameA), mb_strtolower($nameB));
         });
 
-        return array_values($groups);
+        $groups = array_values($groups);
+        foreach ($groups as $i => &$g) {
+            $name = (string) ($g['tag'] ?? $g['name'] ?? '');
+            $parsed = self::parseDetailed($name);
+            $g['sort_index'] = $i;
+            $g['size_value'] = $parsed['value'] ?? ($g['size_value'] ?? null);
+            $g['size_unit'] = $parsed['unit'] ?? ($g['size_unit'] ?? null);
+            $g['size_sort'] = $parsed['sort'] ?? ($g['size_sort'] ?? null);
+            $g['size_label'] = $parsed['label'] ?? ($g['size_label'] ?? $name);
+            $g['tag'] = $g['tag'] ?? $name;
+            $g['name'] = $g['name'] ?? $name;
+        }
+        unset($g);
+
+        return $groups;
     }
 
     /** @param  list<array<string, mixed>>  $groups */
     public static function sortGroupsBySize(array $groups, string $sizeOrder = 'asc'): array
     {
         return self::sortTagGroupsByNumber($groups, $sizeOrder);
+    }
+
+    public static function isOtherTag(string $name): bool
+    {
+        $n = mb_strtolower(trim($name));
+
+        return $n === '' || in_array($n, ['أخرى', 'اخرى', 'other', 'others', '-'], true);
     }
 
     protected static function compareNullableFloats(?float $a, ?float $b, string $sizeOrder): int
