@@ -10,6 +10,8 @@ use Illuminate\Support\Collection;
 
 class AdminNotificationService
 {
+    // FCM push is triggered after each database notify (see send()).
+
     /**
      * @param  array<string, mixed>  $meta  Extra keys merged into the DB notification payload (e.g. order_id).
      */
@@ -48,6 +50,16 @@ class AdminNotificationService
         }
 
         $user->notify(new SyncFilamentDatabaseNotification($data));
+
+        // Mirror in-app inbox notifications to FCM (best-effort; skipped if not configured).
+        try {
+            app(FcmPushService::class)->notifyUser($user, $title, $body, $meta);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[FCM] notify skipped', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

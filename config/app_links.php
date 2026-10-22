@@ -39,5 +39,11 @@ return [
         'supply',
         'withdrawal',
         'home',
+        'promotion',
+        'collection',
+        'event',
+        'product',
+        'shop',
+        'plumber',
     ],
 ];

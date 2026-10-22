@@ -18,8 +18,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-
-
 class User extends Authenticatable implements FilamentUser, HasAvatar
 {
     use HasApiTokens, HasFactory, HasStoreProfile, Notifiable, HasWallet;
@@ -147,6 +145,12 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     public function ordersReceived(): HasMany
     {
         return $this->hasMany(Order::class, 'supplier_id');
+    }
+
+    /** FCM device tokens for push notifications. */
+    public function pushTokens(): HasMany
+    {
+        return $this->hasMany(PushToken::class);
     }
     /**
      * Accessor: full absolute URL for profile photo.

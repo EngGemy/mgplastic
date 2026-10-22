@@ -113,6 +113,14 @@ class SettingsController extends Controller
                     'store' => url('/api/v1/sliders/store'),
                 ],
             ],
+            'push' => [
+                'enabled' => (bool) config('services.fcm.enabled', true),
+                'project' => (string) config('services.fcm.project_id', 'mg-plumbers'),
+                'endpoints' => [
+                    'register' => url('/api/v1/mobile/devices/push-token'),
+                    'unregister' => url('/api/v1/mobile/devices/push-token'),
+                ],
+            ],
         ]);
     }
 }

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\Mobile\BiometricController;
 use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
 use App\Http\Controllers\Api\Mobile\HomeHighlightsController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
+use App\Http\Controllers\Api\Mobile\PushTokenController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
 use App\Http\Controllers\Api\Mobile\ProductCollectionController;
 use App\Http\Controllers\Api\Mobile\ProductPromotionController;
@@ -87,6 +88,10 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('profile', [ProfileController::class, 'show']);
         Route::match(['put', 'patch', 'post'], 'profile', [ProfileController::class, 'update']);
+
+        // FCM push tokens (call DELETE before logout)
+        Route::post('devices/push-token', [PushTokenController::class, 'store']);
+        Route::delete('devices/push-token', [PushTokenController::class, 'destroy']);
 
         // Biometric device management
         Route::post('biometric/register', [BiometricController::class, 'register']);

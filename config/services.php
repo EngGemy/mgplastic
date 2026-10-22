@@ -123,6 +123,16 @@ return [
         'channels' => env('OTP_CHANNELS', 'whatsapp,sms'),
     ],
 
+    /*
+    | Firebase Cloud Messaging (project: mg-plumbers).
+    | Put the Service Account JSON outside the repo and point FIREBASE_CREDENTIALS at it.
+    */
+    'fcm' => [
+        'enabled' => (bool) env('FCM_ENABLED', true),
+        'project_id' => env('FCM_PROJECT_ID', 'mg-plumbers'),
+        'queue' => env('FCM_QUEUE', 'default'),
+    ],
+
     'ffmpeg' => [
         'ffmpeg_binaries' => env('FFMPEG_BINARIES', PHP_OS_FAMILY === 'Windows' ? 'ffmpeg.exe' : 'ffmpeg'),
         'ffprobe_binaries' => env('FFPROBE_BINARIES', PHP_OS_FAMILY === 'Windows' ? 'ffprobe.exe' : 'ffprobe'),
