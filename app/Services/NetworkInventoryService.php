@@ -560,9 +560,17 @@ class NetworkInventoryService
             $type = app(ProductTypeService::class)->resolveForProduct($product);
         }
 
-        // Prefer a tag that matches the resolved piece-type keywords, else first tag.
+        // Prefer a tag that carries a size number («1 بوصه» / «110 مم») — used for accordion order.
         $primaryTag = null;
-        if ($type) {
+        foreach ($tags as $tagName) {
+            if (ProductSizeSorter::parseDetailed($tagName) !== null) {
+                $primaryTag = $tagName;
+                break;
+            }
+        }
+
+        // Else prefer a tag that matches the resolved piece-type keywords, else first tag.
+        if ($primaryTag === null && $type) {
             foreach ($tags as $tagName) {
                 $hay = mb_strtolower($tagName);
                 $def = app(ProductTypeService::class)->findDefinition($type['key']);

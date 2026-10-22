@@ -143,7 +143,12 @@ class ProductCatalogController extends Controller
             return true;
         }
 
-        return $family === 'accessory';
+        // System browse (category_id) + ملحقات → full tag accordion sorted by number in tag.
+        if ($family === 'accessory') {
+            return true;
+        }
+
+        return $request->filled('category_id') && $family !== 'pipe';
     }
 
     /**

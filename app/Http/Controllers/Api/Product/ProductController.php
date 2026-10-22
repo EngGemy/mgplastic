@@ -9,8 +9,11 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductImage;
 use App\Models\ProductTag;
+use App\Services\NetworkInventoryService;
+use App\Support\ProductSizeSorter;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -48,21 +51,63 @@ class ProductController extends Controller
     /**
      * GET /api/v1/products
      * Filter: category_id, parent_id, tag/tags, search/q, classification, standard_id, color_id, with_children, per_page, page
+     * Tag accordion: data.groups sorted by number inside tag (1 بوصه → 1.5 → 2 → …)
      */
     public function index(Request $request)
     {
         $lang = $this->language($request);
         app()->setLocale($lang);
 
+        $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
+        $groupedAll = $request->boolean('grouped')
+            || in_array(strtolower((string) $request->query('view', '')), ['grouped', 'tags', 'tree', 'accessories'], true)
+            || in_array(strtolower((string) $request->query('product_family', $request->query('type', ''))), ['accessory', 'accessories', 'ملحقات'], true);
+
         $query = Product::query()->with($this->productRelations());
         $this->applyProductFilters($query, $request);
 
+        // Accessories / grouped: return full tag tree (sorted), not a random page order.
+        if ($groupedAll) {
+            $products = (clone $query)->limit(500)->get();
+            $products = $this->sortProductsByTagNumber($products, $sizeOrder);
+            $groups = $this->buildTagGroups($products, $sizeOrder);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'منتجات مرتّبة حسب الرقم داخل التاج',
+                'data' => ProductResource::collection($products),
+                'groups' => $groups,
+                'size_groups' => $groups,
+                'filters' => [
+                    'size_order' => $sizeOrder,
+                    'grouped' => true,
+                    'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
+                ],
+                'meta' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $products->count(),
+                    'total' => $products->count(),
+                ],
+            ])->header('Content-Language', $lang);
+        }
+
         $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
         $page = $query->latest('id')->paginate($perPage);
+        $groups = $this->buildTagGroups(
+            (clone $query)->with($this->productRelations())->limit(500)->get(),
+            $sizeOrder,
+        );
 
         return response()->json([
             'status' => true,
             'data' => ProductResource::collection($page),
+            'groups' => $groups,
+            'size_groups' => $groups,
+            'filters' => [
+                'size_order' => $sizeOrder,
+                'grouped' => false,
+            ],
             'meta' => [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
@@ -168,6 +213,7 @@ class ProductController extends Controller
                 ->header('Content-Language', $lang);
         }
 
+        $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
         $withChildren = filter_var($request->query('with_children', 'false'), FILTER_VALIDATE_BOOLEAN);
 
         $query = Product::query()->with($this->productRelations());
@@ -185,27 +231,142 @@ class ProductController extends Controller
 
         $this->applyProductFilters($query, $request, false);
 
+        // Category / system browse (ملحقات accordion): always return tag groups sorted by number in tag.
         $perPage = (int) $request->query('per_page', 0);
-        if ($perPage > 0) {
-            $page = $query->latest()->paginate($perPage);
-            return response()->json([
+        $forceGrouped = $perPage <= 0
+            || $withChildren
+            || $category->isAccessoriesFamily()
+            || $request->boolean('grouped')
+            || in_array(strtolower((string) $request->query('view', '')), ['grouped', 'tags', 'tree', 'accessories'], true)
+            || in_array(strtolower((string) $request->query('product_family', $request->query('type', ''))), ['accessory', 'accessories', 'ملحقات'], true);
+
+        if ($forceGrouped) {
+            $products = $this->sortProductsByTagNumber((clone $query)->limit(500)->get(), $sizeOrder);
+            $groups = $this->buildTagGroups($products, $sizeOrder);
+
+            $payload = [
                 'status' => true,
-                'data'   => ProductResource::collection($page),
-                'meta'   => [
-                    'current_page' => $page->currentPage(),
-                    'last_page'    => $page->lastPage(),
-                    'per_page'     => $page->perPage(),
-                    'total'        => $page->total(),
+                'message' => 'منتجات التصنيف — تاجات مرتّبة حسب الرقم',
+                'data' => ProductResource::collection($products),
+                'groups' => $groups,
+                'size_groups' => $groups,
+                'filters' => [
+                    'size_order' => $sizeOrder,
+                    'category_id' => (int) $categoryId,
+                    'grouped' => true,
                 ],
-            ])->header('Content-Language', $lang);
+            ];
+
+            if ($perPage > 0) {
+                $payload['meta'] = [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $products->count(),
+                    'total' => $products->count(),
+                ];
+            }
+
+            return response()->json($payload)->header('Content-Language', $lang);
         }
 
-        $products = $query->latest()->get();
+        $page = $query->latest()->paginate($perPage);
+        $groups = $this->buildTagGroups(
+            (clone $query)->with($this->productRelations())->limit(500)->get(),
+            $sizeOrder,
+        );
 
         return response()->json([
             'status' => true,
-            'data'   => ProductResource::collection($products),
+            'data' => ProductResource::collection($page),
+            'groups' => $groups,
+            'size_groups' => $groups,
+            'filters' => [
+                'size_order' => $sizeOrder,
+                'category_id' => (int) $categoryId,
+            ],
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'per_page' => $page->perPage(),
+                'total' => $page->total(),
+            ],
         ])->header('Content-Language', $lang);
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     * @return Collection<int, Product>
+     */
+    private function sortProductsByTagNumber(Collection $products, string $sizeOrder = 'asc'): Collection
+    {
+        $sizeOrder = ProductSizeSorter::normalizeOrder($sizeOrder);
+
+        return $products
+            ->sort(function (Product $a, Product $b) use ($sizeOrder) {
+                $tagA = $this->primarySizeTagName($a);
+                $tagB = $this->primarySizeTagName($b);
+
+                return ProductSizeSorter::compareRows(
+                    ['tag' => $tagA, 'group_name' => $tagA, 'name' => localized_name($a, 'name', ''), 'is_accessories' => true, 'category_name' => ''],
+                    ['tag' => $tagB, 'group_name' => $tagB, 'name' => localized_name($b, 'name', ''), 'is_accessories' => true, 'category_name' => ''],
+                    $sizeOrder,
+                );
+            })
+            ->values();
+    }
+
+    /** Prefer a tag that contains a size number (1 بوصه / 110 مم). */
+    private function primarySizeTagName(Product $product): string
+    {
+        if (! $product->relationLoaded('tags') || $product->tags->isEmpty()) {
+            return 'أخرى';
+        }
+
+        foreach ($product->tags as $tag) {
+            $name = trim((string) $tag->name);
+            if ($name !== '' && ProductSizeSorter::parseDetailed($name) !== null) {
+                return $name;
+            }
+        }
+
+        $fallback = trim((string) ($product->tags->first()?->name ?? 'أخرى'));
+
+        return $fallback !== '' ? $fallback : 'أخرى';
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     * @return list<array<string, mixed>>
+     */
+    private function buildTagGroups(Collection $products, string $sizeOrder = 'asc'): array
+    {
+        $rows = $products->map(function (Product $product) {
+            $tagName = $this->primarySizeTagName($product);
+            $parsed = ProductSizeSorter::parseDetailed($tagName);
+
+            return [
+                'product_id' => (int) $product->id,
+                'id' => (int) $product->id,
+                'name' => localized_name($product, 'name', 'منتج #'.$product->id),
+                'tag' => $tagName,
+                'group_name' => $tagName,
+                'group_key' => 'tag:'.mb_strtolower($tagName),
+                'tags' => $product->relationLoaded('tags')
+                    ? $product->tags->pluck('name')->values()->all()
+                    : [],
+                'category_id' => $product->product_category_id,
+                'category_name' => $product->category
+                    ? localized_name($product->category, 'name', '')
+                    : '',
+                'is_accessories' => (bool) ($product->category?->isAccessoriesFamily() || $product->isAccessories()),
+                'size_value' => $parsed['value'] ?? null,
+                'size_unit' => $parsed['unit'] ?? null,
+                'size_label' => $parsed['label'] ?? $tagName,
+                'size_sort' => $parsed['sort'] ?? null,
+            ];
+        });
+
+        return app(NetworkInventoryService::class)->groupStockByTag($rows, $sizeOrder);
     }
 
     /**
