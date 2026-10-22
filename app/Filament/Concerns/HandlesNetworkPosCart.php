@@ -2,6 +2,8 @@
 
 namespace App\Filament\Concerns;
 
+use App\Services\NetworkInventoryService;
+use App\Support\ProductSizeSorter;
 use Illuminate\Support\Collection;
 
 trait HandlesNetworkPosCart
@@ -16,6 +18,9 @@ trait HandlesNetworkPosCart
 
     public ?int $selectedCategoryId = null;
 
+    /** asc = صغير → كبير | desc = كبير → صغير */
+    public string $sizeOrder = 'asc';
+
     abstract protected function stockRows(): Collection;
 
     public function selectCategory(?int $categoryId): void
@@ -23,8 +28,15 @@ trait HandlesNetworkPosCart
         $this->selectedCategoryId = $categoryId;
     }
 
+    public function setSizeOrder(string $order): void
+    {
+        $this->sizeOrder = ProductSizeSorter::normalizeOrder($order);
+    }
+
     public function getFilteredStockProperty(): Collection
     {
+        $order = ProductSizeSorter::normalizeOrder($this->sizeOrder);
+
         // Show MG products with points AND catalog items without points (no-points sales).
         return $this->stockRows()
             ->when($this->selectedCategoryId, fn (Collection $c) => $c->filter(
@@ -47,12 +59,7 @@ trait HandlesNetworkPosCart
                     return str_contains(mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? '')), $term);
                 });
             })
-            ->sortBy([
-                fn ($row) => (bool) ($row['is_accessories'] ?? false) ? 0 : 1,
-                fn ($row) => mb_strtolower((string) ($row['category_name'] ?? '')),
-                fn ($row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
-                fn ($row) => mb_strtolower((string) ($row['name'] ?? '')),
-            ])
+            ->sort(fn (array $a, array $b) => ProductSizeSorter::compareRows($a, $b, $order))
             ->values();
     }
 
@@ -61,31 +68,28 @@ trait HandlesNetworkPosCart
      */
     public function getGroupedStockProperty(): Collection
     {
-        $rows = $this->filteredStock;
+        $order = ProductSizeSorter::normalizeOrder($this->sizeOrder);
+        $tree = app(NetworkInventoryService::class)
+            ->groupStockByCategoryThenTag($this->filteredStock, $order);
 
         if ($this->selectedCategoryId) {
-            return collect([
-                [
-                    'category_name' => null,
-                    'tags' => $rows
-                        ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
-                        ->sortKeys(),
-                ],
-            ]);
+            $tags = collect();
+            foreach ($tree as $cat) {
+                foreach ($cat['tags'] as $tag) {
+                    $tags[(string) $tag['name']] = collect($tag['items']);
+                }
+            }
+
+            return collect([['category_name' => null, 'tags' => $tags]]);
         }
 
-        return $rows
-            ->groupBy(fn ($r) => (string) ($r['category_name'] ?? 'بدون تصنيف'))
-            ->sortKeys()
-            ->map(fn (Collection $catRows, string $catName) => [
-                'category_name' => $catName,
-                'is_accessories' => (bool) ($catRows->first()['is_accessories'] ?? false),
-                'tags' => $catRows
-                    ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
-                    ->sortKeys(),
-            ])
-            ->sortByDesc(fn ($block) => (int) ($block['is_accessories'] ?? false))
-            ->values();
+        return collect($tree)->map(fn (array $cat) => [
+            'category_name' => $cat['category_name'],
+            'is_accessories' => (bool) ($cat['is_accessories'] ?? false),
+            'tags' => collect($cat['tags'])->mapWithKeys(
+                fn (array $tag) => [(string) $tag['name'] => collect($tag['items'])]
+            ),
+        ])->values();
     }
 
     protected function categoryMatchesChild(array $row, int $categoryId): bool

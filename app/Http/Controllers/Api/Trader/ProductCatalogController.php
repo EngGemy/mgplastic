@@ -9,6 +9,7 @@ use App\Models\ProductCategory;
 use App\Models\ProductTag;
 use App\Services\NetworkInventoryService;
 use App\Services\ProductTypeService;
+use App\Support\ProductSizeSorter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,6 +49,9 @@ class ProductCatalogController extends Controller
         $orderUnit = $this->requestedOrderUnit($request);
         $family = $this->requestedProductFamily($request);
         $groupedView = $this->wantsGroupedBrowse($request, $family);
+        $sizeOrder = ProductSizeSorter::normalizeOrder(
+            $request->query('size_order', $request->query('sort'))
+        );
 
         $baseQuery = $this->catalogQuery($request, applyOrderUnit: false);
         $boxCount = (clone $baseQuery)->where('pieces_per_box', '>', 0)->count();
@@ -62,6 +66,7 @@ class ProductCatalogController extends Controller
             'category_id' => $request->filled('category_id') ? (int) $request->query('category_id') : null,
             'search' => $request->query('q') ?? $request->query('search'),
             'grouped' => $groupedView,
+            'size_order' => $sizeOrder,
             'tags' => $this->requestedTags($request),
         ];
 
@@ -82,8 +87,8 @@ class ProductCatalogController extends Controller
             $items = $products
                 ->map(fn (Product $product) => $mapProduct($product))
                 ->values();
-            $items = $this->sortCatalogItems($items);
-            $trees = $inventory->groupCatalogBrowse($items);
+            $items = $this->sortCatalogItems($items, $sizeOrder);
+            $trees = $inventory->groupCatalogBrowse($items, $sizeOrder);
 
             return [
                 'items' => $items,
@@ -111,8 +116,8 @@ class ProductCatalogController extends Controller
         $items = collect($page->items())
             ->map(fn (Product $product) => $mapProduct($product))
             ->values();
-        $items = $this->sortCatalogItems($items);
-        $trees = $inventory->groupCatalogBrowse($items);
+        $items = $this->sortCatalogItems($items, $sizeOrder);
+        $trees = $inventory->groupCatalogBrowse($items, $sizeOrder);
 
         return [
             'items' => $items,
@@ -143,15 +148,12 @@ class ProductCatalogController extends Controller
      * @param  Collection<int, array<string, mixed>>  $items
      * @return Collection<int, array<string, mixed>>
      */
-    protected function sortCatalogItems(Collection $items): Collection
+    protected function sortCatalogItems(Collection $items, string $sizeOrder = 'asc'): Collection
     {
+        $sizeOrder = ProductSizeSorter::normalizeOrder($sizeOrder);
+
         return $items
-            ->sortBy([
-                fn (array $row) => (bool) ($row['is_accessories'] ?? $row['is_accessory'] ?? false) ? 0 : 1,
-                fn (array $row) => mb_strtolower((string) ($row['category_name'] ?? $row['parent_category_name'] ?? '')),
-                fn (array $row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
-                fn (array $row) => mb_strtolower((string) ($row['name'] ?? '')),
-            ])
+            ->sort(fn (array $a, array $b) => ProductSizeSorter::compareRows($a, $b, $sizeOrder))
             ->values();
     }
 
@@ -201,7 +203,7 @@ class ProductCatalogController extends Controller
     protected function catalogQuery(Request $request, bool $applyOrderUnit = true): Builder
     {
         $query = Product::query()
-            ->with(['translations', 'images', 'tags', 'category.translations', 'category.parent.translations']);
+            ->with(['translations', 'images', 'tags', 'sizes', 'category.translations', 'category.parent.translations']);
 
         if ($request->filled('category_id')) {
             $catId = (int) $request->query('category_id');
@@ -362,6 +364,10 @@ class ProductCatalogController extends Controller
         $piecesPerBox = (int) ($product->pieces_per_box ?? 0);
         $group = app(NetworkInventoryService::class)->resolveProductGroup($product);
         $isAccessory = $product->isAccessories();
+        $size = ProductSizeSorter::resolve(
+            $product,
+            implode(' ', array_filter([$group['tag'], $group['name'], ...$group['tags']])),
+        );
 
         $item = [
             'id' => (int) $product->id,
@@ -387,6 +393,9 @@ class ProductCatalogController extends Controller
             'tag' => $group['tag'],
             'group_key' => $group['key'],
             'group_name' => $group['name'],
+            'size_value' => $size['size_value'],
+            'size_label' => $size['size_label'],
+            'size_sort' => $size['size_sort'],
             'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
             'category_name' => $product->category
                 ? localized_name($product->category, 'name', '')

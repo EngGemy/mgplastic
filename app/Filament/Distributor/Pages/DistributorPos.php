@@ -9,6 +9,7 @@ use App\Models\ProductCategory;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\RetailDistributionPosService;
+use App\Support\ProductSizeSorter;
 use App\Support\StorePermissions;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -60,6 +61,9 @@ class DistributorPos extends Page
 
     public ?int $selectedCategoryId = null;
 
+    /** asc = 1 → 1.5 → 2 | desc = 2 → 1.5 → 1 */
+    public string $sizeOrder = 'asc';
+
     public string $search = '';
 
     /** @var array<string, array<string, mixed>> */
@@ -110,7 +114,7 @@ class DistributorPos extends Page
 
         $productIds = $stock->pluck('product_id')->toArray();
         $products = Product::whereIn('id', $productIds)
-            ->with(['translations', 'category.translations', 'images', 'tags'])
+            ->with(['translations', 'category.translations', 'images', 'tags', 'sizes'])
             ->get()
             ->keyBy('id');
 
@@ -140,6 +144,9 @@ class DistributorPos extends Page
                 'group_key' => $row['group_key'] ?? 'other',
                 'group_name' => $row['group_name'] ?? ($product->tags->first()?->name ?: 'أخرى'),
                 'product_type' => $row['product_type'] ?? null,
+                'size_value' => $row['size_value'] ?? null,
+                'size_label' => $row['size_label'] ?? null,
+                'size_sort' => $row['size_sort'] ?? null,
                 'points_per_unit' => $row['points_per_unit'],
                 'available_qty' => $row['available_qty'],
                 'image' => $imageUrl,
@@ -151,6 +158,11 @@ class DistributorPos extends Page
         return $this->stockCache;
     }
 
+    public function setSizeOrder(string $order): void
+    {
+        $this->sizeOrder = ProductSizeSorter::normalizeOrder($order);
+    }
+
     private function colorFromName(string $name): string
     {
         $colors = ['blue', 'green', 'amber', 'purple', 'teal', 'indigo', 'pink', 'red'];
@@ -160,6 +172,8 @@ class DistributorPos extends Page
 
     public function getFilteredStockProperty(): Collection
     {
+        $order = ProductSizeSorter::normalizeOrder($this->sizeOrder);
+
         return $this->stockRows()
             ->filter(fn ($row) => (float) ($row['points_per_unit'] ?? 0) > 0)
             ->when($this->selectedCategoryId, fn ($c) => $c->filter(
@@ -181,12 +195,7 @@ class DistributorPos extends Page
                     return str_contains(mb_strtolower((string) ($row['group_name'] ?? '')), $term);
                 });
             })
-            ->sortBy([
-                fn ($row) => (bool) ($row['is_accessories'] ?? false) ? 0 : 1,
-                fn ($row) => mb_strtolower((string) ($row['category_name'] ?? '')),
-                fn ($row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
-                fn ($row) => mb_strtolower((string) ($row['name'] ?? '')),
-            ])
+            ->sort(fn (array $a, array $b) => ProductSizeSorter::compareRows($a, $b, $order))
             ->values();
     }
 
@@ -195,31 +204,28 @@ class DistributorPos extends Page
      */
     public function getGroupedStockProperty(): Collection
     {
-        $rows = $this->filteredStock;
+        $order = ProductSizeSorter::normalizeOrder($this->sizeOrder);
+        $tree = app(NetworkInventoryService::class)
+            ->groupStockByCategoryThenTag($this->filteredStock, $order);
 
         if ($this->selectedCategoryId) {
-            return collect([
-                [
-                    'category_name' => null,
-                    'tags' => $rows
-                        ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
-                        ->sortKeys(),
-                ],
-            ]);
+            $tags = collect();
+            foreach ($tree as $cat) {
+                foreach ($cat['tags'] as $tag) {
+                    $tags[(string) $tag['name']] = collect($tag['items']);
+                }
+            }
+
+            return collect([['category_name' => null, 'tags' => $tags]]);
         }
 
-        return $rows
-            ->groupBy(fn ($r) => (string) ($r['category_name'] ?? 'بدون تصنيف'))
-            ->sortKeys()
-            ->map(fn (Collection $catRows, string $catName) => [
-                'category_name' => $catName,
-                'is_accessories' => (bool) ($catRows->first()['is_accessories'] ?? false),
-                'tags' => $catRows
-                    ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
-                    ->sortKeys(),
-            ])
-            ->sortByDesc(fn ($block) => (int) ($block['is_accessories'] ?? false))
-            ->values();
+        return collect($tree)->map(fn (array $cat) => [
+            'category_name' => $cat['category_name'],
+            'is_accessories' => (bool) ($cat['is_accessories'] ?? false),
+            'tags' => collect($cat['tags'])->mapWithKeys(
+                fn (array $tag) => [(string) $tag['name'] => collect($tag['items'])]
+            ),
+        ])->values();
     }
 
     public function getCartPointsProperty(): int

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\RetailDistributionPosService;
+use App\Support\ProductSizeSorter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -22,14 +23,19 @@ class PosController extends Controller
 
     public function stock(Request $request): JsonResponse
     {
-        $stock = $this->inventory->stockForWholesaler($request->user());
-        $items = $stock->values();
+        $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
+        $items = $this->inventory
+            ->sortStockByTag($this->inventory->stockForWholesaler($request->user()), $sizeOrder)
+            ->values();
 
         return $this->success([
             'items' => $items,
-            'groups' => $this->inventory->groupStockByTag($items),
-            'categories' => $this->inventory->groupStockByCategoryThenTag($items),
-        ], 'مخزون الجملة — تصنيف ثم تاج');
+            'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+            'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
+            'filters' => [
+                'size_order' => $sizeOrder,
+            ],
+        ], 'مخزون الجملة — تصنيف ثم تاج · ترتيب المقاس '.$sizeOrder);
     }
 
     public function checkout(Request $request): JsonResponse

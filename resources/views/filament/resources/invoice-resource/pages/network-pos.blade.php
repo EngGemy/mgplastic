@@ -94,6 +94,15 @@
                 <label class="pos-label">بحث في المخزن</label>
                 <input type="text" wire:model.live.debounce.300ms="search" class="pos-input" placeholder="ابحث بالاسم...">
             </div>
+            <div class="pos-header-field">
+                <label class="pos-label">ترتيب المقاس</label>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button type="button" wire:click="setSizeOrder('asc')"
+                        class="pos-cat-btn {{ ($this->sizeOrder ?? 'asc') === 'asc' ? 'pos-cat-btn--active' : '' }}">↑ صغير→كبير</button>
+                    <button type="button" wire:click="setSizeOrder('desc')"
+                        class="pos-cat-btn {{ ($this->sizeOrder ?? 'asc') === 'desc' ? 'pos-cat-btn--active' : '' }}">↓ كبير→صغير</button>
+                </div>
+            </div>
         </div>
 
         <div class="pos-body">

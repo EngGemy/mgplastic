@@ -123,6 +123,12 @@
             </div>
             <input type="text" wire:model.live.debounce.250ms="search"
                    class="pos-input" placeholder="🔍 ابحث بالاسم...">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button type="button" wire:click="setSizeOrder('asc')"
+                    class="pos-cat {{ $this->sizeOrder === 'asc' ? 'active' : '' }}">مقاس ↑ صغير→كبير</button>
+                <button type="button" wire:click="setSizeOrder('desc')"
+                    class="pos-cat {{ $this->sizeOrder === 'desc' ? 'active' : '' }}">مقاس ↓ كبير→صغير</button>
+            </div>
         </div>
 
         @if($cats->isNotEmpty())

@@ -342,6 +342,17 @@
                     </button>
                 </div>
 
+                <div class="pos-seg" style="margin-inline-start:8px">
+                    <button type="button" class="pos-seg-btn {{ $this->sizeOrder === 'asc' ? 'active' : '' }}"
+                        wire:click="setSizeOrder('asc')" title="من الأصغر للأكبر">
+                        مقاس ↑ صغير→كبير
+                    </button>
+                    <button type="button" class="pos-seg-btn {{ $this->sizeOrder === 'desc' ? 'active' : '' }}"
+                        wire:click="setSizeOrder('desc')" title="من الأكبر للأصغر">
+                        مقاس ↓ كبير→صغير
+                    </button>
+                </div>
+
                 <div class="pos-chips-row">
                     @if($stockFilter !== 'all')
                         <span class="pos-chip">

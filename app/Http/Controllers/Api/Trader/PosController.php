@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\PlumberDistributionPosService;
 use App\Services\RetailNetworkLinkService;
+use App\Support\ProductSizeSorter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -22,17 +23,23 @@ class PosController extends Controller
         protected RetailNetworkLinkService $links,
     ) {}
 
-    /** Own retail stock — categories → tags → products (ملحقات). */
+    /** Own retail stock — categories → tags → products (ملحقات), size-ordered. */
     public function stock(Request $request): JsonResponse
     {
+        $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
         $stock = $this->inventory->stockForRetailTrader($request->user());
-        $items = $stock->map(fn (array $row) => $this->mapOwnStockRow($row))->values();
+        $items = $this->inventory
+            ->sortStockByTag($stock->map(fn (array $row) => $this->mapOwnStockRow($row)), $sizeOrder)
+            ->values();
 
         return $this->success([
             'items' => $items,
-            'groups' => $this->inventory->groupStockByTag($items),
-            'categories' => $this->inventory->groupStockByCategoryThenTag($items),
-        ], 'مخزونك القطاعي — تصنيف ثم تاج');
+            'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+            'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
+            'filters' => [
+                'size_order' => $sizeOrder,
+            ],
+        ], 'مخزونك القطاعي — تصنيف ثم تاج · ترتيب المقاس '.$sizeOrder);
     }
 
     /**
@@ -49,27 +56,33 @@ class PosController extends Controller
             return $this->error('هذا الموزّع غير مرتبط بشبكتك', 403);
         }
 
+        $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
         $stock = $this->inventory->stockForWholesaler($wholesaler);
 
-        $items = $stock->map(fn (array $row) => [
-            'product_id' => (int) $row['product_id'],
-            'name' => $row['name'],
-            'image' => $row['image'] ?? null,
-            'image_url' => $row['image'] ?? null,
-            'category_id' => $row['category_id'] ?? null,
-            'category_name' => $row['category_name'] ?? null,
-            'is_accessories' => (bool) ($row['is_accessories'] ?? false),
-            'tags' => $row['tags'] ?? [],
-            'tag' => $row['tag'] ?? null,
-            'group_key' => $row['group_key'] ?? null,
-            'group_name' => $row['group_name'] ?? null,
-            'product_type' => $row['product_type'] ?? null,
-            'product_type_name' => $row['product_type_name'] ?? null,
-            'points_per_unit' => null,
-            'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
-            'available_qty' => (int) ($row['available_qty'] ?? 0),
-            'available_quantity' => (int) ($row['available_qty'] ?? 0),
-        ])->values();
+        $items = $this->inventory
+            ->sortStockByTag($stock->map(fn (array $row) => [
+                'product_id' => (int) $row['product_id'],
+                'name' => $row['name'],
+                'image' => $row['image'] ?? null,
+                'image_url' => $row['image'] ?? null,
+                'category_id' => $row['category_id'] ?? null,
+                'category_name' => $row['category_name'] ?? null,
+                'is_accessories' => (bool) ($row['is_accessories'] ?? false),
+                'tags' => $row['tags'] ?? [],
+                'tag' => $row['tag'] ?? null,
+                'group_key' => $row['group_key'] ?? null,
+                'group_name' => $row['group_name'] ?? null,
+                'product_type' => $row['product_type'] ?? null,
+                'product_type_name' => $row['product_type_name'] ?? null,
+                'size_value' => $row['size_value'] ?? null,
+                'size_label' => $row['size_label'] ?? null,
+                'size_sort' => $row['size_sort'] ?? null,
+                'points_per_unit' => null,
+                'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
+                'available_qty' => (int) ($row['available_qty'] ?? 0),
+                'available_quantity' => (int) ($row['available_qty'] ?? 0),
+            ]), $sizeOrder)
+            ->values();
 
         return $this->success([
             'wholesaler' => [
@@ -78,9 +91,12 @@ class PosController extends Controller
                 'phone' => $wholesaler->phone,
             ],
             'items' => $items,
-            'groups' => $this->inventory->groupStockByTag($items),
-            'categories' => $this->inventory->groupStockByCategoryThenTag($items),
-        ], 'مخزون الجملة — تصنيف ثم تاج');
+            'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+            'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
+            'filters' => [
+                'size_order' => $sizeOrder,
+            ],
+        ], 'مخزون الجملة — تصنيف ثم تاج · ترتيب المقاس '.$sizeOrder);
     }
 
     /** @param  array<string, mixed>  $row */
@@ -107,6 +123,9 @@ class PosController extends Controller
             'group_name' => $row['group_name'] ?? null,
             'product_type' => $row['product_type'] ?? null,
             'product_type_name' => $row['product_type_name'] ?? null,
+            'size_value' => isset($row['size_value']) ? (float) $row['size_value'] : null,
+            'size_label' => $row['size_label'] ?? null,
+            'size_sort' => isset($row['size_sort']) ? (float) $row['size_sort'] : null,
             // Per-unit points hidden — apps show cart/order totals only.
             'points_per_unit' => null,
             'has_points' => $ppu > 0,

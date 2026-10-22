@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\WalletAccount;
+use App\Support\ProductSizeSorter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -50,6 +51,7 @@ class NetworkInventoryService
                     'items.product.category.translations',
                     'items.product.category.parent.translations',
                     'items.product.tags',
+                    'items.product.sizes',
                     'distributions' => fn ($q) => $q
                         ->where('tier', 1)
                         ->where('to_user_id', $wholesaler->id)
@@ -112,6 +114,7 @@ class NetworkInventoryService
                 'items.invoiceItem.product.category.translations',
                 'items.invoiceItem.product.category.parent.translations',
                 'items.invoiceItem.product.tags',
+                'items.invoiceItem.product.sizes',
             ])
             ->orderBy('confirmed_at')
             ->orderBy('id')
@@ -204,6 +207,15 @@ class NetworkInventoryService
                 $category->loadMissing('translations', 'parent.translations');
             }
 
+            $size = ProductSizeSorter::resolve(
+                $product,
+                implode(' ', array_filter([
+                    $group['tag'] ?? null,
+                    $group['name'] ?? null,
+                    ...($group['tags'] ?? []),
+                ])),
+            );
+
             $byProduct[$productId] = [
                 'product_id' => $productId,
                 'name' => localized_name($product, 'name', "منتج #{$productId}"),
@@ -219,6 +231,9 @@ class NetworkInventoryService
                 'group_name' => $group['name'],
                 'product_type' => $group['product_type'],
                 'product_type_name' => $group['product_type_name'],
+                'size_value' => $size['size_value'],
+                'size_label' => $size['size_label'],
+                'size_sort' => $size['size_sort'],
                 'points_per_unit' => $pointsPerUnit,
                 'available_qty' => 0,
                 'available_points' => 0,
@@ -351,21 +366,17 @@ class NetworkInventoryService
     }
 
     /**
-     * Sort POS stock: category → tag → name (ملحقات خاصة).
+     * Sort POS stock: category → tag size (1 → 1.5) → product size → name.
      *
      * @param  Collection<int, array<string, mixed>>  $stock
      * @return Collection<int, array<string, mixed>>
      */
-    public function sortStockByTag(Collection $stock): Collection
+    public function sortStockByTag(Collection $stock, string $sizeOrder = 'asc'): Collection
     {
+        $sizeOrder = ProductSizeSorter::normalizeOrder($sizeOrder);
+
         return $stock
-            ->sortBy([
-                // Accessories categories first, then alpha category → tag → name.
-                fn (array $row) => (bool) ($row['is_accessories'] ?? false) ? 0 : 1,
-                fn (array $row) => mb_strtolower((string) ($row['category_name'] ?? '')),
-                fn (array $row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
-                fn (array $row) => mb_strtolower((string) ($row['name'] ?? '')),
-            ])
+            ->sort(fn (array $a, array $b) => ProductSizeSorter::compareRows($a, $b, $sizeOrder))
             ->values();
     }
 
@@ -373,31 +384,57 @@ class NetworkInventoryService
      * Flat tag groups (BC for mobile).
      *
      * @param  Collection<int, array<string, mixed>>  $stock
-     * @return list<array{key:string, tag:string, name:string, product_type:?string, items:list<array<string, mixed>>}>
+     * @return list<array{key:string, tag:string, name:string, product_type:?string, size_value:?float, items:list<array<string, mixed>>}>
      */
-    public function groupStockByTag(Collection $stock): array
+    public function groupStockByTag(Collection $stock, string $sizeOrder = 'asc'): array
     {
+        $sizeOrder = ProductSizeSorter::normalizeOrder($sizeOrder);
         $grouped = [];
 
-        foreach ($this->sortStockByTag($stock) as $row) {
+        foreach ($this->sortStockByTag($stock, $sizeOrder) as $row) {
             $key = (string) ($row['group_key'] ?? 'other');
             if (! isset($grouped[$key])) {
+                $tagName = (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى');
                 $grouped[$key] = [
                     'key' => $key,
-                    'tag' => (string) ($row['tag'] ?? $row['group_name'] ?? 'أخرى'),
-                    'name' => (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى'),
+                    'tag' => (string) ($row['tag'] ?? $tagName),
+                    'name' => $tagName,
                     'product_type' => $row['product_type'] ?? null,
+                    'size_value' => ProductSizeSorter::parse($tagName) ?? ($row['size_value'] ?? null),
                     'items' => [],
                 ];
             }
             $grouped[$key]['items'][] = $row;
         }
 
-        return array_values($grouped);
+        $list = array_values($grouped);
+        usort($list, function (array $a, array $b) use ($sizeOrder) {
+            return ProductSizeSorter::compareRows(
+                [
+                    'is_accessories' => true,
+                    'category_name' => '',
+                    'group_name' => $a['name'],
+                    'tag' => $a['tag'],
+                    'size_value' => $a['size_value'],
+                    'name' => $a['name'],
+                ],
+                [
+                    'is_accessories' => true,
+                    'category_name' => '',
+                    'group_name' => $b['name'],
+                    'tag' => $b['tag'],
+                    'size_value' => $b['size_value'],
+                    'name' => $b['name'],
+                ],
+                $sizeOrder,
+            );
+        });
+
+        return $list;
     }
 
     /**
-     * Accessories browse tree: Category → Tag → products (sorted under each other).
+     * Accessories browse tree: Category → Tag → products (size-ordered).
      *
      * @param  Collection<int, array<string, mixed>>  $stock
      * @return list<array{
@@ -405,14 +442,15 @@ class NetworkInventoryService
      *   category_name:string,
      *   is_accessories:bool,
      *   items_count:int,
-     *   tags: list<array{key:string, tag:string, name:string, product_type:?string, items_count:int, items:list<array<string, mixed>>}>
+     *   tags: list<array{key:string, tag:string, name:string, product_type:?string, size_value:?float, items_count:int, items:list<array<string, mixed>>}>
      * }>
      */
-    public function groupStockByCategoryThenTag(Collection $stock): array
+    public function groupStockByCategoryThenTag(Collection $stock, string $sizeOrder = 'asc'): array
     {
+        $sizeOrder = ProductSizeSorter::normalizeOrder($sizeOrder);
         $byCategory = [];
 
-        foreach ($this->sortStockByTag($stock) as $row) {
+        foreach ($this->sortStockByTag($stock, $sizeOrder) as $row) {
             $catId = (int) ($row['category_id'] ?? 0);
             $catKey = $catId > 0 ? (string) $catId : 'none';
 
@@ -428,11 +466,13 @@ class NetworkInventoryService
 
             $tagKey = (string) ($row['group_key'] ?? 'other');
             if (! isset($byCategory[$catKey]['tags'][$tagKey])) {
+                $tagName = (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى');
                 $byCategory[$catKey]['tags'][$tagKey] = [
                     'key' => $tagKey,
-                    'tag' => (string) ($row['tag'] ?? $row['group_name'] ?? 'أخرى'),
-                    'name' => (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى'),
+                    'tag' => (string) ($row['tag'] ?? $tagName),
+                    'name' => $tagName,
                     'product_type' => $row['product_type'] ?? null,
+                    'size_value' => ProductSizeSorter::parse($tagName) ?? ($row['size_value'] ?? null),
                     'items_count' => 0,
                     'items' => [],
                 ];
@@ -458,7 +498,29 @@ class NetworkInventoryService
         });
 
         foreach ($list as &$cat) {
-            $cat['tags'] = array_values($cat['tags']);
+            $tags = array_values($cat['tags']);
+            usort($tags, function (array $a, array $b) use ($sizeOrder) {
+                return ProductSizeSorter::compareRows(
+                    [
+                        'is_accessories' => true,
+                        'category_name' => '',
+                        'group_name' => $a['name'],
+                        'tag' => $a['tag'],
+                        'size_value' => $a['size_value'],
+                        'name' => $a['name'],
+                    ],
+                    [
+                        'is_accessories' => true,
+                        'category_name' => '',
+                        'group_name' => $b['name'],
+                        'tag' => $b['tag'],
+                        'size_value' => $b['size_value'],
+                        'name' => $b['name'],
+                    ],
+                    $sizeOrder,
+                );
+            });
+            $cat['tags'] = $tags;
         }
         unset($cat);
 
@@ -563,8 +625,10 @@ class NetworkInventoryService
      * @param  Collection<int, array<string, mixed>>  $items
      * @return array{groups: list<array<string, mixed>>, categories: list<array<string, mixed>>}
      */
-    public function groupCatalogBrowse(Collection $items): array
+    public function groupCatalogBrowse(Collection $items, string $sizeOrder = 'asc'): array
     {
+        $sizeOrder = ProductSizeSorter::normalizeOrder($sizeOrder);
+
         $normalized = $items->map(function (array $row) {
             $row['product_id'] = (int) ($row['product_id'] ?? $row['id'] ?? 0);
             $row['category_id'] = isset($row['category_id']) ? (int) $row['category_id'] : null;
@@ -577,13 +641,23 @@ class NetworkInventoryService
             $row['group_key'] = (string) ($row['group_key'] ?? 'other');
             $row['group_name'] = (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى');
             $row['tag'] = (string) ($row['tag'] ?? $row['group_name'] ?? 'أخرى');
+            if (! array_key_exists('size_value', $row) || $row['size_value'] === null) {
+                $size = ProductSizeSorter::resolve(null, implode(' ', array_filter([
+                    $row['group_name'] ?? null,
+                    $row['tag'] ?? null,
+                    $row['name'] ?? null,
+                ])));
+                $row['size_value'] = $size['size_value'];
+                $row['size_label'] = $row['size_label'] ?? $size['size_label'];
+                $row['size_sort'] = $size['size_sort'];
+            }
 
             return $row;
         });
 
         return [
-            'groups' => $this->groupStockByTag($normalized),
-            'categories' => $this->groupStockByCategoryThenTag($normalized),
+            'groups' => $this->groupStockByTag($normalized, $sizeOrder),
+            'categories' => $this->groupStockByCategoryThenTag($normalized, $sizeOrder),
         ];
     }
 }
