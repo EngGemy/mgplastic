@@ -197,16 +197,17 @@ class DomainEventNotifier
 
     public function distributionConfirmed(InvoiceDistribution $distribution): void
     {
-        $distribution->loadMissing(['invoice', 'plumber']);
+        $distribution->loadMissing(['invoice', 'toUser']);
 
-        if (! $distribution->plumber) {
+        $recipient = $distribution->toUser;
+        if (! $recipient) {
             return;
         }
 
         $invoice = $distribution->invoice;
         $number = $invoice?->number ?? $invoice?->serial_number ?? ('#'.($invoice?->id ?? $distribution->id));
 
-        $this->notifyDomain($distribution->plumber, NotificationType::InvoiceApproved, [
+        $this->notifyDomain($recipient, NotificationType::InvoiceApproved, [
             'invoice_number' => (string) $number,
             'invoice_id' => (int) ($invoice?->id ?? 0),
             'entity_id' => (int) $distribution->id,
@@ -223,12 +224,12 @@ class DomainEventNotifier
 
     public function distributionPointsAwarded(InvoiceDistribution $distribution, int $points): void
     {
-        $distribution->loadMissing('plumber');
-        if (! $distribution->plumber) {
+        $distribution->loadMissing('toUser');
+        if (! $distribution->toUser) {
             return;
         }
 
-        $this->pointsAwarded($distribution->plumber, $points, [
+        $this->pointsAwarded($distribution->toUser, $points, [
             'distribution_id' => $distribution->id,
             'entity_id' => $distribution->id,
             'invoice_id' => $distribution->invoice_id,
