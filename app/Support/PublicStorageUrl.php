@@ -5,11 +5,17 @@ namespace App\Support;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Build public storage URLs only when the file actually exists.
- * Missing files → null (never a 404 URL for mobile clients).
+ * Build public storage URLs only when the file is web-reachable.
+ * Missing / unlinked files → null (never a 404 URL for mobile clients).
  */
 final class PublicStorageUrl
 {
+    /** @deprecated Use try() — kept so older call sites never 500. */
+    public static function make(?string $path): ?string
+    {
+        return self::try($path);
+    }
+
     public static function try(?string $path): ?string
     {
         if (! filled($path)) {
@@ -26,9 +32,7 @@ final class PublicStorageUrl
                 return $path;
             }
 
-            return Storage::disk('public')->exists($relative)
-                ? Storage::disk('public')->url($relative)
-                : null;
+            return self::publicUrlIfReachable($relative);
         }
 
         $path = ltrim(str_replace('\\', '/', $path), '/');
@@ -38,8 +42,8 @@ final class PublicStorageUrl
             $path = substr($path, strlen('storage/'));
         }
 
+        // Optional fallback under public/images (product-type icons, etc.)
         if (! Storage::disk('public')->exists($path)) {
-            // Optional fallback under public/images (product-type icons, etc.)
             $publicFile = public_path('images/'.$path);
             if (is_file($publicFile)) {
                 return asset('images/'.$path);
@@ -48,7 +52,28 @@ final class PublicStorageUrl
             return null;
         }
 
-        return Storage::disk('public')->url($path);
+        return self::publicUrlIfReachable($path);
+    }
+
+    /**
+     * File must exist on the public disk AND be reachable via /storage/…
+     * (covers missing `php artisan storage:link` which otherwise yields HTTP 404).
+     */
+    protected static function publicUrlIfReachable(string $relative): ?string
+    {
+        $relative = ltrim(str_replace('\\', '/', $relative), '/');
+
+        if ($relative === '' || ! Storage::disk('public')->exists($relative)) {
+            return null;
+        }
+
+        // Must be reachable via /storage/… (missing storage:link ⇒ HTTP 404 for clients).
+        $webPath = public_path('storage/'.$relative);
+        if (! is_file($webPath)) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($relative);
     }
 
     /**

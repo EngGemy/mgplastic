@@ -89,9 +89,19 @@ class MobileHomeWholesaleApiTest extends TestCase
 
     public function test_home_highlights_and_slider_overlay_fields(): void
     {
+        \Illuminate\Support\Facades\Storage::fake('public');
+        \Illuminate\Support\Facades\Storage::disk('public')->put('sliders/home-hero.jpg', 'fake-image');
+
+        // Ensure public/storage path is considered reachable in tests.
+        $link = public_path('storage');
+        if (! is_link($link) && ! is_dir($link)) {
+            @mkdir($link, 0777, true);
+        }
+        @file_put_contents(public_path('storage/sliders/home-hero.jpg'), 'fake-image');
+
         Slider::query()->create([
             'type' => 'home',
-            'image' => '',
+            'image' => 'sliders/home-hero.jpg',
             'title' => 'مواسير MG',
             'description' => 'نظام أوروبي ونظام أمريكي',
             'cta_primary_text' => 'استعرض المنتجات',
@@ -100,16 +110,61 @@ class MobileHomeWholesaleApiTest extends TestCase
             'sort_order' => 1,
         ]);
 
+        // Broken / empty image → omitted from API (no null image rows).
+        Slider::query()->create([
+            'type' => 'home',
+            'image' => 'sliders/missing.jpg',
+            'title' => 'بدون صورة',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        $eu = ProductCategory::query()->create(['slug' => 'eu-pipes']);
+        $eu->translateOrNew('ar')->name = 'حسب النظام الاوروبي';
+        $eu->save();
+
         $this->getJson('/api/v1/mobile/home/highlights')
             ->assertOk()
             ->assertJsonFragment(['key' => 'projects', 'label' => 'المشاريع'])
             ->assertJsonFragment(['key' => 'sewage'])
-            ->assertJsonFragment(['key' => 'drinking_water']);
+            ->assertJsonFragment(['key' => 'drinking_water'])
+            ->assertJsonPath('data.2.key', 'drinking_water')
+            ->assertJsonPath('data.2.category_id', $eu->id);
 
         $this->getJson('/api/v1/sliders/home')
             ->assertOk()
+            ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.title', 'مواسير MG')
             ->assertJsonPath('data.0.subtitle', 'نظام أوروبي ونظام أمريكي')
             ->assertJsonPath('data.0.button_text', 'استعرض المنتجات');
+    }
+
+    public function test_promo_banners_between_plumbers_stores_does_not_500(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('public');
+
+        \App\Models\PromoBanner::query()->create([
+            'title' => 'عرض تجريبي',
+            'subtitle' => 'بين السباكين والمتاجر',
+            'image_path' => 'promo-banners/missing.png',
+            'section' => \App\Models\PromoBanner::SECTION_BETWEEN_PLUMBERS_STORES,
+            'link_type' => 'product',
+            'link_id' => 12,
+            'sort_order' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->getJson('/api/v1/mobile/promo-banners?section=between_plumbers_stores')
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.section', 'between_plumbers_stores')
+            ->assertJsonPath('data.items.0.title', 'عرض تجريبي')
+            ->assertJsonPath('data.items.0.image_url', null)
+            ->assertJsonPath('data.items.0.link.type', 'product')
+            ->assertJsonPath('data.items.0.link.id', 12);
+
+        $this->getJson('/api/v1/mobile/promo-banners')
+            ->assertOk()
+            ->assertJsonPath('data.section', 'between_plumbers_stores');
     }
 }

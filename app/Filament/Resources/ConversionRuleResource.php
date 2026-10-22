@@ -155,15 +155,7 @@ class ConversionRuleResource extends Resource
                             ->step(0.01)
                             ->default(0)
                             ->suffix('د.ل')
-                            ->dehydrated(false)
-                            ->afterStateHydrated(function ($component, $state, ?ConversionRule $record) {
-                                if ($state !== null && $state !== '') {
-                                    return;
-                                }
-                                if ($record?->fee_fixed_cents) {
-                                    $component->state(number_format($record->fee_fixed_cents / 100, 2, '.', ''));
-                                }
-                            }),
+                            ->dehydrated(),
                     ]),
                 ]),
         ]);

@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AdminOnlyResource;
 use App\Filament\Resources\BadgeResource\Pages;
+use App\Filament\Resources\BadgeResource\RelationManagers;
 use App\Models\Badge;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -135,27 +136,29 @@ class BadgeResource extends Resource
                                     ->columnSpan(4),
 
                                 Forms\Components\Toggle::make('is_active')
-                                    ->label('مفعّلة ومنحها للسباكين')
+                                    ->label('مفعّلة في الكتالوج')
+                                    ->helperText('إن أوقفتها لن تظهر للسباك ولن تُمنح تلقائياً — المنح اليدوي يبقى متاحاً للإدارة.')
                                     ->default(true)
                                     ->live()
                                     ->inline(false)
                                     ->columnSpanFull(),
                             ]),
 
-                        Forms\Components\Section::make('معيار الفوز')
-                            ->description('متى تُمنح الشارة تلقائيًا عند تقييم السمعة.')
+                        Forms\Components\Section::make('معيار الفوز / المنح')
+                            ->description('اختر: منح يدوي من اللوحة فقط، أو معيار تلقائي عند تحقق الشرط. يمكنك دائماً منح أي شارة يدوياً من تبويب المستلمين.')
                             ->icon('heroicon-o-adjustments-horizontal')
                             ->columns(12)
                             ->schema([
                                 Forms\Components\Select::make('rule_type')
-                                    ->label('نوع المعيار')
+                                    ->label('كيف تُمنح؟')
                                     ->required()
                                     ->native(false)
                                     ->live()
                                     ->options(self::ruleTypeOptions())
                                     ->dehydrated(false)
+                                    ->helperText('«منح يدوي فقط» = أنت تطبّقها بنفسك من اللوحة. باقي الأنواع تُقيَّم تلقائياً ويمكنك أيضاً منحها يدوياً.')
                                     ->afterStateHydrated(function (Forms\Components\Select $component, ?Badge $record) {
-                                        $component->state((string) data_get($record?->rule, 'type', 'orders_min'));
+                                        $component->state((string) data_get($record?->rule, 'type', 'manual'));
                                     })
                                     ->columnSpan(6),
 
@@ -261,6 +264,10 @@ class BadgeResource extends Resource
                         $min = data_get($state, 'min');
                         $label = self::ruleTypeOptions()[$type] ?? $type;
 
+                        if ($type === 'manual') {
+                            return 'يدوي فقط';
+                        }
+
                         return $min !== null && $min !== '' ? "{$label} · {$min}" : $label;
                     })
                     ->wrap()
@@ -276,6 +283,14 @@ class BadgeResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('sort_order')
+            ->emptyStateHeading('لا شارات بعد')
+            ->emptyStateDescription('أنشئ أول شارة بمعيار فوز واضح — تُمنح تلقائياً عند تحقق الشرط.')
+            ->emptyStateIcon('heroicon-o-trophy')
+            ->emptyStateActions([
+                Tables\Actions\CreateAction::make()
+                    ->label('شارة جديدة')
+                    ->icon('heroicon-o-plus'),
+            ])
             ->filters([
                 Tables\Filters\SelectFilter::make('tier')
                     ->label('الندرة')
@@ -303,6 +318,13 @@ class BadgeResource extends Resource
             'index' => Pages\ListBadges::route('/'),
             'create' => Pages\CreateBadge::route('/create'),
             'edit' => Pages\EditBadge::route('/{record}/edit'),
+        ];
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\RecipientsRelationManager::class,
         ];
     }
 
@@ -345,6 +367,7 @@ class BadgeResource extends Resource
     public static function ruleTypeOptions(): array
     {
         return [
+            'manual' => 'منح يدوي فقط (من لوحة الإدارة)',
             'first_order' => 'أول طلب / توزيع',
             'orders_min' => 'حد أدنى لعدد الطلبات',
             'points_min' => 'حد أدنى للنقاط',
@@ -381,14 +404,15 @@ class BadgeResource extends Resource
     public static function ruleHint(string $type): string
     {
         return match ($type) {
-            'first_order' => 'تُمنح عند أول توزيع مؤكد للسباك (tier 3).',
+            'manual' => 'لن تُمنح تلقائياً أبداً. أنت تضبطها وتطبّقها يدوياً من تبويب «السباكون الحاصلون» أو من لوحة السمعة.',
+            'first_order' => 'تُمنح عند أول توزيع مؤكد للسباك (tier 3). يمكنك أيضاً منحها يدوياً.',
             'orders_min' => 'تُحسب التوزيعات المؤكدة للسباك فقط.',
             'points_min' => 'يُقارن برصيد نقاط محفظة السباك الحالي.',
             'streak_min' => 'يعتمد على سلسلة الأسابيع النشطة في السمعة.',
             'level_min' => 'برونزي → فضي → ذهبي → ماسي.',
             'warranty_min' => 'عدد الضمانات الصادرة باسم السباك.',
             'no_returns_30d' => 'يتطلب طلبًا واحدًا على الأقل وغياب مرتجعات مقبولة خلال 30 يومًا.',
-            'early_bird', 'mg_loyal', 'big_basket' => 'المعيار معرّف في الكتالوج وسيُفعَّل لاحقًا ببيانات أغنى — يمكن حفظ الشارة الآن.',
+            'early_bird', 'mg_loyal', 'big_basket' => 'المعيار معرّف في الكتالوج وسيُفعَّل لاحقًا ببيانات أغنى — يمكن حفظ الشارة الآن أو منحها يدوياً.',
             default => 'اختر معيارًا مناسبًا لسلوك السباك المراد مكافأته.',
         };
     }

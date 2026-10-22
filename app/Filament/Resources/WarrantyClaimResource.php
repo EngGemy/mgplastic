@@ -118,6 +118,15 @@ class WarrantyClaimResource extends Resource
                 Tables\Columns\TextColumn::make('created_at')->label('تاريخ')->dateTime()->sortable(),
             ])
             ->defaultSort('created_at', 'desc')
+            ->emptyStateHeading('لا مطالبات بعد')
+            ->emptyStateDescription('المطالبات تُفتح من التطبيق عندما يبلّغ العميل عن مشكلة على ضمان ساري. هنا تعالج الحالة وتوثّق القرار فقط.')
+            ->emptyStateIcon('heroicon-o-exclamation-triangle')
+            ->emptyStateActions([
+                Tables\Actions\Action::make('warranties')
+                    ->label('سجل الضمانات')
+                    ->icon('heroicon-o-shield-check')
+                    ->url(fn () => WarrantyResource::getUrl('index')),
+            ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options([
                     'open' => 'مفتوحة',

@@ -154,21 +154,79 @@ class Product extends Model
             return $query;
         }
 
-        $like = '%'.$term.'%';
+        $variants = self::searchTermVariants($term);
 
-        return $query->where(function (Builder $q) use ($like, $term) {
-            $q->whereHas('translations', function (Builder $t) use ($like) {
-                $t->where('name', 'like', $like)
-                    ->orWhere('description', 'like', $like)
-                    ->orWhere('usage', 'like', $like);
-            })
-                ->orWhereHas('category.translations', fn (Builder $t) => $t->where('name', 'like', $like))
-                ->orWhereHas('category.parent.translations', fn (Builder $t) => $t->where('name', 'like', $like))
-                ->orWhere('classification', 'like', $like)
-                ->orWhere('notes', 'like', $like)
-                ->orWhereHas('tags', fn (Builder $t) => $t->where('name', 'like', $like))
-                ->orWhere('id', is_numeric($term) ? (int) $term : 0);
+        return $query->where(function (Builder $q) use ($variants, $term) {
+            foreach ($variants as $variant) {
+                $like = '%'.$variant.'%';
+                $q->orWhere(function (Builder $inner) use ($like, $variant) {
+                    $inner->whereHas('translations', function (Builder $t) use ($like) {
+                        $t->where('name', 'like', $like)
+                            ->orWhere('description', 'like', $like)
+                            ->orWhere('usage', 'like', $like);
+                    })
+                        ->orWhereHas('category.translations', fn (Builder $t) => $t->where('name', 'like', $like))
+                        ->orWhereHas('category.parent.translations', fn (Builder $t) => $t->where('name', 'like', $like))
+                        ->orWhere('classification', 'like', $like)
+                        ->orWhere('notes', 'like', $like)
+                        ->orWhereHas('tags', fn (Builder $t) => $t->where('name', 'like', $like))
+                        ->orWhereHas('sizes', function (Builder $s) use ($like) {
+                            $s->where('code', 'like', $like)
+                                ->orWhere('label_ar', 'like', $like)
+                                ->orWhere('label_en', 'like', $like);
+                        })
+                        ->orWhere('id', is_numeric($variant) ? (int) $variant : 0);
+                });
+            }
+
+            // Keep exact original term match even if not in variants (safety).
+            if (! in_array($term, $variants, true)) {
+                $like = '%'.$term.'%';
+                $q->orWhereHas('translations', fn (Builder $t) => $t->where('name', 'like', $like));
+            }
         });
+    }
+
+    /**
+     * Arabic-tolerant search variants (همزة / تاء مربوطة) + lowercase latin.
+     *
+     * @return list<string>
+     */
+    public static function searchTermVariants(string $term): array
+    {
+        $term = trim($term);
+        if ($term === '') {
+            return [];
+        }
+
+        $normalized = self::normalizeArabicSearch($term);
+        $variants = [
+            $term,
+            mb_strtolower($term),
+            $normalized,
+            mb_strtolower($normalized),
+            str_replace('ه', 'ة', $normalized),
+            str_replace('ة', 'ه', $term),
+            str_replace('ا', 'أ', $normalized),
+            str_replace('ا', 'إ', $normalized),
+            str_replace('ا', 'آ', $normalized),
+            str_replace(['أ', 'إ', 'آ'], 'ا', $term),
+        ];
+
+        return array_values(array_unique(array_filter($variants)));
+    }
+
+    public static function normalizeArabicSearch(string $value): string
+    {
+        $value = trim($value);
+        $map = [
+            'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ٱ' => 'ا',
+            'ى' => 'ي', 'ئ' => 'ي', 'ؤ' => 'و',
+            'ة' => 'ه',
+            'ً' => '', 'ٌ' => '', 'ٍ' => '', 'َ' => '', 'ُ' => '', 'ِ' => '', 'ّ' => '', 'ْ' => '',
+        ];
+
+        return strtr($value, $map);
     }
 
     // --- Accessors & Helpers ---

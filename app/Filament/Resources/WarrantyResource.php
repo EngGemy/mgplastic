@@ -107,6 +107,15 @@ class WarrantyResource extends Resource
                 Tables\Columns\TextColumn::make('issued_at')->label('الإصدار')->date(),
                 Tables\Columns\TextColumn::make('expires_at')->label('الانتهاء')->date(),
             ])
+            ->emptyStateHeading('لا ضمانات صادرة بعد')
+            ->emptyStateDescription('الضمانات تظهر هنا تلقائياً عندما يصدر سباك مؤهّل ضماناً من التطبيق. اضبط العتبات من استوديو السمعة والضمان.')
+            ->emptyStateIcon('heroicon-o-shield-check')
+            ->emptyStateActions([
+                Tables\Actions\Action::make('policy')
+                    ->label('سياسة الإصدار')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->url(fn () => \App\Filament\Pages\ReputationWarrantySettings::getUrl()),
+            ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options([
                     'active' => 'ساري', 'expired' => 'منتهٍ', 'revoked' => 'ملغى', 'claimed' => 'مطالبة',

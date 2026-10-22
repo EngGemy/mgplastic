@@ -71,7 +71,7 @@ class DatabaseNotificationResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('notifiable_id')
                     ->label('المستلم')
-                    ->formatStateUsing(fn (DatabaseNotification $r) => $r->notifiableName())
+                    ->getStateUsing(fn (DatabaseNotification $record) => $record->notifiableName())
                     ->searchable(query: function (Builder $query, string $search): Builder {
                         return $query->whereHasMorph('notifiable', [User::class], function (Builder $q) use ($search) {
                             $q->where('name', 'like', "%{$search}%")
@@ -81,7 +81,7 @@ class DatabaseNotificationResource extends Resource
                     ->wrap(),
                 Tables\Columns\TextColumn::make('data.title')
                     ->label('العنوان')
-                    ->formatStateUsing(fn (DatabaseNotification $r) => $r->title())
+                    ->getStateUsing(fn (DatabaseNotification $record) => $record->title())
                     ->weight('bold')
                     ->limit(36)
                     ->searchable(query: function (Builder $query, string $search): Builder {
@@ -89,19 +89,19 @@ class DatabaseNotificationResource extends Resource
                     }),
                 Tables\Columns\TextColumn::make('data.body')
                     ->label('المحتوى')
-                    ->formatStateUsing(fn (DatabaseNotification $r) => $r->body())
+                    ->getStateUsing(fn (DatabaseNotification $record) => $record->body())
                     ->limit(40)
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('data.status')
                     ->label('النوع')
                     ->badge()
-                    ->formatStateUsing(fn (DatabaseNotification $r) => match ($r->status()) {
+                    ->getStateUsing(fn (DatabaseNotification $record) => match ($record->status()) {
                         'success' => 'نجاح',
                         'warning' => 'تحذير',
                         'danger' => 'تنبيه',
                         default => 'معلومة',
                     })
-                    ->color(fn (DatabaseNotification $r) => match ($r->status()) {
+                    ->color(fn (DatabaseNotification $record) => match ($record->status()) {
                         'success' => 'success',
                         'warning' => 'warning',
                         'danger' => 'danger',
@@ -109,14 +109,14 @@ class DatabaseNotificationResource extends Resource
                     }),
                 Tables\Columns\TextColumn::make('data.entity_type')
                     ->label('الكيان')
-                    ->formatStateUsing(fn (DatabaseNotification $r) => $r->entityType() ?: '—')
+                    ->getStateUsing(fn (DatabaseNotification $record) => $record->entityType() ?: '—')
                     ->badge()
                     ->color('gray')
                     ->toggleable(),
                 Tables\Columns\IconColumn::make('read_at')
                     ->label('مقروء')
                     ->boolean()
-                    ->getStateUsing(fn (DatabaseNotification $r) => $r->read_at !== null),
+                    ->getStateUsing(fn (DatabaseNotification $record) => $record->read_at !== null),
                 Tables\Columns\TextColumn::make('notifiable.role')
                     ->label('الدور')
                     ->formatStateUsing(fn ($state) => UserRoles::label($state))
@@ -186,19 +186,19 @@ class DatabaseNotificationResource extends Resource
                     Infolists\Components\TextEntry::make('id')->label('المعرّف'),
                     Infolists\Components\TextEntry::make('created_at')->label('أُنشئ')->dateTime('Y-m-d H:i:s'),
                     Infolists\Components\TextEntry::make('read_at')->label('قُرئ')->dateTime('Y-m-d H:i:s')->placeholder('غير مقروء'),
-                    Infolists\Components\TextEntry::make('notifiable_id')
+                    Infolists\Components\TextEntry::make('recipient')
                         ->label('المستلم')
-                        ->formatStateUsing(fn (DatabaseNotification $r) => $r->notifiableName()),
-                    Infolists\Components\TextEntry::make('data.title')
+                        ->getStateUsing(fn (DatabaseNotification $record) => $record->notifiableName()),
+                    Infolists\Components\TextEntry::make('title')
                         ->label('العنوان')
-                        ->formatStateUsing(fn (DatabaseNotification $r) => $r->title()),
-                    Infolists\Components\TextEntry::make('data.body')
+                        ->getStateUsing(fn (DatabaseNotification $record) => $record->title()),
+                    Infolists\Components\TextEntry::make('body')
                         ->label('المحتوى')
-                        ->formatStateUsing(fn (DatabaseNotification $r) => $r->body() ?: '—')
+                        ->getStateUsing(fn (DatabaseNotification $record) => $record->body() ?: '—')
                         ->columnSpanFull(),
-                    Infolists\Components\TextEntry::make('data.status')
+                    Infolists\Components\TextEntry::make('status')
                         ->label('الحالة')
-                        ->formatStateUsing(fn (DatabaseNotification $r) => $r->status()),
+                        ->getStateUsing(fn (DatabaseNotification $record) => $record->status()),
                     Infolists\Components\TextEntry::make('type')->label('صنف النظام')->limit(60),
                 ])
                 ->columns(2),
@@ -206,7 +206,13 @@ class DatabaseNotificationResource extends Resource
                 ->schema([
                     Infolists\Components\TextEntry::make('data')
                         ->label('JSON')
-                        ->formatStateUsing(fn ($state) => json_encode($state, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT))
+                        ->formatStateUsing(function ($state) {
+                            if (is_string($state)) {
+                                return $state;
+                            }
+
+                            return json_encode($state, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?: '—';
+                        })
                         ->columnSpanFull(),
                 ])
                 ->collapsed(),

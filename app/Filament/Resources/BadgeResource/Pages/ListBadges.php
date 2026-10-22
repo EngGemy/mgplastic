@@ -10,6 +10,8 @@ class ListBadges extends ListRecords
 {
     protected static string $resource = BadgeResource::class;
 
+    protected static string $view = 'filament.resources.badges.list';
+
     public function getTitle(): string
     {
         return 'شارات السباكين';
@@ -22,7 +24,7 @@ class ListBadges extends ListRecords
 
     public function getSubheading(): ?string
     {
-        return 'كتالوج الشارات التلقائية لنظام السمعة والنقاط.';
+        return 'كل شارة لها معيار فوز تلقائي — عرّف الخطة هنا.';
     }
 
     protected function getHeaderActions(): array

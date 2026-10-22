@@ -40,7 +40,10 @@ class SliderController extends Controller
             $query->where('type', $type);
         }
 
-        $sliders = $query->latest('id')->get()->map(fn ($s) => $this->format($s));
+        $sliders = $query->latest('id')->get()
+            ->filter(fn (Slider $s) => $s->hasValidImage())
+            ->map(fn ($s) => $this->format($s))
+            ->values();
 
         return response()->json([
             'status'  => true,
@@ -55,7 +58,9 @@ class SliderController extends Controller
         $sliders = Slider::where('type', 'home')
             ->latest('id')
             ->get()
-            ->map(fn ($s) => $this->format($s));
+            ->filter(fn (Slider $s) => $s->hasValidImage())
+            ->map(fn ($s) => $this->format($s))
+            ->values();
 
         return response()->json([
             'status'  => true,
@@ -70,7 +75,9 @@ class SliderController extends Controller
         $sliders = Slider::where('type', 'store')
             ->latest('id')
             ->get()
-            ->map(fn ($s) => $this->format($s));
+            ->filter(fn (Slider $s) => $s->hasValidImage())
+            ->map(fn ($s) => $this->format($s))
+            ->values();
 
         return response()->json([
             'status'  => true,

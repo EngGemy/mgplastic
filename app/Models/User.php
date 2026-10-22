@@ -161,6 +161,15 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         return $this->hasMany(PushToken::class);
     }
 
+    /**
+     * Use the app DatabaseNotification model so Filament/admin helpers resolve consistently.
+     */
+    public function notifications()
+    {
+        return $this->morphMany(DatabaseNotification::class, 'notifiable')
+            ->orderByDesc('created_at');
+    }
+
     public function notificationInbox(): HasMany
     {
         return $this->hasMany(NotificationInbox::class);

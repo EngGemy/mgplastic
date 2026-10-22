@@ -61,7 +61,7 @@ class ProductCollection extends Model
 
     public function coverImageUrl(): ?string
     {
-        return PublicStorageUrl::make($this->cover_image);
+        return PublicStorageUrl::try($this->cover_image);
     }
 
     public function kindLabel(): string

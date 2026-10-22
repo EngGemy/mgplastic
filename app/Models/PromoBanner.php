@@ -32,7 +32,7 @@ class PromoBanner extends Model
 
     public function imageUrl(): ?string
     {
-        return PublicStorageUrl::make($this->image_path);
+        return PublicStorageUrl::try($this->image_path);
     }
 
     protected function setImagePathAttribute(mixed $value): void

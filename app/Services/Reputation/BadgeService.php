@@ -35,6 +35,9 @@ class BadgeService
         $awarded = [];
 
         foreach (Badge::query()->where('is_active', true)->orderBy('sort_order')->get() as $badge) {
+            if ($this->isManualOnly($badge)) {
+                continue;
+            }
             if (UserBadge::query()->where('user_id', $plumber->id)->where('badge_id', $badge->id)->exists()) {
                 continue;
             }
@@ -42,29 +45,79 @@ class BadgeService
                 continue;
             }
 
-            UserBadge::query()->create([
-                'user_id' => $plumber->id,
-                'badge_id' => $badge->id,
-                'awarded_at' => now(),
-                'source_type' => $event,
-                'source_id' => $sourceId,
-            ]);
-
-            $payload = [
-                'id' => $badge->id,
-                'key' => $badge->key,
-                'name_ar' => $badge->name_ar,
-                'tier' => $badge->tier,
-                'icon' => $badge->icon,
-            ];
-            $awarded[] = $payload;
-
-            if (in_array($badge->tier, ['rare', 'epic', 'legendary'], true)) {
-                $this->notifyBadge($plumber, $badge);
+            $payload = $this->award($plumber, $badge, $event, $sourceId, notify: true);
+            if ($payload) {
+                $awarded[] = $payload;
             }
         }
 
         return $awarded;
+    }
+
+    /**
+     * منح شارة يدوياً من لوحة الإدارة (يتجاوز معيار الفوز التلقائي).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function grant(User $plumber, Badge $badge, bool $notify = true, string $source = 'admin_manual'): ?array
+    {
+        if ($plumber->role !== 'plumber') {
+            return null;
+        }
+
+        if (UserBadge::query()->where('user_id', $plumber->id)->where('badge_id', $badge->id)->exists()) {
+            return null;
+        }
+
+        return $this->award($plumber, $badge, $source, auth()->id(), notify: $notify);
+    }
+
+    public function revoke(User $plumber, Badge $badge): bool
+    {
+        return UserBadge::query()
+            ->where('user_id', $plumber->id)
+            ->where('badge_id', $badge->id)
+            ->delete() > 0;
+    }
+
+    public function isManualOnly(Badge $badge): bool
+    {
+        $type = (string) data_get($badge->rule, 'type', '');
+
+        return $type === 'manual';
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function award(User $plumber, Badge $badge, string $event, ?int $sourceId, bool $notify): ?array
+    {
+        UserBadge::query()->create([
+            'user_id' => $plumber->id,
+            'badge_id' => $badge->id,
+            'awarded_at' => now(),
+            'source_type' => $event,
+            'source_id' => $sourceId,
+        ]);
+
+        $payload = [
+            'id' => $badge->id,
+            'key' => $badge->key,
+            'name_ar' => $badge->name_ar,
+            'tier' => $badge->tier,
+            'icon' => $badge->icon,
+        ];
+
+        $shouldNotify = $notify && (
+            $event === 'admin_manual'
+            || in_array($badge->tier, ['rare', 'epic', 'legendary'], true)
+        );
+
+        if ($shouldNotify) {
+            $this->notifyBadge($plumber, $badge);
+        }
+
+        return $payload;
     }
 
     /** @return array<string, mixed> */
@@ -95,6 +148,7 @@ class BadgeService
         $type = (string) ($rule['type'] ?? $badge->key);
 
         return match ($type) {
+            'manual' => false, // تُمنح فقط من لوحة الإدارة
             'first_order', 'orders_min' => $ctx['orders'] >= (int) ($rule['min'] ?? 1),
             'points_min' => $ctx['points'] >= (int) ($rule['min'] ?? 1000),
             'streak_min' => $ctx['streak'] >= (int) ($rule['min'] ?? 4),

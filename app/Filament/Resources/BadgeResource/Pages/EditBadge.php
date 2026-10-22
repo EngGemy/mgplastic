@@ -3,8 +3,13 @@
 namespace App\Filament\Resources\BadgeResource\Pages;
 
 use App\Filament\Resources\BadgeResource;
+use App\Models\User;
+use App\Services\Reputation\BadgeService;
 use Filament\Actions;
+use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Database\Eloquent\Builder;
 
 class EditBadge extends EditRecord
 {
@@ -22,12 +27,66 @@ class EditBadge extends EditRecord
 
     public function getSubheading(): ?string
     {
-        return 'المفتاح: '.$this->record->key.' — غيّر المظهر أو معيار الفوز دون كسر الشارات الممنوحة سابقًا.';
+        return 'اضبط الهوية والمظهر والمعيار بالتفصيل — ثم امنحها يدوياً من التبويب أو الزر أعلاه.';
     }
 
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('grant')
+                ->label('منح لسباك الآن')
+                ->icon('heroicon-o-gift')
+                ->color('success')
+                ->form([
+                    Forms\Components\Select::make('user_id')
+                        ->label('السباك')
+                        ->searchable()
+                        ->preload()
+                        ->required()
+                        ->getSearchResultsUsing(function (string $search) {
+                            return User::query()
+                                ->where('role', User::ROLE_PLUMBER)
+                                ->where(function (Builder $q) use ($search) {
+                                    $q->where('name', 'like', "%{$search}%")
+                                        ->orWhere('phone', 'like', "%{$search}%");
+                                })
+                                ->orderBy('name')
+                                ->limit(50)
+                                ->get()
+                                ->mapWithKeys(fn (User $u) => [
+                                    $u->id => trim($u->name.' · '.($u->phone ?: '#'.$u->id)),
+                                ])
+                                ->all();
+                        })
+                        ->getOptionLabelUsing(fn ($value) => optional(User::find($value))->name),
+                    Forms\Components\Toggle::make('notify')
+                        ->label('إشعار واتساب')
+                        ->default(true),
+                ])
+                ->action(function (array $data) {
+                    $plumber = User::query()->findOrFail((int) $data['user_id']);
+                    $granted = app(BadgeService::class)->grant(
+                        $plumber,
+                        $this->record,
+                        notify: (bool) ($data['notify'] ?? true),
+                    );
+
+                    if (! $granted) {
+                        Notification::make()
+                            ->warning()
+                            ->title('لم تُمنح')
+                            ->body('السباك يملك الشارة مسبقاً أو ليس سباكاً.')
+                            ->send();
+
+                        return;
+                    }
+
+                    Notification::make()
+                        ->success()
+                        ->title('تم منح الشارة')
+                        ->body($this->record->name_ar.' ← '.$plumber->name)
+                        ->send();
+                }),
             Actions\DeleteAction::make()->label('حذف الشارة'),
         ];
     }
@@ -35,7 +94,7 @@ class EditBadge extends EditRecord
     protected function mutateFormDataBeforeSave(array $data): array
     {
         $state = $this->form->getRawState();
-        $type = (string) ($state['rule_type'] ?? 'orders_min');
+        $type = (string) ($state['rule_type'] ?? 'manual');
         $rule = ['type' => $type];
 
         if ($type === 'level_min') {

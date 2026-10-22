@@ -25,13 +25,23 @@ class HomeHighlightsController extends Controller
                 continue;
             }
 
-            $categoryId = $this->resolveCategoryId($categories, $row['category_match'] ?? []);
+            $categoryId = $this->resolveCategoryId(
+                $categories,
+                $row['category_match'] ?? [],
+                $row['category_exclude'] ?? [],
+                $row['category_prefer'] ?? [],
+            );
+
+            $link = $row['link'] ?? $row['deep_link'] ?? null;
+            if (! filled($link) && $categoryId) {
+                $link = 'mgplastic://category/'.$categoryId;
+            }
 
             $items[] = [
                 'key' => (string) $row['key'],
                 'label' => (string) ($row['label'] ?? $row['key']),
                 'icon' => (string) ($row['icon'] ?? $row['key']),
-                'link' => $row['link'] ?? $row['deep_link'] ?? null,
+                'link' => $link,
                 'category_id' => $categoryId,
             ];
         }
@@ -42,12 +52,16 @@ class HomeHighlightsController extends Controller
     /**
      * @param  \Illuminate\Support\Collection<int, ProductCategory>  $categories
      * @param  list<string>  $needles
+     * @param  list<string>  $exclude
+     * @param  list<string>  $prefer
      */
-    protected function resolveCategoryId($categories, array $needles): ?int
+    protected function resolveCategoryId($categories, array $needles, array $exclude = [], array $prefer = []): ?int
     {
         if ($needles === []) {
             return null;
         }
+
+        $matched = [];
 
         foreach ($categories as $cat) {
             $blob = mb_strtolower(trim(implode(' ', array_filter([
@@ -56,13 +70,37 @@ class HomeHighlightsController extends Controller
                 (string) optional($cat->translate('ar'))->description,
             ]))));
 
+            $excluded = false;
+            foreach ($exclude as $ex) {
+                if ($ex !== '' && Str::contains($blob, mb_strtolower($ex))) {
+                    $excluded = true;
+                    break;
+                }
+            }
+            if ($excluded) {
+                continue;
+            }
+
             foreach ($needles as $needle) {
                 if ($needle !== '' && Str::contains($blob, mb_strtolower($needle))) {
-                    return (int) $cat->id;
+                    $score = 1;
+                    foreach ($prefer as $p) {
+                        if ($p !== '' && Str::contains($blob, mb_strtolower($p))) {
+                            $score += 10;
+                        }
+                    }
+                    $matched[] = ['id' => (int) $cat->id, 'score' => $score];
+                    break;
                 }
             }
         }
 
-        return null;
+        if ($matched === []) {
+            return null;
+        }
+
+        usort($matched, fn ($a, $b) => $b['score'] <=> $a['score'] ?: $a['id'] <=> $b['id']);
+
+        return $matched[0]['id'];
     }
 }

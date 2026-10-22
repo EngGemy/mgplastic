@@ -37,12 +37,12 @@ class ProductPromotion extends Model
 
     public function imageUrl(): ?string
     {
-        return PublicStorageUrl::make($this->image_path);
+        return PublicStorageUrl::try($this->image_path);
     }
 
     public function comparisonImageUrl(): ?string
     {
-        return PublicStorageUrl::make($this->comparison_image_path);
+        return PublicStorageUrl::try($this->comparison_image_path);
     }
 
     public function resolveProductLink(): ?string

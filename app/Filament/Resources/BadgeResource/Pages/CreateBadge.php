@@ -21,7 +21,7 @@ class CreateBadge extends CreateRecord
 
     public function getSubheading(): ?string
     {
-        return 'صمّم الشارة، اختر الندرة ومعيار الفوز — المعاينة تتحدّث فورًا.';
+        return 'عرّف الشارة بالكامل (اسم، وصف، ندرة، معيار) ثم احفظها — بعدها تمنحها يدوياً أو تتركها تلقائية.';
     }
 
     protected function mutateFormDataBeforeCreate(array $data): array
@@ -33,14 +33,14 @@ class CreateBadge extends CreateRecord
 
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('index');
+        return $this->getResource()::getUrl('edit', ['record' => $this->record]);
     }
 
     /** @return array<string, mixed> */
     protected function composeRule(): array
     {
         $state = $this->form->getRawState();
-        $type = (string) ($state['rule_type'] ?? 'orders_min');
+        $type = (string) ($state['rule_type'] ?? 'manual');
         $rule = ['type' => $type];
 
         if ($type === 'level_min') {
