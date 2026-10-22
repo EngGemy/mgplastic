@@ -3,51 +3,37 @@
 namespace App\Http\Resources;
 
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class ProductCategoryResource extends JsonResource
 {
     public function toArray($request)
     {
-        // Accept-Language -> ar|en (default en)
-        $raw  = (string) $request->header('Accept-Language', 'en');
-        $lang = substr(strtolower(str_replace('_','-',$raw)), 0, 2);
-        if (! in_array($lang, ['ar','en'], true)) $lang = 'en';
-
-        // Name/description via Astrotomic (fallback EN), then column-per-lang
-        $name = $desc = null;
-
-        if (method_exists($this, 'translate')) {
-            $tr   = $this->translate($lang) ?? $this->translate('en');
-            $name = $tr->name ?? null;
-            $desc = $tr->description ?? null;
+        $raw = (string) $request->header('Accept-Language', 'ar');
+        $lang = substr(strtolower(str_replace('_', '-', $raw)), 0, 2);
+        if (! in_array($lang, ['ar', 'en'], true)) {
+            $lang = 'ar';
         }
 
-        if ($name === null || $desc === null) {
-            $nameCol = $lang === 'ar' ? 'name_ar' : 'name_en';
-            $descCol = $lang === 'ar' ? 'description_ar' : 'description_en';
-            $name = $name ?? ($this->{$nameCol} ?? $this->name_en ?? $this->name ?? null);
-            $desc = $desc ?? ($this->{$descCol} ?? $this->description_en ?? $this->description ?? null);
-        }
+        $name = $this->resource->normalizedDisplayName($lang);
+        $short = $this->resource->shortDescription($lang);
+        $imageUrl = $this->resource->resolvedImageUrl();
 
         return [
-            'id'                => $this->id,
-            'parent_id'         => $this->parent_id,
-            'slug'              => $this->slug ?? null,
+            'id' => $this->id,
+            'parent_id' => $this->parent_id,
+            'slug' => $this->slug ?? null,
             'accepted_language' => $lang,
-            'name'              => $name,
-            'description'       => api_plain_text($desc),
-
-        //    'image'             => $this->image,
-            'image'         => $this->image ? Storage::disk('public')->url($this->image) : null,
-
-            // when() avoids extra COUNT if not present
-            'products_count'    => $this->when(isset($this->products_count), (int) $this->products_count),
-
-            'tags'              => $this->whenLoaded('tags', fn ($tags) => $tags->pluck('name')->values()->all()),
-
-            // include children if relation was eager-loaded
-            'children'          => self::collection($this->whenLoaded('children')),
+            'name' => $name,
+            'description' => $short,
+            'short_description' => $short,
+            // Path only when file exists; never a 404 URL.
+            'image' => $imageUrl ? $this->image : null,
+            'image_url' => $imageUrl,
+            'icon_url' => $imageUrl,
+            'badge' => $this->resource->systemBadge(),
+            'products_count' => $this->when(isset($this->products_count), (int) $this->products_count),
+            'tags' => $this->whenLoaded('tags', fn ($tags) => $tags->pluck('name')->values()->all()),
+            'children' => self::collection($this->whenLoaded('children')),
         ];
     }
 }

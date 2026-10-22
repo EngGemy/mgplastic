@@ -55,7 +55,36 @@ class MobileHomeWholesaleApiTest extends TestCase
         $this->getJson('/api/v1/mobile/distributor/products/categories?systems=1')
             ->assertOk()
             ->assertJsonPath('data.items.0.name', 'حسب النظام الاوروبي')
-            ->assertJsonPath('data.items.0.short_description', 'مقاسات ومواصفات · EN Standard');
+            ->assertJsonPath('data.items.0.short_description', 'مقاسات ومواصفات · EN Standard')
+            ->assertJsonPath('data.items.0.badge', 'EN')
+            ->assertJsonPath('data.items.0.icon_url', null);
+
+        // General categories list also includes short_description + null image when missing
+        $cat->forceFill(['image' => 'categories/missing-does-not-exist.jpg'])->save();
+
+        $this->getJson('/api/v1/mobile/distributor/products/categories')
+            ->assertOk()
+            ->assertJsonPath('data.items.0.short_description', 'مقاسات ومواصفات · EN Standard')
+            ->assertJsonPath('data.items.0.image_url', null);
+
+        $this->getJson('/api/v1/products/categories')
+            ->assertOk()
+            ->assertJsonPath('data.0.short_description', 'مقاسات ومواصفات · EN Standard')
+            ->assertJsonPath('data.0.image_url', null);
+    }
+
+    public function test_broken_storage_urls_become_null(): void
+    {
+        $cat = ProductCategory::query()->create([
+            'slug' => 'gold-system',
+            'image' => 'https://example.test/storage/categories/not-on-disk.jpg',
+        ]);
+        $cat->translateOrNew('ar')->name = 'مواسير الذهبي';
+        $cat->translateOrNew('ar')->description = '';
+        $cat->save();
+
+        $this->assertNull($cat->resolvedImageUrl());
+        $this->assertSame('مواسير النظام الذهبي', $cat->shortDescription());
     }
 
     public function test_home_highlights_and_slider_overlay_fields(): void

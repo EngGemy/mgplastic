@@ -82,6 +82,7 @@ class ProductCategoryResource extends Resource
                         ->imageEditor()
                         ->openable()
                         ->downloadable()
+                        ->helperText('صورة بطاقة النظام في التطبيق. النظام الذهبي: ارفع صورة واضحة هنا — بدون ملف يُرجع API‏ image_url = null.')
                         ->columnSpan(4),
 
                     Forms\Components\TagsInput::make('tag_names')
@@ -112,8 +113,9 @@ class ProductCategoryResource extends Resource
                                     ->maxLength(255)
                                     ->extraAttributes(['dir' => 'rtl']),
                                 Forms\Components\Textarea::make('description_ar')
-                                    ->label(__('Description (AR)'))
-                                    ->rows(5)
+                                    ->label('وصف قصير (AR) — يظهر في التطبيق')
+                                    ->helperText('يُرسل كـ short_description في API الأقسام/الأنظمة (≈ سطر واحد).')
+                                    ->rows(3)
                                     ->columnSpanFull()
                                     ->extraAttributes(['dir' => 'rtl']),
                             ]),

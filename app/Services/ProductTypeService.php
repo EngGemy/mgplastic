@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ProductTypeService
@@ -165,19 +165,6 @@ class ProductTypeService
 
     protected function publicImageUrl(?string $path): ?string
     {
-        if (! filled($path)) {
-            return null;
-        }
-
-        if (Storage::disk('public')->exists($path)) {
-            return Storage::disk('public')->url($path);
-        }
-
-        $publicPath = public_path('images/'.ltrim($path, '/'));
-        if (is_file($publicPath)) {
-            return asset('images/'.ltrim($path, '/'));
-        }
-
-        return null;
+        return PublicStorageUrl::try($path);
     }
 }

@@ -11,8 +11,6 @@ use App\Services\ProductTypeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 /**
  * Paginated product catalog for retail traders when placing a supply order
@@ -308,16 +306,19 @@ class ProductCatalogController extends Controller
      */
     protected function mapCategory(ProductCategory $c, bool $includeChildren): array
     {
-        $name = $this->normalizedCategoryName(localized_name($c, 'name', 'تصنيف #'.$c->id));
-        $short = $this->categoryShortDescription($c);
-        $imageUrl = $this->storageUrlIfExists($c->image);
+        $name = $c->normalizedDisplayName();
+        $short = $c->shortDescription();
+        $imageUrl = $c->resolvedImageUrl();
 
         $payload = [
             'id' => (int) $c->id,
             'name' => $name,
             'slug' => $c->slug,
             'image' => $imageUrl ? $c->image : null,
+            // Dynamic card icon (Filament → categories/*). Same value twice for app convenience.
             'image_url' => $imageUrl,
+            'icon_url' => $imageUrl,
+            'badge' => $c->systemBadge(),
             'short_description' => $short,
             'description' => $short,
             'products_count' => (int) $c->products_count + ($includeChildren
@@ -328,85 +329,32 @@ class ProductCatalogController extends Controller
         ];
 
         if ($includeChildren) {
-            $payload['children'] = $c->children->map(fn (ProductCategory $child) => [
-                'id' => (int) $child->id,
-                'name' => $this->normalizedCategoryName(localized_name($child, 'name', 'تصنيف #'.$child->id)),
-                'slug' => $child->slug,
-                'image' => $this->storageUrlIfExists($child->image) ? $child->image : null,
-                'image_url' => $this->storageUrlIfExists($child->image),
-                'short_description' => $this->categoryShortDescription($child),
-                'products_count' => (int) $child->products_count,
-                'parent_id' => (int) $c->id,
-                'is_accessories' => $child->isAccessoriesFamily(),
-            ])->values();
+            $payload['children'] = $c->children->map(function (ProductCategory $child) use ($c) {
+                $childUrl = $child->resolvedImageUrl();
+
+                return [
+                    'id' => (int) $child->id,
+                    'name' => $child->normalizedDisplayName(),
+                    'slug' => $child->slug,
+                    'image' => $childUrl ? $child->image : null,
+                    'image_url' => $childUrl,
+                    'icon_url' => $childUrl,
+                    'badge' => $child->systemBadge(),
+                    'short_description' => $child->shortDescription(),
+                    'description' => $child->shortDescription(),
+                    'products_count' => (int) $child->products_count,
+                    'parent_id' => (int) $c->id,
+                    'is_accessories' => $child->isAccessoriesFamily(),
+                ];
+            })->values();
         }
 
         return $payload;
     }
 
-    protected function categoryShortDescription(ProductCategory $c): ?string
-    {
-        $raw = trim((string) (
-            optional($c->translate('ar'))->description
-            ?? optional($c->translate(app()->getLocale()))->description
-            ?? ''
-        ));
-
-        if ($raw === '') {
-            $raw = $this->defaultSystemBlurb($c);
-        }
-
-        if ($raw === '') {
-            return null;
-        }
-
-        $plain = trim(preg_replace('/\s+/u', ' ', strip_tags($raw)) ?? '');
-
-        return $plain !== '' ? Str::limit($plain, 120, '…') : null;
-    }
-
-    protected function defaultSystemBlurb(ProductCategory $c): string
-    {
-        $blob = mb_strtolower(trim(implode(' ', array_filter([
-            (string) $c->slug,
-            localized_name($c, 'name', ''),
-        ]))));
-
-        return match (true) {
-            Str::contains($blob, ['اوروب', 'أوروب', 'europ']) => 'مقاسات ومواصفات · EN Standard',
-            Str::contains($blob, ['امريك', 'أمريك', 'american', 'astm', 'schedule']) => 'Schedule / ASTM',
-            Str::contains($blob, ['ذهب', 'gold']) => 'مواسير النظام الذهبي',
-            Str::contains($blob, ['برتق', 'orange']) => 'نظام البرتقالي للصرف والتمديدات',
-            Str::contains($blob, ['رماد', 'grey', 'gray']) => 'النظام الرمادي',
-            Str::contains($blob, ['ابار', 'آبار', 'well']) => 'مواسير الآبار والطلمبات',
-            default => '',
-        };
-    }
-
-    protected function normalizedCategoryName(string $name): string
-    {
-        $name = preg_replace('/\s+/u', ' ', trim($name)) ?? $name;
-        $name = str_replace(['الاوروربي', 'الأوروربي'], 'الاوروبي', $name);
-
-        return trim($name);
-    }
-
     protected function storageUrlIfExists(?string $path): ?string
     {
-        if (! filled($path)) {
-            return null;
-        }
-
-        $path = ltrim($path, '/');
-        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-            return $path;
-        }
-
-        if (! Storage::disk('public')->exists($path)) {
-            return null;
-        }
-
-        return Storage::disk('public')->url($path);
+        return \App\Support\PublicStorageUrl::try($path);
     }
 
     /**

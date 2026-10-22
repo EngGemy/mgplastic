@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,92 @@ class ProductCategory extends Model
     public $translatedAttributes = ['name', 'description'];
 
     protected $fillable = ['image', 'parent_id', 'slug'];
+
+    /** Absolute image URL, or null when the file is missing (no broken links). */
+    public function resolvedImageUrl(): ?string
+    {
+        return PublicStorageUrl::try($this->image);
+    }
+
+    /**
+     * Small badge for system cards (EN / ASTM / …), derived from name/slug.
+     */
+    public function systemBadge(): ?string
+    {
+        $blob = mb_strtolower(trim(implode(' ', array_filter([
+            (string) $this->slug,
+            $this->normalizedDisplayName('ar'),
+            $this->normalizedDisplayName('en'),
+        ]))));
+
+        return match (true) {
+            Str::contains($blob, ['اوروب', 'أوروب', 'europ', 'en ']) => 'EN',
+            Str::contains($blob, ['امريك', 'أمريك', 'american', 'astm', 'schedule']) => 'ASTM',
+            Str::contains($blob, ['ذهب', 'gold']) => null,
+            default => null,
+        };
+    }
+
+    /**
+     * Short card blurb for mobile home / systems (plain text, ≤120 chars).
+     */
+    public function shortDescription(?string $locale = null): ?string
+    {
+        $locale = $locale ?: app()->getLocale();
+        $raw = trim((string) (
+            optional($this->translate('ar'))->description
+            ?? optional($this->translate($locale))->description
+            ?? optional($this->translate('en'))->description
+            ?? ''
+        ));
+
+        if ($raw === '') {
+            $raw = $this->defaultSystemBlurb();
+        }
+
+        if ($raw === '') {
+            return null;
+        }
+
+        $plain = trim(preg_replace('/\s+/u', ' ', strip_tags($raw)) ?? '');
+
+        return $plain !== '' ? Str::limit($plain, 120, '…') : null;
+    }
+
+    public function normalizedDisplayName(?string $locale = null): string
+    {
+        $locale = $locale ?: app()->getLocale();
+        $name = trim((string) (
+            optional($this->translate($locale))->name
+            ?? optional($this->translate('ar'))->name
+            ?? optional($this->translate('en'))->name
+            ?? $this->slug
+            ?? ('تصنيف #'.$this->id)
+        ));
+        $name = preg_replace('/\s+/u', ' ', $name) ?? $name;
+        $name = str_replace(['الاوروربي', 'الأوروربي'], 'الاوروبي', $name);
+
+        return trim($name);
+    }
+
+    protected function defaultSystemBlurb(): string
+    {
+        $blob = mb_strtolower(trim(implode(' ', array_filter([
+            (string) $this->slug,
+            $this->normalizedDisplayName('ar'),
+            $this->normalizedDisplayName('en'),
+        ]))));
+
+        return match (true) {
+            Str::contains($blob, ['اوروب', 'أوروب', 'europ']) => 'مقاسات ومواصفات · EN Standard',
+            Str::contains($blob, ['امريك', 'أمريك', 'american', 'astm', 'schedule']) => 'Schedule / ASTM',
+            Str::contains($blob, ['ذهب', 'gold']) => 'مواسير النظام الذهبي',
+            Str::contains($blob, ['برتق', 'orange']) => 'نظام البرتقالي للصرف والتمديدات',
+            Str::contains($blob, ['رماد', 'grey', 'gray']) => 'النظام الرمادي',
+            Str::contains($blob, ['ابار', 'آبار', 'well']) => 'مواسير الآبار والطلمبات',
+            default => '',
+        };
+    }
 
     // ✅ استخدم اسم العمود الحقيقي في جدول products
     public function products(): HasMany
