@@ -159,15 +159,21 @@ class FcmPushService
             ->where('user_id', '!=', $user->id)
             ->delete();
 
+        $attrs = [
+            'user_id' => $user->id,
+            'token' => $token,
+            'platform' => $platform,
+            'last_seen_at' => now(),
+        ];
+
+        // Column added in a later migration — don't 500 if prod is one migration behind.
+        if (\Illuminate\Support\Facades\Schema::hasColumn('push_tokens', 'is_active')) {
+            $attrs['is_active'] = true;
+        }
+
         return PushToken::query()->updateOrCreate(
             ['device_id' => $deviceId],
-            [
-                'user_id' => $user->id,
-                'token' => $token,
-                'platform' => $platform,
-                'is_active' => true,
-                'last_seen_at' => now(),
-            ],
+            $attrs,
         );
     }
 

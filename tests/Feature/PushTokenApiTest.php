@@ -94,6 +94,35 @@ class PushTokenApiTest extends TestCase
         $this->assertDatabaseMissing('push_tokens', ['device_id' => 'device-x']);
     }
 
+    public function test_accepts_android_casing_and_fcm_token_alias(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'plumber',
+            'is_active' => true,
+            'is_approved' => true,
+            'is_phone_verified' => true,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        // Common Flutter mistake: platform "Android" + field fcm_token / deviceId
+        $this->postJson('/api/v1/mobile/devices/push-token', [
+            'fcm_token' => str_repeat('d', 40),
+            'platform' => 'Android',
+            'deviceId' => 'flutter-device-99',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.platform', 'android');
+
+        $this->assertDatabaseHas('push_tokens', [
+            'user_id' => $user->id,
+            'device_id' => 'flutter-device-99',
+            'token' => str_repeat('d', 40),
+            'platform' => 'android',
+        ]);
+    }
+
     public function test_admin_notification_writes_inbox_via_dispatcher(): void
     {
         \Illuminate\Support\Facades\Queue::fake();
