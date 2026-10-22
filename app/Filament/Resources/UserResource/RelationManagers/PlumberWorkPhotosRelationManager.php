@@ -4,6 +4,7 @@ namespace App\Filament\Resources\UserResource\RelationManagers;
 
 use App\Models\PlumberWorkPhoto;
 use App\Models\User;
+use App\Services\ImageThumbnailService;
 use App\Services\VideoThumbnailService;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -119,18 +120,25 @@ class PlumberWorkPhotosRelationManager extends RelationManager
 
             return $owner->plumberWorkPhotos()->create([
                 'video_path' => $path,
-                'image'      => $thumb,
+                'image' => $thumb,
+                'thumbnail_path' => $thumb,
             ]);
         }
 
+        $images = app(ImageThumbnailService::class);
+        $optimized = $images->optimizeExisting($path) ?? $path;
+        $thumbPath = $images->makeThumbnail($optimized, 'work_photos/thumbnails');
+
         return $owner->plumberWorkPhotos()->create([
-            'image' => $path,
+            'image' => $optimized,
+            'thumbnail_path' => $thumbPath,
         ]);
     }
 
     protected function deleteFiles(PlumberWorkPhoto $record): void
     {
-        foreach ([$record->image, $record->video_path] as $file) {
+        // Model booted deleting hook removes files; keep for bulk/before hooks.
+        foreach ([$record->image, $record->thumbnail_path, $record->video_path] as $file) {
             if (! empty($file) && Storage::disk('public')->exists($file)) {
                 Storage::disk('public')->delete($file);
             }

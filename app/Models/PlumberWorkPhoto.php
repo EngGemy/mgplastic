@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
@@ -12,59 +13,60 @@ class PlumberWorkPhoto extends Model
 
     protected $fillable = [
         'plumber_id',
-        'image',       // image path (public disk)
-        'video_path',  // video path (public disk) — requires migration
+        'image',
+        'thumbnail_path',
+        'video_path',
     ];
 
     protected $casts = [
         'plumber_id' => 'integer',
     ];
 
-    /**
-     * Always include helpful URLs / meta in JSON.
-     */
     protected $appends = [
         'image_url',
         'video_url',
-        'type',          // 'image' | 'video' | 'unknown'
+        'type',
         'is_video',
-        'thumbnail_url', // video: generated cover, image: itself
-        'path',          // primary media path (video_path for videos)
-        'url',           // public URL matching path
+        'thumbnail_url',
+        'path',
+        'url',
     ];
 
-    /** Relations */
+    protected static function booted(): void
+    {
+        static::deleting(function (self $photo) {
+            foreach ([$photo->image, $photo->thumbnail_path, $photo->video_path] as $file) {
+                if (filled($file) && Storage::disk('public')->exists($file)) {
+                    Storage::disk('public')->delete($file);
+                }
+            }
+        });
+    }
+
     public function plumber(): BelongsTo
     {
         return $this->belongsTo(User::class, 'plumber_id');
     }
 
-    /** Accessors */
     public function getImageUrlAttribute(): ?string
     {
-        if (empty($this->image)) {
-            return null;
-        }
-        return Storage::disk('public')->url($this->image);
+        return PublicStorageUrl::try($this->image);
     }
 
     public function getVideoUrlAttribute(): ?string
     {
-        if (empty($this->video_path)) {
-            return null;
-        }
-        return Storage::disk('public')->url($this->video_path);
+        return PublicStorageUrl::try($this->video_path);
     }
 
     public function getTypeAttribute(): string
     {
-        // Videos store their generated cover in `image`, so check video first.
         if (! empty($this->video_path)) {
             return 'video';
         }
         if (! empty($this->image)) {
             return 'image';
         }
+
         return 'unknown';
     }
 
@@ -73,10 +75,14 @@ class PlumberWorkPhoto extends Model
         return ! empty($this->video_path);
     }
 
-    /** Cover image: the video thumbnail (stored in `image`) or the image itself. */
+    /**
+     * Prefer dedicated thumbnail; videos fall back to cover in `image`; images fall back to full image.
+     */
     public function getThumbnailUrlAttribute(): ?string
     {
-        return $this->image_url ?? $this->video_url;
+        return PublicStorageUrl::try($this->thumbnail_path)
+            ?? $this->image_url
+            ?? $this->video_url;
     }
 
     public function getPathAttribute(): ?string
@@ -90,18 +96,16 @@ class PlumberWorkPhoto extends Model
     }
 
     /**
-     * Unified shape shared by the mobile API and admin panel.
-     *
      * @return array<string, mixed>
      */
     public function toApiArray(): array
     {
         return [
-            'id'         => $this->id,
-            'type'       => $this->type,
-            'path'       => $this->path,
-            'url'        => $this->url,
-            'thumbnail'  => $this->thumbnail_url,
+            'id' => $this->id,
+            'type' => $this->type,
+            'path' => $this->path,
+            'url' => $this->url,
+            'thumbnail' => $this->thumbnail_url,
             'created_at' => optional($this->created_at)->toISOString(),
         ];
     }

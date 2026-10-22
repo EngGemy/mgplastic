@@ -14,7 +14,7 @@ class PlumberShopProductsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_shop_filter_returns_only_in_stock_products_and_rejects_over_stock_orders(): void
+    public function test_shop_catalog_lists_all_mg_products_with_stock_and_blocks_over_stock_orders(): void
     {
         $plumber = User::factory()->create(['role' => 'plumber']);
         $shop = User::factory()->create([
@@ -62,17 +62,21 @@ class PlumberShopProductsTest extends TestCase
         $filtered = $this->actingAs($plumber, 'sanctum')
             ->getJson('/api/v1/mobile/plumber/products?retail_trader_id='.$shop->id)
             ->assertOk()
-            ->assertJsonPath('data.pagination.total', 2);
+            ->assertJsonPath('data.stock_mode', true)
+            ->assertJsonPath('data.pagination.total', 3);
 
-        $names = collect($filtered->json('data.items'))->pluck('name');
-        $this->assertTrue($names->contains('ماسورة ذهبي'));
-        $this->assertTrue($names->contains('وصلة ذهبية'));
-        $this->assertFalse($names->contains('كوع مخفي'));
+        $byId = collect($filtered->json('data.items'))->keyBy('id');
 
-        $hose = collect($filtered->json('data.items'))->firstWhere('id', $inStock->id);
-        $this->assertSame(40, $hose['available_quantity']);
-        $this->assertNull($hose['points_per_unit']);
-        $this->assertTrue($hose['has_points']);
+        $this->assertSame(40, $byId[$inStock->id]['available_quantity']);
+        $this->assertTrue($byId[$inStock->id]['can_order']);
+        $this->assertFalse($byId[$inStock->id]['out_of_stock']);
+        $this->assertSame(40, $byId[$inStock->id]['max_order_quantity']);
+
+        $this->assertSame(0, $byId[$outOfStock->id]['available_quantity']);
+        $this->assertFalse($byId[$outOfStock->id]['can_order']);
+        $this->assertTrue($byId[$outOfStock->id]['out_of_stock']);
+
+        $this->assertSame(8, $byId[$tagged->id]['available_quantity']);
 
         $this->actingAs($plumber, 'sanctum')
             ->getJson('/api/v1/mobile/plumber/products?retail_trader_id='.$shop->id.'&tag=ذهبي')
@@ -98,6 +102,15 @@ class PlumberShopProductsTest extends TestCase
             ])
             ->assertStatus(422)
             ->assertJsonPath('status', false);
+
+        $this->actingAs($plumber, 'sanctum')
+            ->postJson('/api/v1/mobile/plumber/orders', [
+                'retail_trader_id' => $shop->id,
+                'lines' => [
+                    ['product_id' => $outOfStock->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertStatus(422);
 
         $this->actingAs($plumber, 'sanctum')
             ->postJson('/api/v1/mobile/plumber/orders', [

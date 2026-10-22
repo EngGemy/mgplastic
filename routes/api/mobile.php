@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Distributor\InvoiceReturnController as DistributorI
 use App\Http\Controllers\Api\Distributor\NetworkPlumberController as DistributorNetworkPlumberController;
 use App\Http\Controllers\Api\Distributor\OrderController as DistributorOrderController;
 use App\Http\Controllers\Api\Distributor\PosController as DistributorPosController;
+use App\Http\Controllers\Api\Distributor\JoinRequestController as DistributorJoinRequestController;
 use App\Http\Controllers\Api\Distributor\RetailTraderController;
 use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
@@ -45,6 +46,7 @@ use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
 use App\Http\Controllers\Api\Trader\PosController as TraderPosController;
 use App\Http\Controllers\Api\Trader\WholesalerController as TraderWholesalerController;
+use App\Http\Controllers\Api\Trader\WholesalerJoinRequestController as TraderWholesalerJoinRequestController;
 use App\Http\Controllers\Api\Trader\ProductCatalogController as TraderProductCatalogController;
 use Illuminate\Support\Facades\Route;
 
@@ -155,8 +157,10 @@ Route::prefix('v1/mobile')->group(function () {
             Route::delete('{id}', [NotificationController::class, 'destroy']);
         });
 
-        // Products catalog for placing orders to retail traders
+        // Products catalog for placing orders to retail traders (full MG + shop stock)
         Route::get('products', [PlumberProductCatalogController::class, 'index']);
+        Route::get('products/types', [PlumberProductCatalogController::class, 'types']);
+        Route::get('products/categories', [PlumberProductCatalogController::class, 'categories']);
 
         // Orders to retail trader
         Route::get('orders', [PlumberOrderController::class, 'index']);
@@ -209,11 +213,17 @@ Route::prefix('v1/mobile')->group(function () {
 
         // Multi wholesaler network (قطاعي ↔ أكثر من جملة)
         Route::get('wholesalers', [TraderWholesalerController::class, 'index']);
-        Route::post('wholesalers/link', [TraderWholesalerController::class, 'link']);
+        Route::post('wholesalers/link', [TraderWholesalerController::class, 'link']); // sends join request
         Route::delete('wholesalers/{wholesaler}', [TraderWholesalerController::class, 'unlink'])->whereNumber('wholesaler');
         Route::get('wholesalers/{wholesaler}', [TraderWholesalerController::class, 'show'])->whereNumber('wholesaler');
         Route::get('wholesalers/{wholesaler}/stock', [TraderPosController::class, 'wholesalerStock'])
             ->whereNumber('wholesaler');
+
+        // طلبات انضمام القطاعي → الجملة (بانتظار موافقة الجملة)
+        Route::get('wholesaler-join-requests', [TraderWholesalerJoinRequestController::class, 'index']);
+        Route::post('wholesaler-join-requests', [TraderWholesalerJoinRequestController::class, 'store']);
+        Route::delete('wholesaler-join-requests/{joinRequest}', [TraderWholesalerJoinRequestController::class, 'destroy'])
+            ->whereNumber('joinRequest');
 
         // Notifications inbox (same DB notifications table)
         Route::prefix('notifications')->group(function () {
@@ -299,6 +309,13 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('retail-traders/link', [RetailTraderController::class, 'link']);
         Route::get('retail-traders/{retailTrader}', [RetailTraderController::class, 'show']);
         Route::delete('retail-traders/{retailTrader}', [RetailTraderController::class, 'unlink']);
+
+        // طلبات انضمام القطاعيين لشبكة الجملة
+        Route::get('join-requests', [DistributorJoinRequestController::class, 'index']);
+        Route::post('join-requests/{joinRequest}/approve', [DistributorJoinRequestController::class, 'approve'])
+            ->whereNumber('joinRequest');
+        Route::post('join-requests/{joinRequest}/reject', [DistributorJoinRequestController::class, 'reject'])
+            ->whereNumber('joinRequest');
 
         // Plumbers under linked retail shops (not direct wholesale↔plumber)
         Route::get('plumbers', [DistributorNetworkPlumberController::class, 'index']);

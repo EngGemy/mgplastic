@@ -175,6 +175,30 @@ final class NotificationCatalog
                 'ar' => ':title',
                 'en' => ':title',
             ], 'normal', ['push', 'in_app'], 'home'),
+
+            self::def(NotificationType::NetworkJoinRequested, [
+                'ar' => 'طلب انضمام لشبكتك',
+                'en' => 'Network join request',
+            ], [
+                'ar' => ':retail_name يطلب الانضمام لشبكة الجملة',
+                'en' => ':retail_name requested to join your wholesale network',
+            ], 'high', ['push', 'in_app'], 'network'),
+
+            self::def(NotificationType::NetworkJoinApproved, [
+                'ar' => 'تمت الموافقة على انضمامك',
+                'en' => 'Join request approved',
+            ], [
+                'ar' => 'وافق :wholesaler_name على إضافتك لشبكته',
+                'en' => ':wholesaler_name approved your join request',
+            ], 'high', ['push', 'in_app'], 'network'),
+
+            self::def(NotificationType::NetworkJoinRejected, [
+                'ar' => 'تم رفض طلب الانضمام',
+                'en' => 'Join request rejected',
+            ], [
+                'ar' => 'رفض :wholesaler_name طلب انضمامك للشبكة',
+                'en' => ':wholesaler_name rejected your join request',
+            ], 'high', ['push', 'in_app'], 'network'),
         ];
 
         $map = [];

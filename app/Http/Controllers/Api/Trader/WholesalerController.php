@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Mobile\UserProfileResource;
 use App\Models\User;
 use App\Services\RetailNetworkLinkService;
+use App\Services\WholesalerJoinRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -20,6 +21,7 @@ class WholesalerController extends Controller
 
     public function __construct(
         protected RetailNetworkLinkService $links,
+        protected WholesalerJoinRequestService $joinRequests,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -57,12 +59,17 @@ class WholesalerController extends Controller
         ], 'موزّعو الجملة في شبكتك');
     }
 
+    /**
+     * Retail → wholesaler: sends a join request (requires wholesaler approval).
+     * Instant link is no longer used from the mobile app.
+     */
     public function link(Request $request): JsonResponse
     {
         $v = Validator::make($request->all(), [
             'network_code' => ['required_without_all:code,phone', 'nullable', 'string', 'max:50'],
             'code' => ['nullable', 'string', 'max:50'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'message' => ['nullable', 'string', 'max:500'],
         ]);
 
         if ($v->fails()) {
@@ -76,17 +83,27 @@ class WholesalerController extends Controller
         ));
 
         try {
-            $result = $this->links->linkWholesalerByCode($request->user(), $needle);
+            $result = $this->joinRequests->requestJoin(
+                $request->user(),
+                $needle,
+                $request->input('message')
+            );
         } catch (\DomainException $e) {
             return $this->error($e->getMessage(), 422);
         }
 
-        $result['wholesaler']->load(['country', 'city']);
+        $wholesaler = $result['request']->wholesaler
+            ?? \App\Models\User::query()->find($result['request']->wholesaler_id);
+        $wholesaler?->load(['country', 'city']);
 
         return $this->success([
-            'created_link' => $result['created_link'],
-            'wholesaler' => new UserProfileResource($result['wholesaler']),
-        ], $result['message'], $result['created_link'] ? 201 : 200);
+            'created_link' => false,
+            'pending_approval' => $result['request']->status === 'pending',
+            'already_linked' => $result['request']->status === 'approved' && ! $result['created'],
+            'created_request' => $result['created'],
+            'request' => $result['request']->toApiArray(),
+            'wholesaler' => $wholesaler ? new UserProfileResource($wholesaler) : null,
+        ], $result['message'], $result['created'] ? 201 : 200);
     }
 
     public function unlink(Request $request, User $wholesaler): JsonResponse

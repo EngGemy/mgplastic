@@ -74,6 +74,8 @@ class MobileDashboardService
             'total_available_qty' => (int) $panel['stock']['units'],
             'total_available_points' => (int) $panel['stock']['points_in_stock'],
             'retail_traders_count' => (int) $panel['network']['retail_traders_count'],
+            'pending_join_requests' => app(WholesalerJoinRequestService::class)
+                ->pendingIncomingCount($user),
             'distributions_sent' => InvoiceDistribution::query()
                 ->where('from_user_id', $user->id)
                 ->count(),

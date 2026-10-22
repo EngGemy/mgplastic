@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Plumber\PlumberShowResource;
 use App\Models\PlumberWorkPhoto;
 use App\Models\SocialLink;
+use App\Services\ImageThumbnailService;
 use App\Services\VideoThumbnailService;
 use App\Support\SocialLinksPayload;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class PlumberProfileController extends Controller
 {
     public function __construct(
         protected VideoThumbnailService $videoThumbnails,
+        protected ImageThumbnailService $imageThumbnails,
     ) {}
 
     /**
@@ -62,14 +64,16 @@ class PlumberProfileController extends Controller
 
                     if ($isImage) {
                         try {
-                            $path = $file->store('work_photos/images', $disk);
+                            $path = $this->imageThumbnails->storeOptimized($file, 'work_photos/images');
+                            $thumbPath = $this->imageThumbnails->makeThumbnail($path, 'work_photos/thumbnails');
 
                             $row = $user->workPhotos()->create([
-                                'image'      => $path,
+                                'image' => $path,
+                                'thumbnail_path' => $thumbPath,
                                 'video_path' => null,
                             ])->fresh();
 
-                            $created[] = $this->formatWorkMediaRow($row, $disk);
+                            $created[] = $row->toApiArray();
                         } catch (\Throwable $e) {
                             Log::error('[WorkMedia] Failed to store image', [
                                 'filename'  => $originalName,
@@ -99,11 +103,12 @@ class PlumberProfileController extends Controller
                             $thumbPath = $this->videoThumbnails->generate($videoPath, 'work_photos/thumbnails');
 
                             $row = $user->workPhotos()->create([
-                                'image'      => $thumbPath,
+                                'image' => $thumbPath,
+                                'thumbnail_path' => $thumbPath,
                                 'video_path' => $videoPath,
                             ])->fresh();
 
-                            $created[] = $this->formatWorkMediaRow($row, $disk);
+                            $created[] = $row->toApiArray();
                         } catch (\Throwable $e) {
                             Log::error('[WorkMedia] Failed to store video', [
                                 'filename'  => $originalName,
@@ -145,29 +150,6 @@ class PlumberProfileController extends Controller
         ], 201);
     }
 
-    protected function formatWorkMediaRow(PlumberWorkPhoto $row, string $disk): array
-    {
-        if (! empty($row->video_path)) {
-            return [
-                'id'         => $row->id,
-                'type'       => 'video',
-                'path'       => $row->video_path,
-                'url'        => Storage::disk($disk)->url($row->video_path),
-                'thumbnail'  => $row->image ? Storage::disk($disk)->url($row->image) : null,
-                'created_at' => optional($row->created_at)->toISOString(),
-            ];
-        }
-
-        return [
-            'id'         => $row->id,
-            'type'       => 'image',
-            'path'       => $row->image,
-            'url'        => $row->image_url ?? Storage::disk($disk)->url($row->image),
-            'thumbnail'  => $row->image_url ?? Storage::disk($disk)->url($row->image),
-            'created_at' => optional($row->created_at)->toISOString(),
-        ];
-    }
-
     /**
      * Route: GET /api/v1/plumber/work-photos
      */
@@ -178,10 +160,7 @@ class PlumberProfileController extends Controller
             return response()->json(['status' => false, 'message' => 'Only plumbers can view work media'], 403);
         }
 
-        $disk = 'public';
-        $rows = $user->workPhotos()->latest()->get();
-
-        $out = $rows->map(fn ($row) => $this->formatWorkMediaRow($row, $disk));
+        $out = $user->workPhotos()->latest()->get()->map->toApiArray()->values();
 
         return response()->json(['status' => true, 'data' => $out]);
     }
@@ -204,16 +183,7 @@ class PlumberProfileController extends Controller
             return response()->json(['status' => false, 'message' => 'Media not found'], 404);
         }
 
-        $disk = 'public';
-
-        if (! empty($row->image)) {
-            Storage::disk($disk)->delete($row->image);
-        }
-
-        if (Schema::hasColumn($row->getTable(), 'video_path') && ! empty($row->video_path)) {
-            Storage::disk($disk)->delete($row->video_path);
-        }
-
+        // Files are removed in PlumberWorkPhoto::booted deleting hook.
         $row->delete();
 
         return response()->json(['status' => true, 'message' => 'Media deleted successfully']);

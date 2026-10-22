@@ -25,6 +25,10 @@ enum NotificationType: string
     case CampaignBroadcast = 'campaign.broadcast';
     case AdminPendingReview = 'admin.pending_review';
 
+    case NetworkJoinRequested = 'network.join_requested';
+    case NetworkJoinApproved = 'network.join_approved';
+    case NetworkJoinRejected = 'network.join_rejected';
+
     public function definition(): NotificationDefinition
     {
         return NotificationCatalog::get($this);

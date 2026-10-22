@@ -178,6 +178,9 @@ class RetailNetworkLinkService
     {
         $wholesaler->linkedRetailTraders()->detach($retailTrader->id);
 
+        // Always re-read parent from DB — callers may hold a stale User instance.
+        $retailTrader->refresh();
+
         if ((int) $retailTrader->parent_distributor_id === (int) $wholesaler->id) {
             $nextId = $retailTrader->linkedWholesalers()
                 ->orderByPivot('linked_at')

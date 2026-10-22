@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\WholesalerJoinRequest;
 use App\Services\RetailNetworkLinkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -12,7 +13,7 @@ class RetailMultiWholesalerLinkTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_retail_trader_can_link_multiple_wholesalers(): void
+    public function test_retail_trader_can_link_multiple_wholesalers_after_approval(): void
     {
         $retail = User::factory()->create([
             'role' => 'retail_trader',
@@ -36,22 +37,32 @@ class RetailMultiWholesalerLinkTest extends TestCase
         ]);
 
         $links = app(RetailNetworkLinkService::class);
-        $a = $links->linkWholesalerByCode($retail, 'MG-W-000201');
-        $b = $links->linkWholesalerByCode($retail, 'MG-W-000202');
 
-        $this->assertTrue($a['created_link']);
-        $this->assertTrue($b['created_link']);
+        Sanctum::actingAs($retail);
+        $this->postJson('/api/v1/mobile/trader/wholesalers/link', ['network_code' => 'MG-W-000201'])
+            ->assertCreated();
+        $this->postJson('/api/v1/mobile/trader/wholesalers/link', ['network_code' => 'MG-W-000202'])
+            ->assertCreated();
+
+        $r1 = WholesalerJoinRequest::query()->where('wholesaler_id', $w1->id)->firstOrFail();
+        $r2 = WholesalerJoinRequest::query()->where('wholesaler_id', $w2->id)->firstOrFail();
+
+        Sanctum::actingAs($w1);
+        $this->postJson('/api/v1/mobile/distributor/join-requests/'.$r1->id.'/approve')->assertOk();
+
+        Sanctum::actingAs($w2);
+        $this->postJson('/api/v1/mobile/distributor/join-requests/'.$r2->id.'/approve')->assertOk();
+
         $this->assertTrue($links->isLinked($w1, $retail->fresh()));
         $this->assertTrue($links->isLinked($w2, $retail->fresh()));
         $this->assertCount(2, $links->linkedWholesalerIds($retail->fresh()));
 
-        Sanctum::actingAs($retail);
+        Sanctum::actingAs($retail->fresh());
         $this->getJson('/api/v1/mobile/trader/wholesalers')
             ->assertOk()
             ->assertJsonPath('data.pagination.total', 2);
 
-        $this->deleteJson('/api/v1/mobile/trader/wholesalers/'.$w1->id)
-            ->assertOk();
+        $this->deleteJson('/api/v1/mobile/trader/wholesalers/'.$w1->id)->assertOk();
 
         $this->assertFalse($links->isLinked($w1->fresh(), $retail->fresh()));
         $this->assertTrue($links->isLinked($w2->fresh(), $retail->fresh()));

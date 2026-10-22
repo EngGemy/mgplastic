@@ -6,10 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Plumber\PlumberListResource;
 use App\Http\Resources\Plumber\PlumberShowResource;
 use App\Models\User;
-use App\Models\PlumberWorkPhoto;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 
 class PlumberPublicController extends Controller
 {
@@ -100,74 +97,10 @@ class PlumberPublicController extends Controller
             ], 404);
         }
 
-        $disk           = 'public';
-        $hasVideoColumn = Schema::hasColumn((new PlumberWorkPhoto)->getTable(), 'video_path');
-
-        // نحول أعمال السباك (صور + فيديوهات) لشكل موحّد مع thumbnail
-        $workMedia = $plumber->workPhotos->map(function (PlumberWorkPhoto $p) use ($disk, $hasVideoColumn) {
-            // صورة فقط (بدون فيديو)
-            if (! empty($p->image) && (empty($p->video_path) || ! $hasVideoColumn)) {
-                $url = $p->image_url ?? Storage::disk($disk)->url($p->image);
-
-                return [
-                    'id'         => $p->id,
-                    'type'       => 'image',
-                    'path'       => $p->image,
-                    'url'        => $url,
-                    'thumbnail'  => $url,
-                    'created_at' => optional($p->created_at)->toISOString(),
-                ];
-            }
-
-            // فيديو: الفيديو في video_path، والـ thumbnail (لو موجودة) في image
-            if ($hasVideoColumn && ! empty($p->video_path)) {
-                $videoUrl = Storage::disk($disk)->url($p->video_path);
-                $thumbUrl = null;
-
-                if (! empty($p->image)) {
-                    $thumbUrl = $p->image_url ?? Storage::disk($disk)->url($p->image);
-                }
-
-                return [
-                    'id'         => $p->id,
-                    'type'       => 'video',
-                    'path'       => $p->video_path,
-                    'url'        => $videoUrl,
-                    'thumbnail'  => $thumbUrl,
-                    'created_at' => optional($p->created_at)->toISOString(),
-                ];
-            }
-
-            // حالة غير معروفة (لا صورة ولا فيديو)
-            return [
-                'id'         => $p->id,
-                'type'       => 'unknown',
-                'path'       => null,
-                'url'        => null,
-                'thumbnail'  => null,
-                'created_at' => optional($p->created_at)->toISOString(),
-            ];
-        });
-
-        // احصائيات بسيطة
-        $imagesCount = $workMedia->where('type', 'image')->count();
-        $videosCount = $workMedia->where('type', 'video')->count();
-
-        // نجمع بيانات PlumberShowResource مع أعماله
-        $plumberData = array_merge(
-            (new PlumberShowResource($plumber))->toArray($request),
-            [
-                'work_media'        => $workMedia,
-                'work_media_count'  => $workMedia->count(),
-                'work_images_count' => $imagesCount,
-                'work_videos_count' => $videosCount,
-            ]
-        );
-
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Plumber details',
-            'data'    => $plumberData,
+            'data' => (new PlumberShowResource($plumber))->toArray($request),
         ]);
     }
 }

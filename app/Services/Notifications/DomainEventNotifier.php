@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\Order;
 use App\Models\User;
+use App\Models\WholesalerJoinRequest;
 use App\Models\WithdrawalRequest;
 use App\Notifications\Catalog\NotificationType;
 
@@ -321,6 +322,65 @@ class DomainEventNotifier
             'filament_status' => 'warning',
             'filament_url' => $meta['url'] ?? null,
             'filament_action_label' => $meta['action_label'] ?? 'مراجعة الطلب',
+        ]);
+    }
+
+    public function networkJoinRequested(WholesalerJoinRequest $request): void
+    {
+        $request->loadMissing(['wholesaler', 'retailTrader']);
+        $retailName = $request->retailTrader?->name ?? 'تاجر قطاعي';
+
+        $this->notifyDomain($request->wholesaler, NotificationType::NetworkJoinRequested, [
+            'retail_name' => $retailName,
+            'request_id' => (int) $request->id,
+            'entity_id' => (int) $request->id,
+            'retail_trader_id' => (int) $request->retail_trader_id,
+            'type' => 'network',
+            'entity_type' => 'wholesaler_join_request',
+            'screen' => 'network',
+        ], [
+            'filament_status' => 'info',
+            'body' => "{$retailName} يطلب الانضمام لشبكة الجملة".($request->message ? " — «{$request->message}»" : ''),
+        ]);
+    }
+
+    public function networkJoinApproved(WholesalerJoinRequest $request): void
+    {
+        $request->loadMissing(['wholesaler', 'retailTrader']);
+        $wholesalerName = $request->wholesaler?->brand_name ?: ($request->wholesaler?->name ?? 'موزّع الجملة');
+
+        $this->notifyDomain($request->retailTrader, NotificationType::NetworkJoinApproved, [
+            'wholesaler_name' => $wholesalerName,
+            'request_id' => (int) $request->id,
+            'entity_id' => (int) $request->id,
+            'wholesaler_id' => (int) $request->wholesaler_id,
+            'type' => 'network',
+            'entity_type' => 'wholesaler_join_request',
+            'screen' => 'network',
+        ], [
+            'filament_status' => 'success',
+        ]);
+    }
+
+    public function networkJoinRejected(WholesalerJoinRequest $request): void
+    {
+        $request->loadMissing(['wholesaler', 'retailTrader']);
+        $wholesalerName = $request->wholesaler?->brand_name ?: ($request->wholesaler?->name ?? 'موزّع الجملة');
+
+        $this->notifyDomain($request->retailTrader, NotificationType::NetworkJoinRejected, [
+            'wholesaler_name' => $wholesalerName,
+            'request_id' => (int) $request->id,
+            'entity_id' => (int) $request->id,
+            'wholesaler_id' => (int) $request->wholesaler_id,
+            'reason' => $request->rejection_reason,
+            'type' => 'network',
+            'entity_type' => 'wholesaler_join_request',
+            'screen' => 'network',
+        ], [
+            'filament_status' => 'danger',
+            'body' => $request->rejection_reason
+                ? "رفض {$wholesalerName} طلب انضمامك — السبب: {$request->rejection_reason}"
+                : null,
         ]);
     }
 
