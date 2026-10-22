@@ -111,6 +111,8 @@ Route::prefix('v1/mobile')->group(function () {
             Route::delete('read', [NotificationController::class, 'destroyRead']);
             Route::delete('/', [NotificationController::class, 'destroyAll']);
             Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('preferences', [NotificationController::class, 'preferences']);
+            Route::match(['put', 'patch'], 'preferences', [NotificationController::class, 'updatePreferences']);
             Route::get('{id}', [NotificationController::class, 'show']);
             Route::post('{id}/read', [NotificationController::class, 'markRead']);
             Route::post('{id}/unread', [NotificationController::class, 'markUnread']);
@@ -145,6 +147,8 @@ Route::prefix('v1/mobile')->group(function () {
             Route::delete('read', [NotificationController::class, 'destroyRead']);
             Route::delete('/', [NotificationController::class, 'destroyAll']);
             Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('preferences', [NotificationController::class, 'preferences']);
+            Route::match(['put', 'patch'], 'preferences', [NotificationController::class, 'updatePreferences']);
             Route::get('{id}', [NotificationController::class, 'show']);
             Route::post('{id}/read', [NotificationController::class, 'markRead']);
             Route::post('{id}/unread', [NotificationController::class, 'markUnread']);
@@ -221,6 +225,8 @@ Route::prefix('v1/mobile')->group(function () {
             Route::delete('read', [NotificationController::class, 'destroyRead']);
             Route::delete('/', [NotificationController::class, 'destroyAll']);
             Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('preferences', [NotificationController::class, 'preferences']);
+            Route::match(['put', 'patch'], 'preferences', [NotificationController::class, 'updatePreferences']);
             Route::get('{id}', [NotificationController::class, 'show']);
             Route::post('{id}/read', [NotificationController::class, 'markRead']);
             Route::post('{id}/unread', [NotificationController::class, 'markUnread']);
@@ -316,6 +322,8 @@ Route::prefix('v1/mobile')->group(function () {
             Route::delete('read', [NotificationController::class, 'destroyRead']);
             Route::delete('/', [NotificationController::class, 'destroyAll']);
             Route::post('delete-many', [NotificationController::class, 'destroyMany']);
+            Route::get('preferences', [NotificationController::class, 'preferences']);
+            Route::match(['put', 'patch'], 'preferences', [NotificationController::class, 'updatePreferences']);
             Route::get('{id}', [NotificationController::class, 'show']);
             Route::post('{id}/read', [NotificationController::class, 'markRead']);
             Route::post('{id}/unread', [NotificationController::class, 'markUnread']);

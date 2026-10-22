@@ -2,20 +2,25 @@
 
 namespace App\Services;
 
+use App\Concerns\Notifications\DispatchesDomainNotifications;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\Notifications\DomainEventNotifier;
 use App\Support\OrderStatus;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
 {
+    use DispatchesDomainNotifications;
+
     public function __construct(
         protected WholesaleInvoiceService $wholesaleInvoices,
         protected NetworkInventoryService $inventory,
         protected DistributionService $distributions,
+        protected DomainEventNotifier $domainNotifications,
     ) {}
 
     /**
@@ -107,12 +112,7 @@ class OrderService
             'supplier_note' => $note ?: $order->supplier_note,
         ]);
 
-        $this->notifyRequester(
-            $order,
-            'تم تأكيد طلبك ✓',
-            "طلب رقم {$order->order_number} تم تأكيده ويجري تجهيزه.",
-            'success',
-        );
+        $this->domainNotifications->orderApproved($order->fresh(['requester']));
         $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
             $order->fresh(['requester']),
             'تم تأكيد طلبك ✓ ويجري تجهيزه.',
@@ -147,12 +147,7 @@ class OrderService
 
         $tracking = $order->tracking_number ? " — رقم التتبّع: {$order->tracking_number}" : '';
 
-        $this->notifyRequester(
-            $order,
-            'طلبك في الطريق 🚚',
-            "طلب رقم {$order->order_number} تم شحنه وهو في طريقه إليك{$tracking}.",
-            'info',
-        );
+        $this->domainNotifications->orderShipped($order->fresh(['requester']));
         $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
             $order->fresh(['requester']),
             "طلبك في الطريق 🚚{$tracking}",
@@ -215,19 +210,14 @@ class OrderService
                     : " وتم إضافة {$points} نقطة لمحفظتك.")
                 : '.';
 
-            $this->notifyRequester(
-                $locked,
-                'تم استلام طلبك ✓',
-                "طلب رقم {$locked->order_number} تم تأكيد استلامه{$pointsNote}",
-                'success',
-            );
+            $this->domainNotifications->orderDelivered($locked);
 
-            $this->notifySupplierAndAdmins(
-                $locked,
-                'تم استلام الطلب ✓',
-                "طلب رقم {$locked->order_number} تم استلامه وتأكيده من {$locked->requester?->name}.",
-                'success',
-            );
+            if ($points > 0 && $locked->requester && ! $locked->isPlumberChannel()) {
+                $this->domainNotifications->pointsAwarded($locked->requester, $points, [
+                    'order_id' => $locked->id,
+                    'entity_id' => $locked->id,
+                ]);
+            }
 
             $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
                 $locked->fresh(['requester']),
@@ -289,12 +279,7 @@ class OrderService
             'note' => $reason ? trim(($order->note ? $order->note."\n" : '').'إلغاء: '.$reason) : $order->note,
         ]);
 
-        $this->notifySupplierAndAdmins(
-            $order,
-            'تم إلغاء طلب',
-            "طلب رقم {$order->order_number} أُلغي من قبل {$order->requester?->name}.",
-            'warning',
-        );
+        $this->domainNotifications->orderCancelled($order->fresh(['requester', 'supplier']));
 
         if ($order->supplier) {
             $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifySupplierStatus(
@@ -325,12 +310,7 @@ class OrderService
             'supplier_note' => $reason ?: $order->supplier_note,
         ]);
 
-        $this->notifyRequester(
-            $order,
-            'تم رفض الطلب',
-            "طلب رقم {$order->order_number} تم رفضه".($reason ? " — السبب: {$reason}" : '').'.',
-            'danger',
-        );
+        $this->domainNotifications->orderRejected($order->fresh(['requester']), $reason);
         $this->safeWhatsApp(fn () => app(CustomerWhatsAppNotifier::class)->notifyOrderStatus(
             $order->fresh(['requester']),
             'تم رفض الطلب'.($reason ? " — السبب: {$reason}" : ''),
@@ -1139,12 +1119,7 @@ class OrderService
             $points = (int) $order->total_points;
             $pointsNote = $points > 0 ? " ({$points} نقطة بانتظار تأكيد استلامك)" : '';
 
-            $this->notifyRequester(
-                $order,
-                'طلبك جاهز للاستلام ✓',
-                "طلب رقم {$order->order_number} تم تجهيزه من التاجر{$pointsNote}. أكّد الاستلام لإتمام الطلب.",
-                'info',
-            );
+            $this->domainNotifications->orderShipped($order->fresh(['requester']));
 
             $fresh = $order->fresh(['items', 'requester', 'supplier']);
             $fresh->setAttribute('_reputation_celebration', $reference['reputation'] ?? [
@@ -1185,20 +1160,7 @@ class OrderService
 
     protected function notifyPlaced(Order $order): void
     {
-        $title = 'طلب جديد 🛎️';
-        $body = "طلب رقم {$order->order_number} من {$order->requester?->name} — {$order->total_quantity} وحدة.";
-        $meta = $this->orderNotificationMeta($order);
-
-        if ($order->isFactoryChannel()) {
-            AdminNotificationService::sendToRole('super_admin', $title, $body, 'info', null, null, $meta);
-            AdminNotificationService::sendToRole('admin', $title, $body, 'info', null, null, $meta);
-
-            return;
-        }
-
-        if ($order->supplier) {
-            AdminNotificationService::send($order->supplier, $title, $body, 'info', null, null, $meta);
-        }
+        $this->domainNotifications->orderCreated($order);
     }
 
     protected function notifyCustomerWhatsApp(Order $order): void
@@ -1215,48 +1177,5 @@ class OrderService
                 'error' => $e->getMessage(),
             ]);
         }
-    }
-
-    protected function notifyRequester(Order $order, string $title, string $body, string $status): void
-    {
-        if ($order->requester) {
-            AdminNotificationService::send(
-                $order->requester,
-                $title,
-                $body,
-                $status,
-                null,
-                null,
-                $this->orderNotificationMeta($order),
-            );
-        }
-    }
-
-    protected function notifySupplierAndAdmins(Order $order, string $title, string $body, string $status): void
-    {
-        $meta = $this->orderNotificationMeta($order);
-
-        if ($order->isFactoryChannel()) {
-            AdminNotificationService::sendToRole('super_admin', $title, $body, $status, null, null, $meta);
-            AdminNotificationService::sendToRole('admin', $title, $body, $status, null, null, $meta);
-
-            return;
-        }
-
-        if ($order->supplier) {
-            AdminNotificationService::send($order->supplier, $title, $body, $status, null, null, $meta);
-        }
-    }
-
-    /** @return array<string, mixed> */
-    protected function orderNotificationMeta(Order $order): array
-    {
-        return [
-            'entity_type' => 'order',
-            'order_id' => (int) $order->id,
-            'order_number' => $order->order_number,
-            'channel' => $order->channel,
-            'order_status' => $order->status,
-        ];
     }
 }

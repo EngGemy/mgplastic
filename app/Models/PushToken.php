@@ -12,14 +12,21 @@ class PushToken extends Model
         'device_id',
         'token',
         'platform',
+        'is_active',
         'last_seen_at',
     ];
 
     protected function casts(): array
     {
         return [
+            'is_active' => 'boolean',
             'last_seen_at' => 'datetime',
         ];
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
     }
 
     public function user(): BelongsTo

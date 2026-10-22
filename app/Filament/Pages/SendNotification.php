@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\City;
+use App\Models\NotificationBroadcast;
 use App\Models\User;
 use App\Services\AdminNotificationService;
 use App\Support\AdminPermissions;
@@ -10,6 +12,7 @@ use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 
@@ -17,9 +20,9 @@ class SendNotification extends Page implements HasForms
 {
     use InteractsWithForms;
 
-    protected static ?string $navigationIcon = 'heroicon-o-bell-alert';
+    protected static ?string $navigationIcon = 'heroicon-o-paper-airplane';
 
-    protected static ?int $navigationSort = 12;
+    protected static ?int $navigationSort = 1;
 
     protected static string $view = 'filament.pages.send-notification';
 
@@ -36,7 +39,7 @@ class SendNotification extends Page implements HasForms
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المستخدمون';
+        return 'الإشعارات';
     }
 
     public static function getNavigationLabel(): string
@@ -49,11 +52,23 @@ class SendNotification extends Page implements HasForms
         return 'إرسال إشعار للمستخدمين';
     }
 
+    public function getHeading(): string
+    {
+        return 'إرسال إشعار';
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'أرسل للتطبيق (صندوق الوارد) + Push FCM — يُحفظ في مكتبة الإشعارات.';
+    }
+
     public function mount(): void
     {
         $this->form->fill([
-            'recipient_type' => 'user',
+            'audience' => 'plumbers',
             'status' => 'info',
+            'send_push' => true,
+            'push_type' => 'home',
         ]);
     }
 
@@ -62,50 +77,85 @@ class SendNotification extends Page implements HasForms
         return $form
             ->schema([
                 Forms\Components\Section::make('المستلمون')
+                    ->description('اختر مجموعة جاهزة أو مستخدمين محددين. يظهر العدد المتوقع أسفل النموذج.')
                     ->schema([
-                        Forms\Components\Select::make('recipient_type')
+                        Forms\Components\Select::make('audience')
                             ->label('إرسال إلى')
                             ->options([
-                                'user' => 'مستخدم محدد',
+                                'plumbers' => 'كل السباكين النشطين',
+                                'retailers' => 'كل تجار القطاعي النشطين',
+                                'wholesalers' => 'كل موزعي الجملة النشطين',
                                 'role' => 'دور محدد',
-                                'all' => 'جميع المستخدمين',
+                                'users' => 'مجموعة مستخدمين (اختيار يدوي)',
+                                'user' => 'مستخدم واحد',
+                                'all' => 'جميع المستخدمين النشطين',
                             ])
-                            ->default('user')
+                            ->default('plumbers')
                             ->live()
                             ->native(false)
-                            ->required(),
-
-                        Forms\Components\Select::make('user_id')
-                            ->label('المستخدم')
-                            ->options(fn () => User::query()
-                                ->orderBy('name')
-                                ->pluck('name', 'id'))
-                            ->searchable()
-                            ->visible(fn (Forms\Get $get) => $get('recipient_type') === 'user')
-                            ->required(fn (Forms\Get $get) => $get('recipient_type') === 'user'),
+                            ->required()
+                            ->columnSpanFull(),
 
                         Forms\Components\Select::make('role')
                             ->label('الدور')
                             ->options(UserRoles::selectOptions())
-                            ->visible(fn (Forms\Get $get) => $get('recipient_type') === 'role')
-                            ->required(fn (Forms\Get $get) => $get('recipient_type') === 'role')
-                            ->native(false),
-                    ]),
+                            ->visible(fn (Get $get) => $get('audience') === 'role')
+                            ->required(fn (Get $get) => $get('audience') === 'role')
+                            ->native(false)
+                            ->live(),
+
+                        Forms\Components\Select::make('user_id')
+                            ->label('المستخدم')
+                            ->searchable()
+                            ->getSearchResultsUsing(fn (string $search) => $this->searchUsers($search))
+                            ->getOptionLabelUsing(fn ($value) => $this->userLabel((int) $value))
+                            ->visible(fn (Get $get) => $get('audience') === 'user')
+                            ->required(fn (Get $get) => $get('audience') === 'user'),
+
+                        Forms\Components\Select::make('user_ids')
+                            ->label('المستخدمون')
+                            ->multiple()
+                            ->searchable()
+                            ->getSearchResultsUsing(fn (string $search) => $this->searchUsers($search))
+                            ->getOptionLabelsUsing(function (array $values): array {
+                                return collect($values)
+                                    ->mapWithKeys(fn ($id) => [(int) $id => $this->userLabel((int) $id)])
+                                    ->all();
+                            })
+                            ->visible(fn (Get $get) => $get('audience') === 'users')
+                            ->required(fn (Get $get) => $get('audience') === 'users')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('city_id')
+                            ->label('تصفية حسب المدينة (اختياري)')
+                            ->options(fn () => City::query()->orderBy('name_ar')->pluck('name_ar', 'id'))
+                            ->searchable()
+                            ->native(false)
+                            ->visible(fn (Get $get) => in_array($get('audience'), ['plumbers', 'retailers', 'wholesalers', 'role', 'all'], true))
+                            ->live(),
+
+                        Forms\Components\Placeholder::make('preview_count')
+                            ->label('عدد المستلمين المتوقع')
+                            ->content(fn (Get $get) => number_format($this->previewCount($get)).' مستخدم'),
+                    ])
+                    ->columns(2),
 
                 Forms\Components\Section::make('محتوى الإشعار')
                     ->schema([
                         Forms\Components\TextInput::make('title')
                             ->label('العنوان')
                             ->required()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->columnSpanFull(),
 
                         Forms\Components\Textarea::make('body')
                             ->label('المحتوى')
                             ->rows(5)
-                            ->maxLength(2000),
+                            ->maxLength(2000)
+                            ->columnSpanFull(),
 
                         Forms\Components\Select::make('status')
-                            ->label('النوع')
+                            ->label('نوع التنبيه')
                             ->options([
                                 'info' => 'معلومة',
                                 'success' => 'نجاح',
@@ -115,11 +165,46 @@ class SendNotification extends Page implements HasForms
                             ->default('info')
                             ->native(false),
 
+                        Forms\Components\Toggle::make('send_push')
+                            ->label('إرسال Push للجوال (FCM)')
+                            ->default(true)
+                            ->helperText('يصل أيضًا لصندوق إشعارات التطبيق داخل الموبايل.'),
+                    ])
+                    ->columns(2),
+
+                Forms\Components\Section::make('فتح شاشة في التطبيق (اختياري)')
+                    ->collapsed()
+                    ->schema([
+                        Forms\Components\Select::make('push_type')
+                            ->label('نوع الصفحة')
+                            ->options([
+                                'home' => 'الرئيسية',
+                                'order' => 'طلب',
+                                'invoice' => 'فاتورة',
+                                'points' => 'النقاط / المحفظة',
+                                'return' => 'مرتجعات',
+                                'withdrawal' => 'سحب',
+                                'promotion' => 'عرض ترويجي',
+                                'collection' => 'مجموعة منتجات',
+                                'product' => 'منتج',
+                                'shop' => 'متجر',
+                                'plumber' => 'سباك',
+                            ])
+                            ->native(false)
+                            ->default('home'),
+
+                        Forms\Components\TextInput::make('push_id')
+                            ->label('معرّف العنصر (id)')
+                            ->helperText('مثال: رقم الطلب أو المنتج — يُترك فارغًا للرئيسية/النقاط.')
+                            ->maxLength(80),
+
                         Forms\Components\TextInput::make('url')
-                            ->label('رابط (اختياري)')
+                            ->label('رابط ويب (اختياري للوحة)')
                             ->url()
-                            ->maxLength(500),
-                    ]),
+                            ->maxLength(500)
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2),
             ])
             ->statePath('data');
     }
@@ -127,45 +212,110 @@ class SendNotification extends Page implements HasForms
     public function send(): void
     {
         $data = $this->form->getState();
-
-        $count = match ($data['recipient_type']) {
-            'all' => AdminNotificationService::sendToAll(
-                $data['title'],
-                $data['body'] ?? null,
-                $data['status'] ?? 'info',
-                $data['url'] ?? null,
-            ),
-            'role' => AdminNotificationService::sendToRole(
-                $data['role'],
-                $data['title'],
-                $data['body'] ?? null,
-                $data['status'] ?? 'info',
-                $data['url'] ?? null,
-            ),
-            default => AdminNotificationService::sendToMany(
-                User::query()->whereKey($data['user_id'])->get(),
-                $data['title'],
-                $data['body'] ?? null,
-                $data['status'] ?? 'info',
-                $data['url'] ?? null,
-            ),
+        $audience = (string) $data['audience'];
+        $userIds = match ($audience) {
+            'user' => [(int) $data['user_id']],
+            'users' => array_map('intval', $data['user_ids'] ?? []),
+            default => [],
         };
+
+        $count = AdminNotificationService::previewCount(
+            $audience,
+            $data['role'] ?? null,
+            $userIds,
+            isset($data['city_id']) ? (int) $data['city_id'] : null,
+        );
+
+        if ($count < 1) {
+            Notification::make()
+                ->title('لا يوجد مستلمون')
+                ->body('عدّل المجموعة أو أزل فلتر المدينة.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $broadcast = AdminNotificationService::broadcast([
+            'audience' => $audience,
+            'title' => $data['title'],
+            'body' => $data['body'] ?? null,
+            'status' => $data['status'] ?? 'info',
+            'url' => $data['url'] ?? null,
+            'role' => $data['role'] ?? null,
+            'user_ids' => $userIds,
+            'city_id' => isset($data['city_id']) ? (int) $data['city_id'] : null,
+            'push_type' => $data['push_type'] ?? null,
+            'push_id' => $data['push_id'] ?? null,
+            'send_push' => (bool) ($data['send_push'] ?? true),
+            'sent_by' => auth()->id(),
+        ]);
 
         Notification::make()
             ->title('تم إرسال الإشعار')
-            ->body($count === 1 ? 'وصل الإشعار إلى مستخدم واحد' : "وصل الإشعار إلى {$count} مستخدم")
+            ->body("وصل إلى {$broadcast->recipients_count} مستخدم — محفوظ في مكتبة الإشعارات #{$broadcast->id}")
             ->success()
             ->send();
 
         $this->form->fill([
-            'recipient_type' => $data['recipient_type'],
-            'user_id' => $data['recipient_type'] === 'user' ? $data['user_id'] : null,
-            'role' => $data['recipient_type'] === 'role' ? $data['role'] : null,
+            'audience' => $audience,
+            'role' => $data['role'] ?? null,
+            'city_id' => $data['city_id'] ?? null,
+            'user_id' => null,
+            'user_ids' => [],
             'title' => '',
             'body' => '',
             'status' => $data['status'] ?? 'info',
+            'send_push' => (bool) ($data['send_push'] ?? true),
+            'push_type' => $data['push_type'] ?? 'home',
+            'push_id' => null,
             'url' => null,
         ]);
     }
 
+    protected function previewCount(Get $get): int
+    {
+        $audience = (string) ($get('audience') ?: 'plumbers');
+        $userIds = match ($audience) {
+            'user' => $get('user_id') ? [(int) $get('user_id')] : [],
+            'users' => array_map('intval', $get('user_ids') ?? []),
+            default => [],
+        };
+
+        return AdminNotificationService::previewCount(
+            $audience,
+            $get('role'),
+            $userIds,
+            $get('city_id') ? (int) $get('city_id') : null,
+        );
+    }
+
+    /** @return array<int, string> */
+    protected function searchUsers(string $search): array
+    {
+        return User::query()
+            ->where('is_active', true)
+            ->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('brand_name', 'like', "%{$search}%");
+            })
+            ->orderBy('name')
+            ->limit(40)
+            ->get()
+            ->mapWithKeys(fn (User $u) => [$u->id => $this->userLabel($u->id, $u)])
+            ->all();
+    }
+
+    protected function userLabel(int $id, ?User $user = null): string
+    {
+        $user ??= User::query()->find($id);
+        if (! $user) {
+            return '#'.$id;
+        }
+
+        $role = UserRoles::label($user->role);
+
+        return trim(($user->brand_name ?: $user->name).' · '.($user->phone ?: '')." ({$role})");
+    }
 }

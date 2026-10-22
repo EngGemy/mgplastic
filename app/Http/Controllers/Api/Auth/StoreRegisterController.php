@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\NetworkStoreResource;
 use App\Models\User;
-use App\Services\AdminNotificationService;
+use App\Services\Notifications\DomainEventNotifier;
 use App\Services\PhoneOtpService;
 use App\Support\AdminPanelPath;
 use Illuminate\Http\JsonResponse;
@@ -170,7 +170,11 @@ class StoreRegisterController extends Controller
             : 'stores/'.$store->id;
         $url = AdminPanelPath::url($adminPath);
 
-        AdminNotificationService::sendToRole('super_admin', $title, $body, 'warning', $url, 'مراجعة الطلب');
-        AdminNotificationService::sendToRole('admin', $title, $body, 'warning', $url, 'مراجعة الطلب');
+        app(DomainEventNotifier::class)->adminPendingReview($title, $body, [
+            'entity_id' => $store->id,
+            'url' => $url,
+            'action_label' => 'مراجعة الطلب',
+            'type' => 'home',
+        ]);
     }
 }

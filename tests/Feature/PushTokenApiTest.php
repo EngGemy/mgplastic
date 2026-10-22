@@ -94,23 +94,15 @@ class PushTokenApiTest extends TestCase
         $this->assertDatabaseMissing('push_tokens', ['device_id' => 'device-x']);
     }
 
-    public function test_admin_notification_calls_fcm_service(): void
+    public function test_admin_notification_writes_inbox_via_dispatcher(): void
     {
+        \Illuminate\Support\Facades\Queue::fake();
+
         $user = User::factory()->create([
             'role' => 'plumber',
             'is_active' => true,
             'is_phone_verified' => true,
         ]);
-
-        $this->mock(FcmPushService::class, function ($mock) use ($user) {
-            $mock->shouldReceive('notifyUser')
-                ->once()
-                ->withArgs(function (User $u, string $title, ?string $body, array $meta) use ($user) {
-                    return (int) $u->id === (int) $user->id
-                        && $title === 'طلب جديد'
-                        && ($meta['entity_type'] ?? null) === 'order';
-                });
-        });
 
         AdminNotificationService::send(
             $user,
@@ -123,6 +115,10 @@ class PushTokenApiTest extends TestCase
         );
 
         $this->assertDatabaseCount('notifications', 1);
+        $this->assertDatabaseHas('notifications_inbox', [
+            'user_id' => $user->id,
+            'type' => 'order.created',
+        ]);
     }
 
     public function test_build_data_payload_maps_order_meta(): void

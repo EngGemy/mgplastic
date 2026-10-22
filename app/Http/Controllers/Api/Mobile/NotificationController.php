@@ -4,7 +4,12 @@ namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Controllers\Api\Concerns\ApiResponds;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Mobile\UpdateNotificationPreferencesRequest;
 use App\Http\Resources\Mobile\NotificationResource;
+use App\Models\NotificationInbox;
+use App\Models\NotificationPreference;
+use App\Notifications\Catalog\NotificationCatalog;
+use App\Notifications\Catalog\NotificationType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
@@ -55,11 +60,14 @@ class NotificationController extends Controller
         $page = $query->paginate($perPage);
         $user = $request->user();
 
+        $unreadCount = (int) $user->unreadNotifications()->count();
+
         return $this->success([
             'items' => NotificationResource::collection($page->items())->resolve(),
+            'unread_count' => $unreadCount,
             'summary' => [
                 'total' => (int) $user->notifications()->count(),
-                'unread' => (int) $user->unreadNotifications()->count(),
+                'unread' => $unreadCount,
                 'read' => (int) $user->notifications()->whereNotNull('read_at')->count(),
             ],
             'pagination' => [
@@ -112,6 +120,8 @@ class NotificationController extends Controller
             $notification->markAsRead();
         }
 
+        $this->syncInboxRead($request->user()->id, $notification);
+
         return $this->success(
             new NotificationResource($notification->fresh()),
             'تم تعليم الإشعار كمقروء',
@@ -141,10 +151,79 @@ class NotificationController extends Controller
         $count = (int) $request->user()->unreadNotifications()->count();
         $request->user()->unreadNotifications->markAsRead();
 
+        NotificationInbox::query()
+            ->where('user_id', $request->user()->id)
+            ->whereNull('read_at')
+            ->update([
+                'read_at' => now(),
+                'opened_at' => now(),
+            ]);
+
         return $this->success([
             'marked' => $count,
             'unread' => 0,
+            'unread_count' => 0,
         ], 'تم تعليم جميع الإشعارات كمقروءة');
+    }
+
+    public function preferences(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        return $this->success([
+            'preferences' => NotificationPreference::listForUser($user),
+            'quiet_hours' => [
+                'quiet_from' => $user->quiet_from,
+                'quiet_to' => $user->quiet_to,
+                'timezone' => $user->timezone,
+                'locale' => $user->locale,
+            ],
+            'catalog' => NotificationCatalog::toArray(),
+        ]);
+    }
+
+    public function updatePreferences(UpdateNotificationPreferencesRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $validated = $request->validated();
+
+        if (isset($validated['preferences']) && is_array($validated['preferences'])) {
+            foreach ($validated['preferences'] as $row) {
+                $type = NotificationType::tryFrom((string) ($row['type'] ?? ''));
+                if (! $type) {
+                    continue;
+                }
+
+                NotificationPreference::query()->updateOrCreate(
+                    ['user_id' => $user->id, 'type' => $type->value],
+                    [
+                        'push' => (bool) ($row['push'] ?? true),
+                        'in_app' => (bool) ($row['in_app'] ?? true),
+                        'email' => (bool) ($row['email'] ?? false),
+                    ],
+                );
+            }
+        }
+
+        $quiet = $validated['quiet_hours'] ?? null;
+        if (is_array($quiet)) {
+            $user->forceFill([
+                'quiet_from' => $quiet['quiet_from'] ?? $user->quiet_from,
+                'quiet_to' => $quiet['quiet_to'] ?? $user->quiet_to,
+                'timezone' => $quiet['timezone'] ?? $user->timezone,
+                'locale' => $quiet['locale'] ?? $user->locale,
+            ])->save();
+        }
+
+        return $this->success([
+            'preferences' => NotificationPreference::listForUser($user->fresh()),
+            'quiet_hours' => [
+                'quiet_from' => $user->quiet_from,
+                'quiet_to' => $user->quiet_to,
+                'timezone' => $user->timezone,
+                'locale' => $user->locale,
+            ],
+        ], 'تم حفظ تفضيلات الإشعارات');
     }
 
     /** Body: { "ids": ["uuid", ...] } */
@@ -230,5 +309,26 @@ class NotificationController extends Controller
     protected function findOwned(Request $request, string $id): ?DatabaseNotification
     {
         return $request->user()->notifications()->whereKey($id)->first();
+    }
+
+    protected function syncInboxRead(int $userId, DatabaseNotification $notification): void
+    {
+        $data = (array) $notification->data;
+        $inboxId = $data['inbox_id'] ?? null;
+
+        $query = NotificationInbox::query()->where('user_id', $userId)->whereNull('read_at');
+
+        if ($inboxId) {
+            $query->where('id', (int) $inboxId);
+        } elseif ($notification->id) {
+            $query->where('filament_notification_id', $notification->id);
+        } else {
+            return;
+        }
+
+        $query->update([
+            'read_at' => now(),
+            'opened_at' => now(),
+        ]);
     }
 }

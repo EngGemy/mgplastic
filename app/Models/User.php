@@ -61,6 +61,10 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         'otp_expires_at',
         'is_phone_verified',
         'is_approved','approved_at','is_active','deactivated_at',
+        'quiet_from',
+        'quiet_to',
+        'timezone',
+        'locale',
         'marsol_otp_request_id',
         'marsol_otp_resend_token',
         'marsol_otp_expires_at',
@@ -97,6 +101,10 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
             'password' => 'hashed',
             'marsol_otp_expires_at' => 'datetime',
             'otp_last_sent_at'      => 'datetime',
+            'approved_at' => 'datetime',
+            'deactivated_at' => 'datetime',
+            'is_approved' => 'boolean',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -151,6 +159,16 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     public function pushTokens(): HasMany
     {
         return $this->hasMany(PushToken::class);
+    }
+
+    public function notificationInbox(): HasMany
+    {
+        return $this->hasMany(NotificationInbox::class);
+    }
+
+    public function notificationPreferences(): HasMany
+    {
+        return $this->hasMany(NotificationPreference::class);
     }
     /**
      * Accessor: full absolute URL for profile photo.

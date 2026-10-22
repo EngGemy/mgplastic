@@ -54,6 +54,7 @@ class FcmPushService
 
         $tokens = PushToken::query()
             ->where('user_id', $user->id)
+            ->where('is_active', true)
             ->pluck('token')
             ->filter()
             ->unique()
@@ -164,9 +165,107 @@ class FcmPushService
                 'user_id' => $user->id,
                 'token' => $token,
                 'platform' => $platform,
+                'is_active' => true,
                 'last_seen_at' => now(),
             ],
         );
+    }
+
+    /**
+     * Multicast to many tokens. Returns per-token success/failure maps.
+     *
+     * @param  list<string>  $tokens
+     * @param  array<string, string>  $data
+     * @return array{successes: array<string, string|null>, failures: array<string, string>}
+     */
+    public function sendMulticast(
+        array $tokens,
+        string $title,
+        string $body,
+        array $data = [],
+        string $androidChannelId = 'mg_default',
+        int $badge = 1,
+        bool $highPriority = true,
+    ): array {
+        $successes = [];
+        $failures = [];
+
+        if (! $this->enabled() || $tokens === []) {
+            return compact('successes', 'failures');
+        }
+
+        $tokens = array_values(array_unique(array_filter($tokens)));
+
+        try {
+            $messaging = app(Messaging::class);
+
+            $message = CloudMessage::new()
+                ->withNotification(FcmNotification::create($title, $body !== '' ? $body : null))
+                ->withData($data)
+                ->withAndroidConfig(
+                    AndroidConfig::fromArray([
+                        'priority' => $highPriority ? 'high' : 'normal',
+                        'notification' => [
+                            'sound' => 'default',
+                            'channel_id' => $androidChannelId,
+                        ],
+                    ])
+                )
+                ->withApnsConfig(
+                    ApnsConfig::fromArray([
+                        'headers' => [
+                            'apns-priority' => $highPriority ? '10' : '5',
+                        ],
+                        'payload' => [
+                            'aps' => [
+                                'sound' => 'default',
+                                'badge' => $badge,
+                            ],
+                        ],
+                    ])
+                );
+
+            $report = $messaging->sendMulticast($message, $tokens);
+
+            foreach ($report->getItems() as $item) {
+                $target = (string) $item->target()->value();
+                if ($target === '') {
+                    continue;
+                }
+
+                if ($item->isSuccess()) {
+                    $result = $item->result();
+                    $messageId = is_array($result)
+                        ? (string) ($result['name'] ?? $result['message_id'] ?? json_encode($result))
+                        : null;
+                    $successes[$target] = $messageId;
+                } else {
+                    $error = $item->error();
+                    $failures[$target] = $error ? $error->getMessage() : 'unknown';
+                    if ($error instanceof MessagingException) {
+                        $this->deactivateInvalidToken($target, $error);
+                    } elseif ($item->messageWasSentToUnknownToken() || $item->messageTargetWasInvalid()) {
+                        $this->deactivateToken($target);
+                    }
+                }
+            }
+        } catch (MessagingException $e) {
+            foreach ($tokens as $token) {
+                $failures[$token] = $e->getMessage();
+                $this->deactivateInvalidToken($token, $e);
+            }
+        } catch (\Throwable $e) {
+            foreach ($tokens as $token) {
+                $failures[$token] = $e->getMessage();
+            }
+        }
+
+        return compact('successes', 'failures');
+    }
+
+    public function deactivateToken(string $token): void
+    {
+        PushToken::query()->where('token', $token)->update(['is_active' => false]);
     }
 
     /**
@@ -281,25 +380,29 @@ class FcmPushService
 
     protected function forgetInvalidToken(string $token, MessagingException $e): void
     {
+        $this->deactivateInvalidToken($token, $e);
+    }
+
+    protected function deactivateInvalidToken(string $token, MessagingException $e): void
+    {
         $message = strtoupper($e->getMessage());
         $codes = ['UNREGISTERED', 'INVALID_ARGUMENT', 'NOT_FOUND', 'INVALID_REGISTRATION', 'REGISTRATION_TOKEN_NOT_REGISTERED'];
 
         foreach ($codes as $code) {
             if (str_contains($message, $code)) {
-                $this->forgetToken($token);
+                $this->deactivateToken($token);
 
                 return;
             }
         }
 
-        // kreait often exposes errors() with codes
         if (method_exists($e, 'errors')) {
             try {
                 $errors = (array) $e->errors();
                 $blob = strtoupper(json_encode($errors) ?: '');
                 foreach ($codes as $code) {
                     if (str_contains($blob, $code)) {
-                        $this->forgetToken($token);
+                        $this->deactivateToken($token);
 
                         return;
                     }

@@ -343,6 +343,18 @@ Route::middleware(['auth:sanctum'])->prefix('admin/ios')->group(function () {
         ->name('ios.wallet.visibility.toggle');
 });
 
+// Admin notification broadcast + delivery stats
+Route::middleware(['auth:sanctum'])->prefix('admin/notifications')->group(function () {
+    Route::post('broadcast', [\App\Http\Controllers\Api\Admin\NotificationAdminController::class, 'broadcast']);
+    Route::get('stats', [\App\Http\Controllers\Api\Admin\NotificationAdminController::class, 'stats']);
+});
+
+// Also under /api/v1/admin/notifications for versioned clients
+Route::middleware(['auth:sanctum'])->prefix('v1/admin/notifications')->group(function () {
+    Route::post('broadcast', [\App\Http\Controllers\Api\Admin\NotificationAdminController::class, 'broadcast']);
+    Route::get('stats', [\App\Http\Controllers\Api\Admin\NotificationAdminController::class, 'stats']);
+});
+
 // ── Mobile API v1 (organized for iOS/Android) ─────────────────
 require __DIR__.'/api/mobile.php';
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Services\Notifications\DomainEventNotifier;
 
 class StoreApprovalService
 {
@@ -15,13 +16,12 @@ class StoreApprovalService
             'deactivated_at' => null,
         ])->save();
 
-        AdminNotificationService::send(
+        app(DomainEventNotifier::class)->accountActivated(
             $store,
             $store->isRetailTrader() ? 'تم تفعيل حسابك ✓' : 'تم تفعيل متجرك ✓',
             $store->isRetailTrader()
                 ? 'وافقت الإدارة على حسابك كتاجر قطاعي. يمكنك الآن استخدام النظام والظهور في الشبكة.'
                 : 'وافق الإدارة على حساب متجرك. يمكنك الآن الظهور في الشبكة واستخدام كل الميزات.',
-            'success',
         );
 
         return $store;
@@ -42,12 +42,7 @@ class StoreApprovalService
             $body .= ' السبب: '.$reason;
         }
 
-        AdminNotificationService::send(
-            $store,
-            'طلب التفعيل مرفوض',
-            $body,
-            'danger'
-        );
+        app(DomainEventNotifier::class)->accountSuspended($store, $body);
 
         return $store;
     }
@@ -62,13 +57,12 @@ class StoreApprovalService
             'approved_at' => $store->approved_at ?? now(),
         ])->save();
 
-        AdminNotificationService::send(
+        app(DomainEventNotifier::class)->accountActivated(
             $store,
             $store->isRetailTrader() ? 'تم تفعيل نشاط حسابك ✓' : 'تم تفعيل نشاط متجرك ✓',
             $store->isRetailTrader()
                 ? 'أعادت الإدارة تفعيل حسابك. يمكنك تسجيل الدخول والعمل على النظام مجدداً.'
                 : 'أعادت الإدارة تفعيل حسابك. يمكنك تسجيل الدخول والظهور في الشبكة مجدداً.',
-            'success',
         );
 
         return $store;
@@ -89,12 +83,7 @@ class StoreApprovalService
             $body .= ' السبب: '.$reason;
         }
 
-        AdminNotificationService::send(
-            $store,
-            $store->isRetailTrader() ? 'تم إيقاف نشاط الحساب' : 'تم إيقاف نشاط المتجر',
-            $body,
-            'warning'
-        );
+        app(DomainEventNotifier::class)->accountSuspended($store, $body);
 
         return $store;
     }
