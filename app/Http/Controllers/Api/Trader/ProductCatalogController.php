@@ -93,6 +93,7 @@ class ProductCatalogController extends Controller
             return [
                 'items' => $items,
                 'groups' => $trees['groups'],
+                'size_groups' => $trees['size_groups'],
                 'categories' => $trees['categories'],
                 'view' => 'grouped',
                 'units' => $units,
@@ -122,6 +123,7 @@ class ProductCatalogController extends Controller
         return [
             'items' => $items,
             'groups' => $trees['groups'],
+            'size_groups' => $trees['size_groups'],
             'categories' => $trees['categories'],
             'view' => 'paginated',
             'units' => $units,
@@ -395,6 +397,7 @@ class ProductCatalogController extends Controller
             'group_name' => $group['name'],
             'size_value' => $size['size_value'],
             'size_label' => $size['size_label'],
+            'size_unit' => $size['size_unit'],
             'size_sort' => $size['size_sort'],
             'category_id' => $product->product_category_id ? (int) $product->product_category_id : null,
             'category_name' => $product->category

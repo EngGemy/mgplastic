@@ -35,11 +35,12 @@ class PosController extends Controller
         return $this->success([
             'items' => $items,
             'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+            'size_groups' => $this->inventory->groupStockBySize($items, $sizeOrder),
             'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
             'filters' => [
                 'size_order' => $sizeOrder,
             ],
-        ], 'مخزونك القطاعي — تصنيف ثم تاج · ترتيب المقاس '.$sizeOrder);
+        ], 'مخزونك القطاعي — مقاسات مرتّبة (1→1.5→3…) · '.$sizeOrder);
     }
 
     /**
@@ -76,6 +77,7 @@ class PosController extends Controller
                 'product_type_name' => $row['product_type_name'] ?? null,
                 'size_value' => $row['size_value'] ?? null,
                 'size_label' => $row['size_label'] ?? null,
+                'size_unit' => $row['size_unit'] ?? null,
                 'size_sort' => $row['size_sort'] ?? null,
                 'points_per_unit' => null,
                 'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
@@ -92,11 +94,12 @@ class PosController extends Controller
             ],
             'items' => $items,
             'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+            'size_groups' => $this->inventory->groupStockBySize($items, $sizeOrder),
             'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
             'filters' => [
                 'size_order' => $sizeOrder,
             ],
-        ], 'مخزون الجملة — تصنيف ثم تاج · ترتيب المقاس '.$sizeOrder);
+        ], 'مخزون الجملة — مقاسات مرتّبة · '.$sizeOrder);
     }
 
     /** @param  array<string, mixed>  $row */
@@ -125,6 +128,7 @@ class PosController extends Controller
             'product_type_name' => $row['product_type_name'] ?? null,
             'size_value' => isset($row['size_value']) ? (float) $row['size_value'] : null,
             'size_label' => $row['size_label'] ?? null,
+            'size_unit' => $row['size_unit'] ?? null,
             'size_sort' => isset($row['size_sort']) ? (float) $row['size_sort'] : null,
             // Per-unit points hidden — apps show cart/order totals only.
             'points_per_unit' => null,

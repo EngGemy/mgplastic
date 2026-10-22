@@ -31,11 +31,12 @@ class PosController extends Controller
         return $this->success([
             'items' => $items,
             'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+            'size_groups' => $this->inventory->groupStockBySize($items, $sizeOrder),
             'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
             'filters' => [
                 'size_order' => $sizeOrder,
             ],
-        ], 'مخزون الجملة — تصنيف ثم تاج · ترتيب المقاس '.$sizeOrder);
+        ], 'مخزون الجملة — مقاسات مرتّبة · '.$sizeOrder);
     }
 
     public function checkout(Request $request): JsonResponse
