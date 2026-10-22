@@ -4,8 +4,10 @@ namespace App\Filament\Pages;
 
 use App\Models\City;
 use App\Models\NotificationBroadcast;
+use App\Models\PushToken;
 use App\Models\User;
 use App\Services\AdminNotificationService;
+use App\Services\FcmPushService;
 use App\Support\AdminPermissions;
 use App\Support\UserRoles;
 use Filament\Forms;
@@ -15,6 +17,7 @@ use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Facades\Schema;
 
 class SendNotification extends Page implements HasForms
 {
@@ -59,7 +62,9 @@ class SendNotification extends Page implements HasForms
 
     public function getSubheading(): ?string
     {
-        return 'أرسل للتطبيق (صندوق الوارد) + Push FCM — يُحفظ في مكتبة الإشعارات.';
+        $diag = $this->pushDiagnostics();
+
+        return 'صندوق الوارد + Push FCM. '.$diag['summary'];
     }
 
     public function mount(): void
@@ -236,6 +241,9 @@ class SendNotification extends Page implements HasForms
             return;
         }
 
+        $sendPush = (bool) ($data['send_push'] ?? true);
+        $diag = $this->pushDiagnostics();
+
         $broadcast = AdminNotificationService::broadcast([
             'audience' => $audience,
             'title' => $data['title'],
@@ -247,15 +255,27 @@ class SendNotification extends Page implements HasForms
             'city_id' => isset($data['city_id']) ? (int) $data['city_id'] : null,
             'push_type' => $data['push_type'] ?? null,
             'push_id' => $data['push_id'] ?? null,
-            'send_push' => (bool) ($data['send_push'] ?? true),
+            'send_push' => $sendPush,
             'sent_by' => auth()->id(),
         ]);
 
-        Notification::make()
-            ->title('تم إرسال الإشعار')
-            ->body("وصل إلى {$broadcast->recipients_count} مستخدم — محفوظ في مكتبة الإشعارات #{$broadcast->id}")
-            ->success()
-            ->send();
+        $body = "وصل لصندوق الوارد: {$broadcast->recipients_count} مستخدم — مكتبة #{$broadcast->id}.";
+        if ($sendPush) {
+            if (! $diag['fcm_ready']) {
+                $body .= ' ⚠️ FCM غير جاهز على السيرفر (ملف الاعتمادات) — لن يصل Push.';
+            } elseif ($diag['tokens'] < 1) {
+                $body .= ' ⚠️ لا يوجد أي FCM token محفوظ — التطبيق لازم يستدعي POST /mobile/devices/push-token بعد الدخول.';
+            } else {
+                $body .= " Push في الطابور ({$diag['queue']}) — شغّل: php artisan queue:work --queue={$diag['queue']}";
+            }
+        }
+
+        $warn = $sendPush && (! $diag['fcm_ready'] || $diag['tokens'] < 1);
+        $toast = Notification::make()
+            ->title($warn ? 'الإشعار وصل للوارد فقط' : 'تم إرسال الإشعار')
+            ->body($body)
+            ->persistent();
+        ($warn ? $toast->warning() : $toast->success())->send();
 
         $this->form->fill([
             'audience' => $audience,
@@ -317,5 +337,29 @@ class SendNotification extends Page implements HasForms
         $role = UserRoles::label($user->role);
 
         return trim(($user->brand_name ?: $user->name).' · '.($user->phone ?: '')." ({$role})");
+    }
+
+    /**
+     * @return array{fcm_ready: bool, tokens: int, queue: string, table: bool, summary: string}
+     */
+    public function pushDiagnostics(): array
+    {
+        $table = Schema::hasTable('push_tokens');
+        $tokens = $table ? (int) PushToken::query()->count() : 0;
+        $fcmReady = app(FcmPushService::class)->enabled();
+        $queue = (string) config('notifications.queue', 'default');
+
+        $parts = [];
+        $parts[] = $fcmReady ? 'FCM جاهز' : 'FCM غير مُعدّ (FIREBASE_CREDENTIALS)';
+        $parts[] = $table ? "توكنات محفوظة: {$tokens}" : 'جدول push_tokens مفقود — php artisan fcm:ensure-table';
+        $parts[] = "طابور: {$queue}";
+
+        return [
+            'fcm_ready' => $fcmReady,
+            'tokens' => $tokens,
+            'queue' => $queue,
+            'table' => $table,
+            'summary' => implode(' · ', $parts),
+        ];
     }
 }

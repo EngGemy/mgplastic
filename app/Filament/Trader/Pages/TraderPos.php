@@ -346,7 +346,7 @@ class TraderPos extends Page
         $colors = ['blue', 'green', 'amber', 'purple', 'teal', 'indigo', 'pink', 'red'];
 
         $this->catalogCache = Product::query()
-            ->with(['translations', 'category.translations'])
+            ->with(['translations', 'category.translations', 'tags'])
             ->orderBy('id')
             ->get()
             ->map(function (Product $product) use ($stockByProduct, $colors) {
@@ -363,6 +363,11 @@ class TraderPos extends Page
                     'product_id' => $product->id,
                     'name' => $name,
                     'category_id' => $product->product_category_id,
+                    'tags' => $stock['tags'] ?? $product->tags->pluck('name')->values()->all(),
+                    'tag' => $stock['tag'] ?? ($product->tags->first()?->name ?: 'أخرى'),
+                    'group_key' => $stock['group_key'] ?? 'other',
+                    'group_name' => $stock['group_name'] ?? ($product->tags->first()?->name ?: 'أخرى'),
+                    'product_type' => $stock['product_type'] ?? null,
                     'points_per_unit' => $ppu,
                     'available_qty' => $availableQty,
                     'can_distribute' => $availableQty > 0 && $ppu > 0,
@@ -371,6 +376,10 @@ class TraderPos extends Page
                     'color_class' => $colors[crc32($name) % count($colors)],
                 ];
             })
+            ->sortBy([
+                fn ($r) => mb_strtolower((string) ($r['group_name'] ?? 'ىىى')),
+                fn ($r) => mb_strtolower((string) $r['name']),
+            ])
             ->values();
 
         return $this->catalogCache;
@@ -405,9 +414,28 @@ class TraderPos extends Page
             ->when($this->search, function ($c) {
                 $term = mb_strtolower(trim($this->search));
 
-                return $c->filter(fn ($r) => str_contains(mb_strtolower($r['name']), $term));
+                return $c->filter(function ($r) use ($term) {
+                    if (str_contains(mb_strtolower($r['name']), $term)) {
+                        return true;
+                    }
+                    foreach ($r['tags'] ?? [] as $tag) {
+                        if (str_contains(mb_strtolower((string) $tag), $term)) {
+                            return true;
+                        }
+                    }
+
+                    return str_contains(mb_strtolower((string) ($r['group_name'] ?? '')), $term);
+                });
             })
             ->values();
+    }
+
+    /** @return Collection<string, Collection<int, array<string, mixed>>> */
+    public function getGroupedStockProperty(): Collection
+    {
+        return $this->filteredStock
+            ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+            ->sortKeys();
     }
 
     public function getCartPointsProperty(): int

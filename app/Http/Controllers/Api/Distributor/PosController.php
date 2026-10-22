@@ -23,8 +23,23 @@ class PosController extends Controller
     public function stock(Request $request): JsonResponse
     {
         $stock = $this->inventory->stockForWholesaler($request->user());
+        $items = $stock->values();
+        $groups = collect($this->inventory->groupStockByTag($items))
+            ->map(fn (array $g) => [
+                'key' => $g['key'],
+                'tag' => $g['tag'],
+                'name' => $g['name'],
+                'product_type' => $g['product_type'],
+                'items_count' => count($g['items']),
+                'items' => $g['items'],
+            ])
+            ->values()
+            ->all();
 
-        return $this->success($stock->values());
+        return $this->success([
+            'items' => $items,
+            'groups' => $groups,
+        ], 'مخزون الجملة — مجمّع حسب التاج');
     }
 
     public function checkout(Request $request): JsonResponse

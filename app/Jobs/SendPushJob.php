@@ -66,16 +66,21 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $tokens = PushToken::query()
-            ->where('user_id', $user->id)
-            ->where('is_active', true)
-            ->get();
+        $tokensQuery = PushToken::query()->where('user_id', $user->id);
+        if (\Illuminate\Support\Facades\Schema::hasColumn('push_tokens', 'is_active')) {
+            $tokensQuery->where('is_active', true);
+        }
+        $tokens = $tokensQuery->get();
 
         if ($tokens->isEmpty()) {
+            Log::warning('[FCM] no device tokens for user', [
+                'user_id' => $user->id,
+                'inbox_id' => $inbox->id,
+            ]);
             NotificationLog::query()->create([
                 'notification_id' => $inbox->id,
                 'status' => NotificationLog::STATUS_FAILED,
-                'error' => 'No active device tokens',
+                'error' => 'No active device tokens — app must POST /mobile/devices/push-token after login',
                 'attempts' => $this->attempts(),
             ]);
 

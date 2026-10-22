@@ -166,7 +166,7 @@ final class NotificationCatalog
             ], [
                 'ar' => ':body',
                 'en' => ':body',
-            ], 'normal', ['push', 'in_app'], 'home'),
+            ], 'high', ['push', 'in_app'], 'home'), // high: admin sends skip quiet-hours / daily rate limit
 
             self::def(NotificationType::AdminPendingReview, [
                 'ar' => 'طلب بانتظار المراجعة',

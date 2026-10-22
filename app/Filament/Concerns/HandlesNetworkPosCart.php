@@ -34,9 +34,32 @@ trait HandlesNetworkPosCart
             ->when($this->search, function (Collection $c) {
                 $term = mb_strtolower(trim($this->search));
 
-                return $c->filter(fn ($row) => str_contains(mb_strtolower($row['name']), $term));
+                return $c->filter(function ($row) use ($term) {
+                    if (str_contains(mb_strtolower($row['name']), $term)) {
+                        return true;
+                    }
+                    foreach ($row['tags'] ?? [] as $tag) {
+                        if (str_contains(mb_strtolower((string) $tag), $term)) {
+                            return true;
+                        }
+                    }
+
+                    return str_contains(mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? '')), $term);
+                });
             })
+            ->sortBy([
+                fn ($row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
+                fn ($row) => mb_strtolower((string) ($row['name'] ?? '')),
+            ])
             ->values();
+    }
+
+    /** @return Collection<string, Collection<int, array<string, mixed>>> */
+    public function getGroupedStockProperty(): Collection
+    {
+        return $this->filteredStock
+            ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+            ->sortKeys();
     }
 
     protected function categoryMatchesChild(array $row, int $categoryId): bool

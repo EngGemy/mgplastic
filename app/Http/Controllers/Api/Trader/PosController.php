@@ -22,12 +22,27 @@ class PosController extends Controller
         protected RetailNetworkLinkService $links,
     ) {}
 
-    /** Own retail stock (for POS / plumber fulfillment). */
+    /** Own retail stock (for POS / plumber fulfillment). Grouped by product tag (أكواع / تيهات / …). */
     public function stock(Request $request): JsonResponse
     {
         $stock = $this->inventory->stockForRetailTrader($request->user());
+        $items = $stock->map(fn (array $row) => $this->mapOwnStockRow($row))->values();
+        $groups = collect($this->inventory->groupStockByTag($items))
+            ->map(fn (array $g) => [
+                'key' => $g['key'],
+                'tag' => $g['tag'],
+                'name' => $g['name'],
+                'product_type' => $g['product_type'],
+                'items_count' => count($g['items']),
+                'items' => $g['items'],
+            ])
+            ->values()
+            ->all();
 
-        return $this->success($stock->values()->map(fn (array $row) => $this->mapOwnStockRow($row))->values(), 'مخزونك القطاعي');
+        return $this->success([
+            'items' => $items,
+            'groups' => $groups,
+        ], 'مخزونك القطاعي — مجمّع حسب التاج');
     }
 
     /**
@@ -52,11 +67,29 @@ class PosController extends Controller
             'image' => $row['image'] ?? null,
             'image_url' => $row['image'] ?? null,
             'category_id' => $row['category_id'] ?? null,
+            'tags' => $row['tags'] ?? [],
+            'tag' => $row['tag'] ?? null,
+            'group_key' => $row['group_key'] ?? null,
+            'group_name' => $row['group_name'] ?? null,
+            'product_type' => $row['product_type'] ?? null,
+            'product_type_name' => $row['product_type_name'] ?? null,
             'points_per_unit' => null,
             'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
             'available_qty' => (int) ($row['available_qty'] ?? 0),
             'available_quantity' => (int) ($row['available_qty'] ?? 0),
         ])->values();
+
+        $groups = collect($this->inventory->groupStockByTag($items))
+            ->map(fn (array $g) => [
+                'key' => $g['key'],
+                'tag' => $g['tag'],
+                'name' => $g['name'],
+                'product_type' => $g['product_type'],
+                'items_count' => count($g['items']),
+                'items' => $g['items'],
+            ])
+            ->values()
+            ->all();
 
         return $this->success([
             'wholesaler' => [
@@ -65,7 +98,8 @@ class PosController extends Controller
                 'phone' => $wholesaler->phone,
             ],
             'items' => $items,
-        ], 'مخزون الجملة المتاح');
+            'groups' => $groups,
+        ], 'مخزون الجملة المتاح — مجمّع حسب التاج');
     }
 
     /** @param  array<string, mixed>  $row */
@@ -84,6 +118,12 @@ class PosController extends Controller
             'image' => $row['image'] ?? null,
             'image_url' => $row['image'] ?? null,
             'category_id' => $row['category_id'] ?? null,
+            'tags' => $row['tags'] ?? [],
+            'tag' => $row['tag'] ?? null,
+            'group_key' => $row['group_key'] ?? null,
+            'group_name' => $row['group_name'] ?? null,
+            'product_type' => $row['product_type'] ?? null,
+            'product_type_name' => $row['product_type_name'] ?? null,
             // Per-unit points hidden — apps show cart/order totals only.
             'points_per_unit' => null,
             'has_points' => $ppu > 0,

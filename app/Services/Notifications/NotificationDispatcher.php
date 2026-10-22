@@ -33,7 +33,8 @@ class NotificationDispatcher
      *   filament_status?: string,
      *   filament_url?: ?string,
      *   filament_action_label?: ?string,
-     *   force?: bool
+     *   force?: bool,
+     *   force_push?: bool
      * }  $options
      * @return list<NotificationInbox>
      */
@@ -63,11 +64,13 @@ class NotificationDispatcher
     {
         $def = $type->definition();
         $prefs = NotificationPreference::resolveFor($user, $type);
+        $forcePush = (bool) ($options['force_push'] ?? false);
 
-        $wantInApp = $prefs['in_app'] && in_array('in_app', $def->channels, true);
+        $wantInApp = ($prefs['in_app'] || (bool) ($options['force'] ?? false))
+            && in_array('in_app', $def->channels, true);
         $wantPush = ($options['send_push'] ?? true)
-            && $prefs['push']
-            && in_array('push', $def->channels, true);
+            && in_array('push', $def->channels, true)
+            && ($forcePush || $prefs['push']);
 
         if (! $wantInApp && ! $wantPush && ! ($options['force'] ?? false)) {
             return null;
@@ -171,7 +174,7 @@ class NotificationDispatcher
             return null;
         }
 
-        if ($def->priority !== 'high' && ! $this->withinDailyRateLimit($user)) {
+        if ($def->priority !== 'high' && ! $forcePush && ! $this->withinDailyRateLimit($user)) {
             Log::info('[notifications] rate limit skipped push', [
                 'user_id' => $user->id,
                 'type' => $type->value,
@@ -182,17 +185,28 @@ class NotificationDispatcher
         }
 
         $delayUntil = null;
-        if (! $type->isHighPriority()) {
+        if (! $forcePush && ! $type->isHighPriority()) {
             $delayUntil = $this->quietHours->delayUntil($user);
         }
 
+        $queue = (string) config('notifications.queue', 'default');
+
         $pending = SendPushJob::dispatch($inbox->id)
-            ->onQueue((string) config('notifications.queue', 'notifications'))
+            ->onQueue($queue)
             ->afterCommit();
 
         if ($delayUntil) {
             $pending->delay($delayUntil);
         }
+
+        Log::info('[notifications] push queued', [
+            'user_id' => $user->id,
+            'inbox_id' => $inbox->id,
+            'type' => $type->value,
+            'queue' => $queue,
+            'force_push' => $forcePush,
+            'delay_until' => $delayUntil?->toDateTimeString(),
+        ]);
 
         NotificationLog::query()->create([
             'notification_id' => $inbox->id,

@@ -110,7 +110,7 @@ class DistributorPos extends Page
 
         $productIds = $stock->pluck('product_id')->toArray();
         $products = Product::whereIn('id', $productIds)
-            ->with(['translations', 'category.translations', 'images'])
+            ->with(['translations', 'category.translations', 'images', 'tags'])
             ->get()
             ->keyBy('id');
 
@@ -133,6 +133,11 @@ class DistributorPos extends Page
                 'name' => $name,
                 'category_id' => $product->product_category_id,
                 'category_name' => $product->category?->translate('ar')?->name ?? '',
+                'tags' => $row['tags'] ?? $product->tags->pluck('name')->values()->all(),
+                'tag' => $row['tag'] ?? ($product->tags->first()?->name ?: 'أخرى'),
+                'group_key' => $row['group_key'] ?? 'other',
+                'group_name' => $row['group_name'] ?? ($product->tags->first()?->name ?: 'أخرى'),
+                'product_type' => $row['product_type'] ?? null,
                 'points_per_unit' => $row['points_per_unit'],
                 'available_qty' => $row['available_qty'],
                 'image' => $imageUrl,
@@ -161,9 +166,28 @@ class DistributorPos extends Page
             ->when($this->search, function ($c) {
                 $term = mb_strtolower(trim($this->search));
 
-                return $c->filter(fn ($row) => str_contains(mb_strtolower($row['name']), $term));
+                return $c->filter(function ($row) use ($term) {
+                    if (str_contains(mb_strtolower($row['name']), $term)) {
+                        return true;
+                    }
+                    foreach ($row['tags'] ?? [] as $tag) {
+                        if (str_contains(mb_strtolower((string) $tag), $term)) {
+                            return true;
+                        }
+                    }
+
+                    return str_contains(mb_strtolower((string) ($row['group_name'] ?? '')), $term);
+                });
             })
             ->values();
+    }
+
+    /** @return Collection<string, Collection<int, array<string, mixed>>> */
+    public function getGroupedStockProperty(): Collection
+    {
+        return $this->filteredStock
+            ->groupBy(fn ($r) => (string) ($r['group_name'] ?? $r['tag'] ?? 'أخرى'))
+            ->sortKeys();
     }
 
     public function getCartPointsProperty(): int

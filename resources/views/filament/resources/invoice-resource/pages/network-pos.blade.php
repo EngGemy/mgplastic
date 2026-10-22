@@ -3,6 +3,7 @@
         $isRetail = ($posMode ?? '') === 'retail';
         $isPlumber = ($posMode ?? '') === 'plumber';
         $stock = $this->filteredStock;
+        $groupedStock = $this->groupedStock;
         $wallet = $this->walletBalance;
         $cartPts = $this->cartPoints;
         $pointsOk = $cartPts <= $wallet;
@@ -112,32 +113,44 @@
             @endif
 
             <section class="pos-products" @if($this->categories->isEmpty()) style="grid-column: span 2" @endif>
-                <p class="pos-side-title">مخزونك — المنتجات المتاحة فقط</p>
-                <div class="pos-product-grid">
-                    @forelse($stock as $row)
-                        @php
-                            $inCart = $cart[(string)$row['product_id']]['quantity'] ?? 0;
-                            $remaining = (int)$row['available_qty'] - (int)$inCart;
-                        @endphp
-                        <button type="button"
-                            wire:click="addProduct({{ $row['product_id'] }})"
-                            class="pos-product-card {{ $remaining <= 0 ? 'pos-product-card--disabled' : '' }}"
-                            @disabled($remaining <= 0)>
-                            @if($row['image'])
-                                <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($row['image']) }}" alt="" class="pos-product-img">
-                            @else
-                                <div class="pos-product-img pos-product-img--empty">📦</div>
-                            @endif
-                            <span class="pos-product-name">{{ $row['name'] }}</span>
-                            <span class="pos-stock-badge">متوفر: {{ number_format($row['available_qty']) }}</span>
-                            @if(\App\Support\PointsVisibility::canSeePerUnit())
-                                <span class="pos-product-points">{{ number_format($row['points_per_unit'], 2) }} نقطة/وحدة</span>
-                            @endif
-                        </button>
-                    @empty
-                        <p class="pos-empty">لا يوجد مخزون متاح — استلم فواتير وارد أولاً</p>
-                    @endforelse
-                </div>
+                <p class="pos-side-title">مخزونك — مجمّع حسب التاج (كوع / تيه / …)</p>
+                @if($stock->isEmpty())
+                    <p class="pos-empty">لا يوجد مخزون متاح — استلم فواتير وارد أولاً</p>
+                @else
+                    <div style="display:flex;flex-direction:column;gap:14px">
+                        @foreach($groupedStock as $groupName => $groupRows)
+                            <div>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:7px 10px;border-radius:8px;background:#ecfdf5;border:1px solid #a7f3d0">
+                                    <strong style="font-size:13px;color:#065f46">{{ $groupName }}</strong>
+                                    <span style="font-size:11px;font-weight:700;color:#64748b">{{ number_format($groupRows->count()) }}</span>
+                                </div>
+                                <div class="pos-product-grid">
+                                    @foreach($groupRows as $row)
+                                        @php
+                                            $inCart = $cart[(string)$row['product_id']]['quantity'] ?? 0;
+                                            $remaining = (int)$row['available_qty'] - (int)$inCart;
+                                        @endphp
+                                        <button type="button"
+                                            wire:click="addProduct({{ $row['product_id'] }})"
+                                            class="pos-product-card {{ $remaining <= 0 ? 'pos-product-card--disabled' : '' }}"
+                                            @disabled($remaining <= 0)>
+                                            @if($row['image'])
+                                                <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($row['image']) }}" alt="" class="pos-product-img">
+                                            @else
+                                                <div class="pos-product-img pos-product-img--empty">📦</div>
+                                            @endif
+                                            <span class="pos-product-name">{{ $row['name'] }}</span>
+                                            <span class="pos-stock-badge">متوفر: {{ number_format($row['available_qty']) }}</span>
+                                            @if(\App\Support\PointsVisibility::canSeePerUnit())
+                                                <span class="pos-product-points">{{ number_format($row['points_per_unit'], 2) }} نقطة/وحدة</span>
+                                            @endif
+                                        </button>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
             </section>
 
             <aside class="pos-cart">

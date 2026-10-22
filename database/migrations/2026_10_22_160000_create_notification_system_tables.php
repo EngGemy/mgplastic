@@ -70,12 +70,14 @@ return new class extends Migration
             }
         });
 
-        Schema::table('push_tokens', function (Blueprint $table) {
-            if (! Schema::hasColumn('push_tokens', 'is_active')) {
-                $table->boolean('is_active')->default(true)->after('platform');
-                $table->index(['user_id', 'is_active']);
-            }
-        });
+        if (Schema::hasTable('push_tokens')) {
+            Schema::table('push_tokens', function (Blueprint $table) {
+                if (! Schema::hasColumn('push_tokens', 'is_active')) {
+                    $table->boolean('is_active')->default(true)->after('platform');
+                    $table->index(['user_id', 'is_active']);
+                }
+            });
+        }
 
         Schema::table('notification_broadcasts', function (Blueprint $table) {
             if (! Schema::hasColumn('notification_broadcasts', 'schedule_at')) {

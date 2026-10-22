@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\WalletAccount;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class NetworkInventoryService
 {
@@ -47,6 +48,7 @@ class NetworkInventoryService
                 ->with([
                     'items.product.translations',
                     'items.product.category',
+                    'items.product.tags',
                     'distributions' => fn ($q) => $q
                         ->where('tier', 1)
                         ->where('to_user_id', $wholesaler->id)
@@ -76,7 +78,7 @@ class NetworkInventoryService
                 $this->appendStockSlot($byProduct, $item, $parentId, 2, $available);
             }
 
-            return collect(array_values($byProduct))->sortBy('name')->values();
+            return $this->sortStockByTag(collect(array_values($byProduct)));
         });
     }
 
@@ -107,6 +109,7 @@ class NetworkInventoryService
             ->with([
                 'items.invoiceItem.product.translations',
                 'items.invoiceItem.product.category',
+                'items.invoiceItem.product.tags',
             ])
             ->orderBy('confirmed_at')
             ->orderBy('id')
@@ -124,7 +127,7 @@ class NetworkInventoryService
             }
         }
 
-        return collect(array_values($byProduct))->sortBy('name')->values();
+        return $this->sortStockByTag(collect(array_values($byProduct)));
     }
 
     /**
@@ -193,11 +196,19 @@ class NetworkInventoryService
         $pointsPerUnit = (float) $item->points_per_unit;
 
         if (! isset($byProduct[$productId])) {
+            $group = $this->resolveStockGroup($product);
+
             $byProduct[$productId] = [
                 'product_id' => $productId,
                 'name' => localized_name($product, 'name', "منتج #{$productId}"),
                 'image' => $product?->main_image,
                 'category_id' => $product?->product_category_id,
+                'tags' => $group['tags'],
+                'tag' => $group['tag'],
+                'group_key' => $group['key'],
+                'group_name' => $group['name'],
+                'product_type' => $group['product_type'],
+                'product_type_name' => $group['product_type_name'],
                 'points_per_unit' => $pointsPerUnit,
                 'available_qty' => 0,
                 'available_points' => 0,
@@ -327,5 +338,122 @@ class NetworkInventoryService
                 "رصيد النقاط غير كافٍ: المطلوب {$requiredPoints} نقطة، رصيدك {$balance} نقطة"
             );
         }
+    }
+
+    /**
+     * Sort POS stock so same tag / piece-type sit together (أكواع، تيهات، …).
+     *
+     * @param  Collection<int, array<string, mixed>>  $stock
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function sortStockByTag(Collection $stock): Collection
+    {
+        return $stock
+            ->sortBy([
+                fn (array $row) => mb_strtolower((string) ($row['group_name'] ?? $row['tag'] ?? 'ىىى')),
+                fn (array $row) => mb_strtolower((string) ($row['name'] ?? '')),
+            ])
+            ->values();
+    }
+
+    /**
+     * Group flat stock rows for POS UIs / mobile sections.
+     *
+     * @param  Collection<int, array<string, mixed>>  $stock
+     * @return list<array{key:string, tag:string, name:string, product_type:?string, items:list<array<string, mixed>>}>
+     */
+    public function groupStockByTag(Collection $stock): array
+    {
+        $grouped = [];
+
+        foreach ($this->sortStockByTag($stock) as $row) {
+            $key = (string) ($row['group_key'] ?? 'other');
+            if (! isset($grouped[$key])) {
+                $grouped[$key] = [
+                    'key' => $key,
+                    'tag' => (string) ($row['tag'] ?? $row['group_name'] ?? 'أخرى'),
+                    'name' => (string) ($row['group_name'] ?? $row['tag'] ?? 'أخرى'),
+                    'product_type' => $row['product_type'] ?? null,
+                    'items' => [],
+                ];
+            }
+            $grouped[$key]['items'][] = $row;
+        }
+
+        return array_values($grouped);
+    }
+
+    /**
+     * @return array{
+     *   tags: list<string>,
+     *   tag: string,
+     *   key: string,
+     *   name: string,
+     *   product_type: ?string,
+     *   product_type_name: ?string
+     * }
+     */
+    protected function resolveStockGroup(?Product $product): array
+    {
+        $tags = [];
+        if ($product && $product->relationLoaded('tags')) {
+            $tags = $product->tags->pluck('name')->map(fn ($n) => trim((string) $n))->filter()->values()->all();
+        }
+
+        $type = null;
+        if ($product) {
+            if (! $product->relationLoaded('tags')) {
+                $product->loadMissing('tags', 'translations');
+                $tags = $product->tags->pluck('name')->map(fn ($n) => trim((string) $n))->filter()->values()->all();
+            }
+            $type = app(ProductTypeService::class)->resolveForProduct($product);
+        }
+
+        // Prefer an actual product tag that matches a known piece-type, else first tag, else type, else أخرى.
+        $primaryTag = null;
+        if ($type) {
+            foreach ($tags as $tagName) {
+                $hay = mb_strtolower($tagName);
+                $def = app(ProductTypeService::class)->findDefinition($type['key']);
+                foreach ($def['keywords'] ?? [] as $kw) {
+                    if ($kw !== '' && Str::contains($hay, mb_strtolower($kw))) {
+                        $primaryTag = $tagName;
+                        break 2;
+                    }
+                }
+            }
+        }
+        $primaryTag = $primaryTag ?? ($tags[0] ?? null);
+
+        if ($primaryTag) {
+            return [
+                'tags' => $tags,
+                'tag' => $primaryTag,
+                'key' => $type['key'] ?? ('tag:'.Str::slug($primaryTag, '_')),
+                'name' => $type['name'] ?? $primaryTag,
+                'product_type' => $type['key'] ?? null,
+                'product_type_name' => $type['name'] ?? null,
+            ];
+        }
+
+        if ($type) {
+            return [
+                'tags' => $tags,
+                'tag' => $type['name'],
+                'key' => $type['key'],
+                'name' => $type['name'],
+                'product_type' => $type['key'],
+                'product_type_name' => $type['name'],
+            ];
+        }
+
+        return [
+            'tags' => $tags,
+            'tag' => 'أخرى',
+            'key' => 'other',
+            'name' => 'أخرى',
+            'product_type' => null,
+            'product_type_name' => null,
+        ];
     }
 }

@@ -37,11 +37,13 @@ class AdminNotificationService
             'title' => $title,
             'body' => $body,
             'send_push' => $sendPush,
+            // Admin panel must always deliver inbox + push when requested.
+            'force' => true,
+            'force_push' => $sendPush,
             'dual_write_filament' => true,
             'filament_status' => $status,
             'filament_url' => $url,
             'filament_action_label' => $actionLabel,
-            'force' => true,
         ]);
     }
 

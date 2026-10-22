@@ -30,7 +30,9 @@ return [
     | Queue
     |--------------------------------------------------------------------------
     */
-    'queue' => env('NOTIFICATIONS_QUEUE', 'notifications'),
+    // Default to "default" so a single `queue:work` worker delivers admin pushes.
+    // Override with NOTIFICATIONS_QUEUE=notifications only if you run that worker.
+    'queue' => env('NOTIFICATIONS_QUEUE', 'default'),
 
     /*
     |--------------------------------------------------------------------------

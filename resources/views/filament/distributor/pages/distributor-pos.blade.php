@@ -1,6 +1,7 @@
 <x-filament-panels::page>
 @php
     $stock    = $this->filteredStock;
+    $groupedStock = $this->groupedStock;
     $cartPts  = $this->cartPoints;
     $traders  = $this->retailTraders;
     $cats     = $this->categories;
@@ -143,30 +144,40 @@
                 <div style="font-weight:600;">لا توجد منتجات في المخزن</div>
             </div>
         @else
-        <div class="pos-grid">
-            @foreach($stock as $row)
-            @php $inCart = isset($this->cart[(string)$row['product_id']]); @endphp
-            <div class="pos-card {{ $row['available_qty'] <= 0 ? 'zero' : '' }}"
-                 wire:click="{{ $row['available_qty'] > 0 ? 'addToCart('.$row['product_id'].')' : '' }}">
+        <div class="pos-grid-wrap" style="display:flex;flex-direction:column;gap:16px">
+            @foreach($groupedStock as $groupName => $groupRows)
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:8px 10px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe">
+                    <strong style="font-size:13px;color:#1e3a8a">{{ $groupName }}</strong>
+                    <span style="font-size:11px;font-weight:700;color:#64748b">{{ number_format($groupRows->count()) }} صنف</span>
+                </div>
+                <div class="pos-grid">
+                    @foreach($groupRows as $row)
+                    @php $inCart = isset($this->cart[(string)$row['product_id']]); @endphp
+                    <div class="pos-card {{ $row['available_qty'] <= 0 ? 'zero' : '' }}"
+                         wire:click="{{ $row['available_qty'] > 0 ? 'addToCart('.$row['product_id'].')' : '' }}">
 
-                @if($inCart)
-                <div class="pos-badge">{{ $this->cart[(string)$row['product_id']]['quantity'] }}</div>
-                @endif
+                        @if($inCart)
+                        <div class="pos-badge">{{ $this->cart[(string)$row['product_id']]['quantity'] }}</div>
+                        @endif
 
-                @if($row['image'])
-                    <img src="{{ $row['image'] }}" class="pos-img" alt="{{ $row['name'] }}"
-                         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                    <div class="pos-init {{ $row['color_class'] }}" style="display:none;">{{ $row['initials'] }}</div>
-                @else
-                    <div class="pos-init {{ $row['color_class'] }}">{{ $row['initials'] }}</div>
-                @endif
+                        @if($row['image'])
+                            <img src="{{ $row['image'] }}" class="pos-img" alt="{{ $row['name'] }}"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                            <div class="pos-init {{ $row['color_class'] }}" style="display:none;">{{ $row['initials'] }}</div>
+                        @else
+                            <div class="pos-init {{ $row['color_class'] }}">{{ $row['initials'] }}</div>
+                        @endif
 
-                <div class="pos-name">{{ $row['name'] }}</div>
-                @if($row['available_qty'] <= 0)
-                    <div class="pos-no-stock">نفذ المخزون</div>
-                @else
-                    <div class="pos-avail">مخزون: {{ number_format($row['available_qty']) }} قطعة</div>
-                @endif
+                        <div class="pos-name">{{ $row['name'] }}</div>
+                        @if($row['available_qty'] <= 0)
+                            <div class="pos-no-stock">نفذ المخزون</div>
+                        @else
+                            <div class="pos-avail">مخزون: {{ number_format($row['available_qty']) }} قطعة</div>
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
             </div>
             @endforeach
         </div>
