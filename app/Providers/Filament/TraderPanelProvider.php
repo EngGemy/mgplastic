@@ -51,6 +51,7 @@ class TraderPanelProvider extends PanelProvider
                 \App\Filament\Trader\Pages\TraderDashboard::class,
                 \App\Filament\Trader\Pages\TraderPos::class,
                 \App\Filament\Trader\Pages\MyProducts::class,
+                \App\Filament\Trader\Pages\StockInventoryReport::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Trader/Widgets'), for: 'App\\Filament\\Trader\\Widgets')
             ->renderHook('panels::head.end', fn () => view('filament.hooks.admin-styles'))

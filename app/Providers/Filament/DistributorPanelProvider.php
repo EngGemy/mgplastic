@@ -52,6 +52,7 @@ class DistributorPanelProvider extends PanelProvider
                 \App\Filament\Distributor\Pages\DistributorDashboard::class,
                 \App\Filament\Distributor\Pages\DistributorPos::class,
                 \App\Filament\Distributor\Pages\MyProducts::class,
+                \App\Filament\Distributor\Pages\StockInventoryReport::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Distributor/Widgets'), for: 'App\\Filament\\Distributor\\Widgets')
             ->renderHook('panels::head.end', fn () => view('filament.hooks.admin-styles'))
