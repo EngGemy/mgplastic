@@ -14,7 +14,7 @@ trait HasProductPointsForm
             Forms\Components\Grid::make(2)->schema([
                 Forms\Components\TextInput::make('points_per_unit')
                     ->label('النقاط لكل وحدة')
-                    ->helperText('⚠️ مطلوب — المنتجات بدون نقاط لا تظهر في نظام التوزيع والـ POS')
+                    ->helperText('سعر الكتالوج الموحّد للمبيعات الجديدة (حتى لو المخزون من فواتير قديمة). التعديل يُسجَّل في «أسعار نقاط المنتجات» مع تقدير الأثر وتنبيه للإدارة.')
                     ->numeric()
                     ->minValue(0.0001)
                     ->step(0.0001)

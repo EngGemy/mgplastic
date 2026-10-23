@@ -198,7 +198,10 @@ class NetworkInventoryService
 
         $product = $item->product;
         $productId = (int) $item->product_id;
-        $pointsPerUnit = (float) $item->points_per_unit;
+        // New sales use the live catalog rate (unified), even when fulfilling old slots.
+        $receivePpu = (float) $item->points_per_unit;
+        $catalogPpu = max(0, (float) ($product?->points_per_unit ?? 0));
+        $pointsPerUnit = $catalogPpu > 0 ? $catalogPpu : $receivePpu;
 
         if (! isset($byProduct[$productId])) {
             $group = $this->resolveStockGroup($product);
@@ -244,12 +247,126 @@ class NetworkInventoryService
 
         $byProduct[$productId]['available_qty'] += $available;
         $byProduct[$productId]['available_points'] += (int) floor($available * $pointsPerUnit);
+        // Keep product-level PPU on the live catalog rate if it changes mid-aggregation.
+        $byProduct[$productId]['points_per_unit'] = $pointsPerUnit;
         $byProduct[$productId]['slots'][] = [
             'invoice_id' => (int) $item->invoice_id,
             'invoice_item_id' => (int) $item->id,
             'parent_distribution_id' => $parentDistributionId,
             'available_qty' => $available,
             'points_per_unit' => $pointsPerUnit,
+            'receive_points_per_unit' => $receivePpu,
+        ];
+    }
+
+    /**
+     * Remaining sellable qty across the network for one catalog product
+     * (wholesalers + retail traders), with distinct holder counts.
+     *
+     * @return array{
+     *   wholesale_remaining_qty:int,
+     *   retail_remaining_qty:int,
+     *   wholesale_holders:int,
+     *   retail_holders:int
+     * }
+     */
+    public function networkRemainingForProduct(int $productId): array
+    {
+        $wholesaleQty = 0;
+        $wholesaleHolders = [];
+        $retailQty = 0;
+        $retailHolders = [];
+
+        $invoices = Invoice::query()
+            ->where('invoice_type', 'wholesale_pos')
+            ->where('invoice_flow', 'incoming')
+            ->where('status', 'approved')
+            ->whereHas('items', fn ($q) => $q->where('product_id', $productId))
+            ->with([
+                'items' => fn ($q) => $q->where('product_id', $productId),
+                'distributions' => fn ($q) => $q
+                    ->where('tier', 1)
+                    ->whereIn('status', ['confirmed', 'points_awarded']),
+            ])
+            ->get();
+
+        $pairs = [];
+        $pairMeta = [];
+        foreach ($invoices as $invoice) {
+            $tier1 = $invoice->distributions->first();
+            if (! $tier1) {
+                continue;
+            }
+            $holderId = (int) ($invoice->wholesale_distributor_id ?? $tier1->to_user_id);
+            foreach ($invoice->items as $item) {
+                $key = (int) $item->id.':'.(int) $tier1->id;
+                $pairs[] = [
+                    'invoice_item_id' => (int) $item->id,
+                    'parent_distribution_id' => (int) $tier1->id,
+                ];
+                $pairMeta[$key] = $holderId;
+            }
+        }
+
+        $availableByPair = $this->bulkAvailableForTier($pairs, tier: 2);
+        foreach ($availableByPair as $key => $qty) {
+            $qty = (int) $qty;
+            if ($qty <= 0) {
+                continue;
+            }
+            $wholesaleQty += $qty;
+            $holderId = (int) ($pairMeta[$key] ?? 0);
+            if ($holderId > 0) {
+                $wholesaleHolders[$holderId] = true;
+            }
+        }
+
+        $tier2 = InvoiceDistribution::query()
+            ->where('tier', 2)
+            ->whereIn('status', ['confirmed', 'points_awarded'])
+            ->whereHas('items.invoiceItem', fn ($q) => $q->where('product_id', $productId))
+            ->with([
+                'items' => fn ($q) => $q->whereHas('invoiceItem', fn ($iq) => $iq->where('product_id', $productId)),
+                'items.invoiceItem',
+            ])
+            ->get();
+
+        $retailPairs = [];
+        $retailMeta = [];
+        foreach ($tier2 as $distribution) {
+            $holderId = (int) $distribution->to_user_id;
+            foreach ($distribution->items as $distItem) {
+                $item = $distItem->invoiceItem;
+                if (! $item || (int) $item->product_id !== $productId) {
+                    continue;
+                }
+                $key = (int) $item->id.':'.(int) $distribution->id;
+                $retailPairs[] = [
+                    'invoice_item_id' => (int) $item->id,
+                    'parent_distribution_id' => (int) $distribution->id,
+                ];
+                $retailMeta[$key] = $holderId;
+            }
+        }
+
+        $retailAvailable = $this->bulkAvailableForTier($retailPairs, tier: 3);
+        foreach ($retailAvailable as $key => $qty) {
+            $qty = (int) $qty;
+            if ($qty <= 0) {
+                continue;
+            }
+            $retailQty += $qty;
+            $holderId = (int) ($retailMeta[$key] ?? 0);
+            if ($holderId > 0) {
+                $retailHolders[$holderId] = true;
+            }
+        }
+
+        return [
+            'wholesale_remaining_qty' => $wholesaleQty,
+            'retail_remaining_qty' => $retailQty,
+            'wholesale_holders' => count($wholesaleHolders),
+            'retail_holders' => count($retailHolders),
         ];
     }
 

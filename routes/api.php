@@ -355,6 +355,15 @@ Route::middleware(['auth:sanctum'])->prefix('v1/admin/notifications')->group(fun
     Route::get('stats', [\App\Http\Controllers\Api\Admin\NotificationAdminController::class, 'stats']);
 });
 
+// Admin: catalog points rate (unified new-sales pricing + impact history)
+Route::middleware(['auth:sanctum'])->prefix('v1/admin')->group(function () {
+    $pointsRate = \App\Http\Controllers\Api\Admin\ProductPointsRateController::class;
+    Route::get('products/points-rate/history', [$pointsRate, 'history']);
+    Route::match(['get', 'post'], 'products/{product}/points-rate/preview', [$pointsRate, 'preview'])->whereNumber('product');
+    Route::get('products/{product}/points-rate/history', [$pointsRate, 'history'])->whereNumber('product');
+    Route::match(['put', 'post'], 'products/{product}/points-rate', [$pointsRate, 'update'])->whereNumber('product');
+});
+
 // ── Mobile API v1 (organized for iOS/Android) ─────────────────
 require __DIR__.'/api/mobile.php';
 

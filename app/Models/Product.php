@@ -18,6 +18,12 @@ class Product extends Model
 
     public $translatedAttributes = ['name', 'description', 'usage'];
 
+    /** Skip duplicate audit when ProductPointsRateService already logged the change. */
+    public bool $pointsRateAudited = false;
+
+    /** Captured in observer before save when points_per_unit changes. */
+    public ?float $pointsRateOldValue = null;
+
     protected $fillable = [
         'product_category_id',
         'product_standard_id',
@@ -112,6 +118,11 @@ class Product extends Model
     public function invoiceItems(): HasMany
     {
         return $this->hasMany(InvoiceItem::class);
+    }
+
+    public function pointsRateChanges(): HasMany
+    {
+        return $this->hasMany(ProductPointsRateChange::class)->latest();
     }
 
     public function variants(): HasMany
