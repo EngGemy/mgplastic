@@ -128,7 +128,16 @@ class ProductCatalogController extends Controller
             ->map(fn (Product $product) => $mapProduct($product))
             ->values();
         $items = $this->sortCatalogItems($items, $sizeOrder);
-        $trees = $inventory->groupCatalogBrowse($items, $sizeOrder);
+
+        // Groups must reflect the FULL filtered catalog (not only this page),
+        // otherwise accordion order is incomplete / lexicographic on the client.
+        $allForGroups = $this->catalogQuery($request, applyOrderUnit: true)
+            ->limit(500)
+            ->get()
+            ->map(fn (Product $product) => $mapProduct($product))
+            ->values();
+        $allForGroups = $this->sortCatalogItems($allForGroups, $sizeOrder);
+        $trees = $inventory->groupCatalogBrowse($allForGroups, $sizeOrder);
 
         return [
             'items' => $items,
@@ -275,12 +284,11 @@ class ProductCatalogController extends Controller
 
             if ($family === 'accessory') {
                 $query->whereIn('product_category_id', $accessoryIds === [] ? [0] : $accessoryIds);
-            } else {
+            } elseif ($accessoryIds !== []) {
+                // pipe = not in accessories. If no accessory categories exist, keep all products.
                 $query->where(function ($q) use ($accessoryIds) {
-                    $q->whereNull('product_category_id');
-                    if ($accessoryIds !== []) {
-                        $q->orWhereNotIn('product_category_id', $accessoryIds);
-                    }
+                    $q->whereNull('product_category_id')
+                        ->orWhereNotIn('product_category_id', $accessoryIds);
                 });
             }
         }

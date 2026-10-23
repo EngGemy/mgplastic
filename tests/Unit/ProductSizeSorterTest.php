@@ -54,4 +54,33 @@ class ProductSizeSorterTest extends TestCase
 
         $this->assertSame(['110 مم', '6 بوصه', '1 بوصه', 'أخرى'], $names);
     }
+
+    public function test_excel_sheet_tag_set_sorts_numerically_not_lexicographically(): void
+    {
+        $groups = [
+            ['tag' => '110 مم'],
+            ['tag' => '1.5 بوصه'],
+            ['tag' => '75 مم'],
+            ['tag' => '2 بوصه'],
+            ['tag' => '160 مم'],
+            ['tag' => '1 بوصه'],
+            ['tag' => '6 بوصه'],
+            ['tag' => '90 مم'],
+            ['tag' => '4 بوصه'],
+            ['tag' => '3 بوصه'],
+            ['tag' => '1.5 بوصة'], // variant spelling
+        ];
+
+        $asc = array_column(ProductSizeSorter::sortTagGroupsByNumber($groups, 'asc'), 'tag');
+
+        // Lexicographic would put 110 before 2 — numeric must not.
+        $this->assertSame('1 بوصه', $asc[0]);
+        $this->assertContains($asc[1], ['1.5 بوصه', '1.5 بوصة']);
+        $this->assertSame('2 بوصه', $asc[3]);
+        $pos110 = array_search('110 مم', $asc, true);
+        $pos2 = array_search('2 بوصه', $asc, true);
+        $this->assertIsInt($pos110);
+        $this->assertIsInt($pos2);
+        $this->assertGreaterThan($pos2, $pos110);
+    }
 }

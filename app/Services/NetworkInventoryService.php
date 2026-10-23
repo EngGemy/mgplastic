@@ -730,8 +730,8 @@ class NetworkInventoryService
             return [
                 'tags' => $tags,
                 'tag' => $primaryTag,
-                // One section per tag label so «كوع 1 بوصة» stays together under the category.
-                'key' => 'tag:'.Str::slug($primaryTag, '_'),
+                // Stable key from tag text — do NOT Str::slug Arabic (collapses every tag to "tag:").
+                'key' => 'tag:'.mb_strtolower($primaryTag),
                 'name' => $primaryTag,
                 'product_type' => $type['key'] ?? null,
                 'product_type_name' => $type['name'] ?? null,

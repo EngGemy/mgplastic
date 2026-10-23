@@ -81,6 +81,15 @@ class ProductSizeSorter
             '٫' => '.', '،' => '.',
             'ـ' => '',
         ]);
+        // Normalize common inch spellings + presentation-form letters from Excel/RTL exports.
+        $t = str_replace(['بوصة', 'بوصه', 'بوص'], 'بوصه', $t);
+        $t = strtr($t, [
+            'ﺑ' => 'ب', 'ﺒ' => 'ب', 'ﺐ' => 'ب', 'ﺏ' => 'ب',
+            'ﻭ' => 'و', 'ﻮ' => 'و',
+            'ﺻ' => 'ص', 'ﺼ' => 'ص',
+            'ﻪ' => 'ه', 'ﻩ' => 'ه', 'ﺔ' => 'ه', 'ة' => 'ه',
+            'ﻤ' => 'م', 'ﻣ' => 'م', 'ﻢ' => 'م',
+        ]);
         $t = str_replace(['بوصة', 'بوصه', 'بوص'], 'بوصه', $t);
 
         // 1½
