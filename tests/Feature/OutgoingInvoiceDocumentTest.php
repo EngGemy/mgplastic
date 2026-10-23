@@ -102,6 +102,39 @@ class OutgoingInvoiceDocumentTest extends TestCase
         $this->assertSame(2, (int) $outgoing->fresh()->items()->first()->quantity);
     }
 
+    public function test_reconcile_fixes_qty_times_ppu_not_matching_total(): void
+    {
+        [$admin, $wholesaler, $retail, $product, $invoice, $item, $tier1] = $this->seedTier1Stock(20);
+
+        // Lot receive rate 10 — catalog may differ later.
+        $item->forceFill(['points_per_unit' => 10, 'total_points' => 200])->save();
+        $product->forceFill(['points_per_unit' => 15])->save();
+
+        $this->actingAs($wholesaler);
+        $dist2 = app(DistributionService::class)->createDistribution(
+            $invoice,
+            $wholesaler,
+            $retail,
+            2,
+            [['invoice_item_id' => $item->id, 'quantity' => 20]],
+            $tier1->id,
+        );
+
+        $outgoing = Invoice::query()->where('source_distribution_id', $dist2->id)->firstOrFail();
+        // Simulate the bug: wrong total stored while ppu shows lot rate.
+        $line = $outgoing->items()->first();
+        $line->forceFill(['points_per_unit' => 10, 'total_points' => 300])->save();
+        $outgoing->forceFill(['points_awarded' => 300])->save();
+
+        app(OutgoingInvoiceService::class)->reconcileLineTotals($outgoing->fresh(['items']));
+
+        $line = $outgoing->fresh()->items()->first();
+        $this->assertSame(10.0, (float) $line->points_per_unit);
+        $this->assertSame(200, (int) $line->total_points); // 20 × 10
+        $this->assertSame(200, (int) $outgoing->fresh()->points_awarded);
+        $this->assertSame(200, (int) $dist2->fresh()->items()->first()->points_value);
+    }
+
     /** @return array{0:User,1:User,2:User,3:Product,4:Invoice,5:InvoiceItem,6:\App\Models\InvoiceDistribution} */
     protected function seedTier1Stock(int $qty): array
     {

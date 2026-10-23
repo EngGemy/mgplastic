@@ -19,15 +19,16 @@ use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
- * Proves catalog points policy is applied end-to-end:
- * - NEW sales award at live catalog rate (even if invoice_item still has old receive PPU)
- * - RETURNS claw back awarded distribution points_value (not invoice/catalog re-price)
+ * Proves points policy end-to-end:
+ * - Stock sales award at **lot receive rate** (invoice_item.points_per_unit)
+ *   so old/new stock can be split into separate invoices with correct qty×ppu.
+ * - RETURNS claw back awarded distribution points_value (not re-price).
  */
 class CatalogPointsSaleReturnTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_distribution_awards_live_catalog_rate_not_invoice_snapshot(): void
+    public function test_distribution_awards_lot_receive_rate_not_later_catalog(): void
     {
         $superAdmin = User::factory()->create(['role' => 'super_admin']);
         $wholesaler = User::factory()->create(['role' => 'wholesale_distributor', 'is_approved' => true, 'is_active' => true]);
@@ -69,12 +70,12 @@ class CatalogPointsSaleReturnTest extends TestCase
 
         $distItem = $dist3->items->first();
 
-        // 10 × catalog 12 = 120 — NOT 10 × invoice 5 = 50
-        $this->assertSame(120, (int) $distItem->points_value);
+        // 10 × lot receive 5 = 50 — NOT 10 × later catalog 12 = 120
+        $this->assertSame(50, (int) $distItem->points_value);
         $this->assertSame(5.0, (float) $invoiceItem->fresh()->points_per_unit);
 
         $service->confirmDistribution($dist3->fresh(['items']));
-        $this->assertSame(120, (int) $plumber->wallet()->fresh()->balance_points);
+        $this->assertSame(50, (int) $plumber->wallet()->fresh()->balance_points);
     }
 
     public function test_return_claws_back_awarded_points_not_receive_invoice_rate(): void
@@ -136,7 +137,7 @@ class CatalogPointsSaleReturnTest extends TestCase
         $this->assertSame(100, (int) $first->total_points + (int) $second->total_points);
     }
 
-    public function test_network_stock_shows_catalog_rate_not_receive_rate(): void
+    public function test_network_stock_points_follow_lot_receive_rate(): void
     {
         $wholesaler = User::factory()->create([
             'role' => 'wholesale_distributor',
@@ -158,7 +159,7 @@ class CatalogPointsSaleReturnTest extends TestCase
             'invoice_id' => $invoice->id,
             'product_id' => $product->id,
             'quantity' => 20,
-            'points_per_unit' => 5.0, // old receive
+            'points_per_unit' => 5.0, // old receive lot
             'total_points' => 100,
         ]);
 
@@ -168,9 +169,9 @@ class CatalogPointsSaleReturnTest extends TestCase
         $row = $inventory->stockForWholesaler($wholesaler)->first();
 
         $this->assertNotNull($row);
-        $this->assertSame(12.0, (float) $row['points_per_unit']);
+        $this->assertSame(5.0, (float) $row['points_per_unit']);
         $this->assertSame(5.0, (float) $row['slots'][0]['receive_points_per_unit']);
-        $this->assertSame(240, (int) $row['available_points']); // 20 × 12
+        $this->assertSame(100, (int) $row['available_points']); // 20 × 5 lot
 
         $network = $inventory->networkRemainingForProduct((int) $product->id);
         $this->assertSame(20, (int) $network['wholesale_remaining_qty']);

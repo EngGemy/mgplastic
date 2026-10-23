@@ -205,10 +205,11 @@ class NetworkInventoryService
 
         $product = $item->product;
         $productId = (int) $item->product_id;
-        // Sale display/preview = live catalog only (incl. 0). Receive rate kept as metadata.
+        // Lot receive rate drives sale math; catalog is fallback when lot PPU is 0.
         $receivePpu = (float) $item->points_per_unit;
-        $pointsPerUnit = app(\App\Services\Points\CatalogPointsPolicy::class)
+        $catalogPpu = app(\App\Services\Points\CatalogPointsPolicy::class)
             ->catalogRate($product, null);
+        $lotPpu = $receivePpu > 0 ? $receivePpu : $catalogPpu;
 
         if (! isset($byProduct[$productId])) {
             $group = $this->resolveStockGroup($product);
@@ -249,7 +250,7 @@ class NetworkInventoryService
                 'size_sort' => $size['size_sort'],
                 'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
                 'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
-                'points_per_unit' => $pointsPerUnit,
+                'points_per_unit' => $lotPpu,
                 'available_qty' => 0,
                 'available_points' => 0,
                 'slots' => [],
@@ -257,15 +258,18 @@ class NetworkInventoryService
         }
 
         $byProduct[$productId]['available_qty'] += $available;
-        $byProduct[$productId]['available_points'] += (int) floor($available * $pointsPerUnit);
-        // Keep product-level PPU on the live catalog rate if it changes mid-aggregation.
-        $byProduct[$productId]['points_per_unit'] = $pointsPerUnit;
+        $byProduct[$productId]['available_points'] += (int) floor($available * $lotPpu);
+        // Weighted average across lots (old + new rates).
+        $qty = (int) $byProduct[$productId]['available_qty'];
+        $byProduct[$productId]['points_per_unit'] = $qty > 0
+            ? round(((int) $byProduct[$productId]['available_points']) / $qty, 4)
+            : $lotPpu;
         $byProduct[$productId]['slots'][] = [
             'invoice_id' => (int) $item->invoice_id,
             'invoice_item_id' => (int) $item->id,
             'parent_distribution_id' => $parentDistributionId,
             'available_qty' => $available,
-            'points_per_unit' => $pointsPerUnit,
+            'points_per_unit' => $lotPpu,
             'receive_points_per_unit' => $receivePpu,
         ];
     }

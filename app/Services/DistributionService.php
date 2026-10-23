@@ -40,8 +40,8 @@ class DistributionService
 
             foreach ($items as $itemData) {
                 $invoiceItem = $invoice->items()->with('product')->findOrFail($itemData['invoice_item_id']);
-                // NEW sales: live catalog rate (unified). invoice_item PPU is archive/fallback only.
-                $pointsValue = $pointsPolicy->awardForSale(
+                // Stock lot rate (receive snapshot) so old/new invoices stay separate & math matches qty×ppu.
+                $pointsValue = $pointsPolicy->awardForLotSale(
                     $invoiceItem->product,
                     (int) $itemData['quantity'],
                     (float) $invoiceItem->points_per_unit,

@@ -28,16 +28,15 @@ class OutgoingInvoiceService
 
         if ($existing) {
             $this->syncLineItemsFromDistribution($existing, $distribution);
+            $this->reconcileLineTotals($existing);
 
             return $existing->fresh(['items']);
         }
 
-        $parent = $distribution->invoice;
-        $points = (int) $distribution->items->sum('points_value');
-
-        return DB::transaction(function () use ($distribution, $parent, $points, $tier) {
+        return DB::transaction(function () use ($distribution, $tier) {
             $numberType = $tier === 2 ? 'wholesale_out' : 'plumber_receipt';
             [$serial, $number] = app(InvoiceNumberService::class)->reserveNext($numberType);
+            $parent = $distribution->invoice;
 
             $payload = [
                 'serial_number' => $serial,
@@ -55,7 +54,7 @@ class OutgoingInvoiceService
                 'approved_at' => $distribution->status !== 'draft' ? ($distribution->confirmed_at ?? now()) : null,
                 'reviewed_by' => null,
                 'issued_by' => $distribution->from_user_id,
-                'points_awarded' => $points,
+                'points_awarded' => 0,
                 'profit_percent' => null,
             ];
 
@@ -65,7 +64,6 @@ class OutgoingInvoiceService
                 $payload['plumber_id'] = null;
                 $payload['vendor_store_id'] = null;
             } else {
-                // Retail → plumber sales document
                 $payload['wholesale_distributor_id'] = null;
                 $payload['counterparty_user_id'] = $distribution->to_user_id;
                 $payload['plumber_id'] = $distribution->to_user_id;
@@ -74,14 +72,15 @@ class OutgoingInvoiceService
 
             $invoice = Invoice::create($payload);
             $this->syncLineItemsFromDistribution($invoice, $distribution);
+            $this->reconcileLineTotals($invoice);
 
             return $invoice->fresh(['items']);
         });
     }
 
     /**
-     * Copy distribution lines onto the document invoice (idempotent).
-     * Needed for older outgoing invoices that were created without items.
+     * Copy distribution lines onto the document invoice (idempotent create).
+     * Line total ALWAYS = floor(qty × lot points_per_unit).
      */
     public function syncLineItemsFromDistribution(Invoice $invoice, ?InvoiceDistribution $distribution = null): void
     {
@@ -93,6 +92,8 @@ class OutgoingInvoiceService
         $distribution->loadMissing(['items.invoiceItem']);
 
         if ($invoice->items()->exists()) {
+            $this->reconcileLineTotals($invoice);
+
             return;
         }
 
@@ -109,8 +110,12 @@ class OutgoingInvoiceService
                 }
 
                 $qty = (int) $di->quantity;
-                $ppu = (float) ($parentItem?->points_per_unit ?? 0);
-                $linePoints = (int) ($di->points_value ?? floor($qty * $ppu));
+                $ppu = max(0, (float) ($parentItem?->points_per_unit ?? 0));
+                // Prefer lot rate math; if lot PPU is 0, derive from awarded points_value.
+                if ($ppu <= 0 && $qty > 0 && (int) $di->points_value > 0) {
+                    $ppu = round(((int) $di->points_value) / $qty, 4);
+                }
+                $linePoints = (int) floor($qty * $ppu);
 
                 InvoiceItem::create([
                     'invoice_id' => $invoice->id,
@@ -124,5 +129,48 @@ class OutgoingInvoiceService
                 ]);
             }
         });
+    }
+
+    /**
+     * Fix qty × ppu ≠ total_points (and header points_awarded) on outgoing docs.
+     */
+    public function reconcileLineTotals(Invoice $invoice): void
+    {
+        $invoice->loadMissing(['items', 'sourceDistribution.items.invoiceItem']);
+
+        if ($invoice->items->isEmpty()) {
+            return;
+        }
+
+        $sum = 0;
+        foreach ($invoice->items as $item) {
+            $qty = (int) $item->quantity;
+            $ppu = max(0, (float) $item->points_per_unit);
+            $expected = (int) floor($qty * $ppu);
+
+            if ((int) $item->total_points !== $expected) {
+                $item->forceFill(['total_points' => $expected])->save();
+            }
+
+            $sum += $expected;
+        }
+
+        // Keep distribution points_value aligned with lot math for returns.
+        $dist = $invoice->sourceDistribution;
+        if ($dist) {
+            foreach ($dist->items as $di) {
+                $parent = $di->invoiceItem;
+                $qty = (int) $di->quantity;
+                $ppu = max(0, (float) ($parent?->points_per_unit ?? 0));
+                $expected = (int) floor($qty * $ppu);
+                if ($ppu > 0 && (int) $di->points_value !== $expected) {
+                    $di->forceFill(['points_value' => $expected])->save();
+                }
+            }
+        }
+
+        if ((int) $invoice->points_awarded !== $sum) {
+            $invoice->forceFill(['points_awarded' => $sum])->save();
+        }
     }
 }

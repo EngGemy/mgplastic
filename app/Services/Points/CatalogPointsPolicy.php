@@ -8,12 +8,13 @@ use App\Models\Product;
 /**
  * Single source of truth for catalog points pricing across sales & returns.
  *
- * Policy (anti-abuse):
- * - NEW sales → always live catalog `product.points_per_unit` (unified rate),
- *   even when fulfilling stock received at an older invoice rate.
+ * Policy:
+ * - Stock-backed sales (POS / توزيع من فاتورة وارد) → سعر **دفعة المخزون**
+ *   (`invoice_items.points_per_unit`) حتى يمكن فصل فاتورة قديم/جديد.
+ *   لو سعر الدفعة 0 → يرجع لسعر الكتالوج الحي.
+ * - `awardForSale` (كتالوج حي) يبقى للحالات بدون دفعة مخزون.
  * - RETURNS → reverse points actually awarded on that distribution line
- *   (`invoice_distribution_items.points_value`), never re-price at catalog
- *   or at the receive/invoice snapshot. Prevents gaming after a rate change.
+ *   (`invoice_distribution_items.points_value`), never re-price at catalog.
  */
 final class CatalogPointsPolicy
 {
@@ -30,6 +31,24 @@ final class CatalogPointsPolicy
         $ppu = $this->catalogRate($product, $fallbackPerUnit);
 
         return (int) floor($qty * $ppu);
+    }
+
+    /**
+     * Points for selling from a received stock lot (invoice line snapshot).
+     * total MUST equal floor(qty × lot rate) so document lines stay consistent.
+     */
+    public function awardForLotSale(?Product $product, int $quantity, float $lotPerUnit): int
+    {
+        $qty = max(0, $quantity);
+        if ($qty <= 0) {
+            return 0;
+        }
+
+        $ppu = $lotPerUnit > 0
+            ? $lotPerUnit
+            : $this->catalogRate($product);
+
+        return (int) floor($qty * max(0, $ppu));
     }
 
     /**

@@ -21,6 +21,17 @@ class CatalogPointsPolicyTest extends TestCase
         $this->assertSame(12.5, $policy->catalogRate($product, 5.0));
     }
 
+    public function test_award_for_lot_sale_uses_lot_rate_so_qty_times_ppu_matches(): void
+    {
+        $policy = new CatalogPointsPolicy;
+        $product = new Product;
+        $product->points_per_unit = 15.0; // later catalog — must NOT win over lot 10
+
+        $this->assertSame(200, $policy->awardForLotSale($product, 20, 10.0));
+        $this->assertSame(300, $policy->awardForLotSale($product, 20, 0.0)); // lot 0 → catalog
+        $this->assertSame(0, $policy->awardForLotSale($product, 0, 10.0));
+    }
+
     public function test_award_falls_back_when_product_missing(): void
     {
         $policy = new CatalogPointsPolicy;

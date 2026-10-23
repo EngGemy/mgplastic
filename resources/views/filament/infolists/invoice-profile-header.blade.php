@@ -10,9 +10,15 @@
             : $record->items->sum('quantity')
     );
 
+    // Prefer line math (qty×ppu) over stale points_awarded when items exist.
     $totalPoints = $hasReturns
         ? $summary['net_points']
-        : (int) ($record->points_awarded ?: $record->items->sum('total_points') ?: ($record->sourceDistribution?->items->sum('points_value') ?? 0));
+        : (int) (
+            $record->items->isNotEmpty()
+                ? $record->items->sum(fn ($i) => (int) floor((int) $i->quantity * (float) $i->points_per_unit))
+                : ($record->points_awarded
+                    ?: ($record->sourceDistribution?->items->sum('points_value') ?? 0))
+        );
 
     $statusLabel = match ($record->status) {
         'approved' => 'معتمدة',

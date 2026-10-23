@@ -26,9 +26,14 @@ class ViewInvoice extends ViewRecord
     {
         parent::mount($record);
 
-        // Older outgoing invoices had no invoice_items — backfill from distribution lines.
-        if ($this->record->isOutgoing() && ! $this->record->items()->exists()) {
-            app(OutgoingInvoiceService::class)->syncLineItemsFromDistribution($this->record);
+        // Outgoing docs: backfill missing lines + fix qty×ppu ≠ total_points.
+        if ($this->record->isOutgoing()) {
+            $outgoing = app(OutgoingInvoiceService::class);
+            if (! $this->record->items()->exists()) {
+                $outgoing->syncLineItemsFromDistribution($this->record);
+            } else {
+                $outgoing->reconcileLineTotals($this->record);
+            }
             $this->record->refresh();
         }
 
