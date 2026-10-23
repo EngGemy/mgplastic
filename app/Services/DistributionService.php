@@ -36,16 +36,16 @@ class DistributionService
                 'status' => 'draft',
             ]);
 
-            $rateService = app(ProductPointsRateService::class);
+            $pointsPolicy = app(\App\Services\Points\CatalogPointsPolicy::class);
 
             foreach ($items as $itemData) {
                 $invoiceItem = $invoice->items()->with('product')->findOrFail($itemData['invoice_item_id']);
-                // Unified catalog rate for NEW sales — historical invoice_item PPU stays for audit only.
-                $ppu = $rateService->catalogRateForProduct(
+                // NEW sales: live catalog rate (unified). invoice_item PPU is archive/fallback only.
+                $pointsValue = $pointsPolicy->awardForSale(
                     $invoiceItem->product,
+                    (int) $itemData['quantity'],
                     (float) $invoiceItem->points_per_unit,
                 );
-                $pointsValue = (int) floor($itemData['quantity'] * $ppu);
 
                 InvoiceDistributionItem::create([
                     'distribution_id' => $created->id,

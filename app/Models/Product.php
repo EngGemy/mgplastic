@@ -125,6 +125,11 @@ class Product extends Model
         return $this->hasMany(ProductPointsRateChange::class)->latest();
     }
 
+    public function latestPointsRateChange(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ProductPointsRateChange::class)->latestOfMany();
+    }
+
     public function variants(): HasMany
     {
         return $this->hasMany(ProductVariant::class);

@@ -6,7 +6,19 @@
     foreach ($items as $row) {
         $q = (int) ($row['quantity'] ?? 0);
         $qty += $q;
-        $pts += (int) floor($q * (float) ($row['points_per_unit'] ?? 0));
+        $sold = max(1, (int) ($row['sold'] ?? 1));
+        $awarded = (int) ($row['awarded_points'] ?? 0);
+        $returnable = (int) ($row['returnable'] ?? 0);
+        $returnablePoints = (int) ($row['returnable_points'] ?? 0);
+
+        if ($q <= 0) {
+            continue;
+        }
+        if ($q >= $returnable && $returnable > 0) {
+            $pts += $returnablePoints;
+        } else {
+            $pts += (int) floor($awarded * $q / $sold);
+        }
     }
 @endphp
 
@@ -20,7 +32,7 @@
     </div>
     <div class="ret-totals-note">
         @if($qty > 0)
-            ستُخصم من المستلم وتُعاد للمورّد بعد التأكيد
+            ستُخصم من المستلم وتُعاد للمورّد بعد التأكيد (حسب نقاط البيع الأصلية)
         @else
             أدخل كمية أكبر من صفر لبند واحد على الأقل
         @endif

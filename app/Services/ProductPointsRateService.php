@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Filament\Pages\ProductPointsRates;
+use App\Filament\Pages\ProductPointsChangesReport;
 use App\Models\Product;
 use App\Models\ProductPointsRateChange;
 use App\Models\User;
@@ -139,14 +139,12 @@ class ProductPointsRateService
 
     /**
      * Current catalog rate for NEW sales (unified), regardless of slot receive rate.
+     * Delegates to CatalogPointsPolicy (single pricing policy).
      */
     public function catalogRateForProduct(?Product $product, ?float $fallback = null): float
     {
-        if ($product) {
-            return max(0, (float) ($product->points_per_unit ?? 0));
-        }
-
-        return max(0, (float) ($fallback ?? 0));
+        return app(\App\Services\Points\CatalogPointsPolicy::class)
+            ->catalogRate($product, $fallback);
     }
 
     /**
@@ -196,9 +194,9 @@ class ProductPointsRateService
 
         $url = null;
         try {
-            $url = ProductPointsRates::getUrl();
+            $url = ProductPointsChangesReport::getUrl();
         } catch (\Throwable) {
-            $url = '/admin/product-points-rates';
+            $url = '/admin/product-points-changes-report';
         }
 
         AdminNotificationService::sendToMany(

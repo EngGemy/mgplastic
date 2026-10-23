@@ -41,12 +41,12 @@ class ProductPointsRates extends Page implements HasForms, HasTable
 
     public static function getNavigationLabel(): string
     {
-        return 'أسعار نقاط المنتجات';
+        return 'تعديل أسعار النقاط';
     }
 
     public function getTitle(): string
     {
-        return 'أسعار نقاط المنتجات';
+        return 'تعديل أسعار نقاط المنتجات';
     }
 
     public function getHeading(): string

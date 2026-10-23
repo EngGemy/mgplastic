@@ -6,6 +6,9 @@ use App\Models\InvoiceDistributionItem;
 use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductPointsRateChange;
+use App\Filament\Pages\ProductPointsChangesReport;
+use App\Filament\Pages\ProductPointsRates;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -53,8 +56,18 @@ class ProductsReport extends Page implements HasTable
         $totalAwarded = (int) InvoiceDistributionItem::query()
             ->whereHas('distribution', fn ($q) => $q->where('tier', 3)->where('status', 'points_awarded'))
             ->sum('points_value');
+        $rateChangesCount = ProductPointsRateChange::query()->count();
+        $rateChangesUrl = ProductPointsChangesReport::getUrl();
 
-        return compact('totalProducts', 'withPoints', 'avgPoints', 'totalSold', 'totalAwarded');
+        return compact(
+            'totalProducts',
+            'withPoints',
+            'avgPoints',
+            'totalSold',
+            'totalAwarded',
+            'rateChangesCount',
+            'rateChangesUrl',
+        );
     }
 
     public function table(Table $table): Table
@@ -96,6 +109,41 @@ class ProductsReport extends Page implements HasTable
                     ->color(fn ($state) => (float) $state > 0 ? 'success' : 'gray')
                     ->formatStateUsing(fn ($state) => number_format((float) $state, 2))
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('last_rate_change')
+                    ->label('آخر تغيير سعر')
+                    ->state(function (Product $p) {
+                        $c = $p->latestPointsRateChange;
+                        if (! $c) {
+                            return '—';
+                        }
+                        $sign = (float) $c->delta_points_per_unit >= 0 ? '+' : '';
+                        $pct = $c->change_percent !== null
+                            ? $sign.number_format((float) $c->change_percent, 1).'%'
+                            : $sign.number_format((float) $c->delta_points_per_unit, 2);
+
+                        return number_format((float) $c->old_points_per_unit, 2)
+                            .' → '.number_format((float) $c->new_points_per_unit, 2)
+                            .' ('.$pct.')';
+                    })
+                    ->badge()
+                    ->color(function (Product $p) {
+                        $c = $p->latestPointsRateChange;
+                        if (! $c) {
+                            return 'gray';
+                        }
+
+                        return match ($c->direction()) {
+                            'up' => 'warning',
+                            'down' => 'success',
+                            default => 'gray',
+                        };
+                    })
+                    ->description(fn (Product $p) => $p->latestPointsRateChange
+                        ? $p->latestPointsRateChange->created_at?->diffForHumans()
+                        : null)
+                    ->url(fn () => ProductPointsChangesReport::getUrl())
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('point_conversion')
                     ->label('تحويل النقاط')
@@ -205,6 +253,18 @@ class ProductsReport extends Page implements HasTable
                     ->label('تصدير CSV')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->action(fn () => $this->exportCsv()),
+
+                Tables\Actions\Action::make('points_rate_report')
+                    ->label('تقرير تغيرات الأسعار')
+                    ->icon('heroicon-o-clipboard-document-list')
+                    ->color('warning')
+                    ->url(fn () => ProductPointsChangesReport::getUrl()),
+
+                Tables\Actions\Action::make('points_rate_edit')
+                    ->label('تعديل أسعار النقاط')
+                    ->icon('heroicon-o-currency-dollar')
+                    ->color('gray')
+                    ->url(fn () => ProductPointsRates::getUrl()),
             ])
             ->emptyStateHeading('لا توجد منتجات')
             ->emptyStateDescription('أضف منتجات لعرض تقرير النقاط وتوزيعها')
@@ -215,7 +275,12 @@ class ProductsReport extends Page implements HasTable
     {
         return Product::query()
             ->select('products.*')
-            ->with(['category.parent.translations', 'category.translations', 'translations'])
+            ->with([
+                'category.parent.translations',
+                'category.translations',
+                'translations',
+                'latestPointsRateChange',
+            ])
             ->withSum('invoiceItems as sold_qty', 'quantity')
             ->selectSub(
                 InvoiceDistributionItem::query()

@@ -26,6 +26,10 @@
                 <span class="prod-report-stat-num">{{ number_format($stats['totalAwarded']) }}</span>
                 <span class="prod-report-stat-label">⭐ نقاط ممنوحة للسباكين</span>
             </div>
+            <a href="{{ $stats['rateChangesUrl'] }}" class="prod-report-stat prod-report-stat--amber" style="text-decoration:none;color:inherit">
+                <span class="prod-report-stat-num">{{ number_format($stats['rateChangesCount']) }}</span>
+                <span class="prod-report-stat-label">تقرير تغيرات الأسعار ←</span>
+            </a>
         </div>
 
         {{-- شرح التوزيع --}}

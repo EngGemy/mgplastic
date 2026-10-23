@@ -140,7 +140,11 @@ trait HandlesInvoiceReturns
             'invoice_item_id' => $line['invoice_item_id'],
             'product_name' => $line['product_name'],
             'returnable' => $line['returnable'],
-            'points_per_unit' => $line['points_per_unit'],
+            'sold' => (int) ($line['sold'] ?? 0),
+            'awarded_points' => (int) ($line['awarded_points'] ?? 0),
+            'returnable_points' => (int) ($line['returnable_points'] ?? 0),
+            // Kept for legacy form state; clawback uses awarded_points (not catalog/invoice rate).
+            'points_per_unit' => null,
             'quantity' => 0,
         ])->values()->all();
 
@@ -155,6 +159,9 @@ trait HandlesInvoiceReturns
                 ->schema([
                     Forms\Components\Hidden::make('invoice_item_id'),
                     Forms\Components\Hidden::make('returnable'),
+                    Forms\Components\Hidden::make('sold'),
+                    Forms\Components\Hidden::make('awarded_points'),
+                    Forms\Components\Hidden::make('returnable_points'),
                     Forms\Components\Hidden::make('points_per_unit'),
                     Forms\Components\Hidden::make('product_name'),
 

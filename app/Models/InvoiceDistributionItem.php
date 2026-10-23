@@ -51,4 +51,14 @@ class InvoiceDistributionItem extends Model
 
         return (int) floor($points * $net / $quantity);
     }
+
+    /**
+     * Points to claw back for a return qty from this awarded line
+     * (proportional to points_value — never re-priced at catalog/invoice rate).
+     */
+    public function pointsForReturnQty(int $returnQty): int
+    {
+        return app(\App\Services\Points\CatalogPointsPolicy::class)
+            ->clawbackForReturn($this, $returnQty);
+    }
 }

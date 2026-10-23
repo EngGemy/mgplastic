@@ -2,15 +2,21 @@
 
 namespace App\Filament\Resources\ProductResource\Pages;
 
+use App\Filament\Pages\ProductPointsChangesReport;
 use App\Filament\Resources\ProductResource;
 use App\Models\Product;
 use App\Models\ProductTag;
+use App\Services\ProductPointsRateService;
+use Filament\Notifications\Actions\Action as NotificationAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Facades\Storage;
 
 class EditProduct extends EditRecord
 {
     protected static string $resource = ProductResource::class;
+
+    protected ?float $pointsRateBeforeSave = null;
 
     protected function mutateFormDataBeforeFill(array $data): array
     {
@@ -87,6 +93,15 @@ class EditProduct extends EditRecord
         return array_merge($base, $catalog);
     }
 
+    protected function beforeSave(): void
+    {
+        /** @var Product $record */
+        $record = $this->record;
+        $this->pointsRateBeforeSave = round((float) ($record->points_per_unit ?? 0), 4);
+        // نمنع الـ Observer من التسجيل المزدوج — نسجّل نحن بعد الحفظ مع إشعار الواجهة
+        $record->pointsRateAudited = true;
+    }
+
     protected function afterSave(): void
     {
         /** @var Product $record */
@@ -101,8 +116,84 @@ class EditProduct extends EditRecord
         $record->translateOrNew('ar')->description = $data['description_ar'] ?? '';
         $record->translateOrNew('ar')->usage = $data['usage_ar'] ?? '';
 
+        $record->pointsRateAudited = true;
         $record->save();
         ProductTag::syncNamesOntoProduct($record, $data['tag_names'] ?? []);
+
+        $this->auditPointsRateIfChanged();
+    }
+
+    /**
+     * أي تغيير لسعر النقاط من صفحة المنتج → سجل + تنبيه إدارة + رسالة للمُعدِّل.
+     */
+    protected function auditPointsRateIfChanged(): void
+    {
+        if ($this->pointsRateBeforeSave === null) {
+            return;
+        }
+
+        /** @var Product $record */
+        $record = $this->record->fresh() ?? $this->record;
+        $old = $this->pointsRateBeforeSave;
+        $new = round((float) ($record->points_per_unit ?? 0), 4);
+
+        if (abs($new - $old) < 0.00005) {
+            return;
+        }
+
+        if ($new <= 0) {
+            return;
+        }
+
+        try {
+            // Observer كان متخطّى — نسجّل هنا صراحةً
+            $record->pointsRateAudited = false;
+            $change = app(ProductPointsRateService::class)->auditPersistedChange(
+                $record,
+                $old,
+                auth()->user(),
+                note: 'تغيير من تعديل المنتج',
+                notifyAdmins: true,
+            );
+        } catch (\Throwable $e) {
+            report($e);
+            Notification::make()
+                ->title('تم حفظ المنتج')
+                ->body('لكن تعذّر تسجيل تغيير سعر النقاط في التقرير: '.$e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        if (! $change) {
+            return;
+        }
+
+        $reportUrl = ProductPointsChangesReport::getUrl();
+
+        Notification::make()
+            ->title('تم تسجيل تغيير سعر النقاط')
+            ->body(sprintf(
+                "من %s → %s نقطة/وحدة (%s%s).\nمخزون جملة: %s · قطاعي: %s · تقدير الفرق: %+d نقطة.\nظهر في تقرير تغيرات الأسعار وتم تنبيه الإدارة.",
+                number_format((float) $change->old_points_per_unit, 2),
+                number_format((float) $change->new_points_per_unit, 2),
+                (float) $change->delta_points_per_unit >= 0 ? '+' : '',
+                $change->change_percent !== null
+                    ? number_format((float) $change->change_percent, 1).'%'
+                    : number_format((float) $change->delta_points_per_unit, 2),
+                number_format((int) $change->wholesale_remaining_qty),
+                number_format((int) $change->retail_remaining_qty),
+                (int) $change->estimated_points_delta,
+            ))
+            ->warning()
+            ->persistent()
+            ->actions([
+                NotificationAction::make('open_report')
+                    ->label('فتح تقرير تغيرات الأسعار')
+                    ->url($reportUrl),
+            ])
+            ->send();
     }
 
     private function normalizeUploadPath($value): ?string

@@ -198,10 +198,10 @@ class NetworkInventoryService
 
         $product = $item->product;
         $productId = (int) $item->product_id;
-        // New sales use the live catalog rate (unified), even when fulfilling old slots.
+        // Sale display/preview = live catalog only (incl. 0). Receive rate kept as metadata.
         $receivePpu = (float) $item->points_per_unit;
-        $catalogPpu = max(0, (float) ($product?->points_per_unit ?? 0));
-        $pointsPerUnit = $catalogPpu > 0 ? $catalogPpu : $receivePpu;
+        $pointsPerUnit = app(\App\Services\Points\CatalogPointsPolicy::class)
+            ->catalogRate($product, null);
 
         if (! isset($byProduct[$productId])) {
             $group = $this->resolveStockGroup($product);

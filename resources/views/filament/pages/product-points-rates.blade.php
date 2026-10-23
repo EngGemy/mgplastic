@@ -11,6 +11,9 @@
                 'سجل التغييرات أدناه مرجع تاريخي (ليس على بطاقة المنتج في الموبايل).',
             ]"
             note="السياسة: قديم يبقى على فاتورته للأرشيف · جديد = سعر الكتالوج الموحّد."
+            :actions="[
+                ['label' => 'تقرير تغيرات الأسعار', 'url' => \App\Filament\Pages\ProductPointsChangesReport::getUrl(), 'tone' => 'ghost'],
+            ]"
         />
 
         @if ($this->canApply())

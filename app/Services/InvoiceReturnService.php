@@ -338,11 +338,22 @@ class InvoiceReturnService
     }
 
     /**
-     * @return array<int, array{invoice_item_id:int, product_name:string, returnable:int, points_per_unit:null, sold:int, returned:int, has_points:bool}>
+     * @return array<int, array{
+     *   invoice_item_id:int,
+     *   product_name:string,
+     *   returnable:int,
+     *   returnable_points:int,
+     *   awarded_points:int,
+     *   points_per_unit:null,
+     *   sold:int,
+     *   returned:int,
+     *   has_points:bool
+     * }>
      */
     public function returnableLines(InvoiceDistribution $distribution): array
     {
         $distribution->loadMissing(['items.invoiceItem.product.translations']);
+        $policy = app(\App\Services\Points\CatalogPointsPolicy::class);
 
         $lines = [];
 
@@ -353,7 +364,8 @@ class InvoiceReturnService
                 continue;
             }
 
-            $ppu = (float) ($distItem->invoiceItem?->points_per_unit ?? 0);
+            $returnablePoints = $policy->clawbackForReturn($distItem, $returnable);
+            $awarded = (int) $distItem->points_value;
 
             $lines[] = [
                 'invoice_item_id' => (int) $distItem->invoice_item_id,
@@ -362,9 +374,11 @@ class InvoiceReturnService
                 'sold' => (int) $distItem->quantity,
                 'returned' => (int) ($distItem->returned_quantity ?? 0),
                 'returnable' => $returnable,
-                // Per-unit rate is admin-only — mobile APIs expose totals only.
+                // Totals only for mobile — clawback is from awarded points_value, not catalog/invoice rate.
                 'points_per_unit' => null,
-                'has_points' => $ppu > 0,
+                'returnable_points' => $returnablePoints,
+                'awarded_points' => $awarded,
+                'has_points' => $awarded > 0,
             ];
         }
 
@@ -429,13 +443,14 @@ class InvoiceReturnService
 
     public function maxReturnablePoints(InvoiceDistribution $distribution): int
     {
-        $distribution->loadMissing(['items.invoiceItem']);
+        $distribution->loadMissing(['items']);
+        $policy = app(\App\Services\Points\CatalogPointsPolicy::class);
 
         $sum = 0;
         foreach ($distribution->items as $distItem) {
             $returnable = $this->returnableQtyForItem($distribution, $distItem);
-            $ppu = (float) ($distItem->invoiceItem?->points_per_unit ?? 0);
-            $sum += (int) floor($returnable * $ppu);
+            // Reverse awarded sale points — never re-price at invoice/catalog rate.
+            $sum += $policy->clawbackForReturn($distItem, $returnable);
         }
 
         return $sum;
@@ -603,8 +618,9 @@ class InvoiceReturnService
                 throw new \DomainException('أحد البنود غير موجود في هذا التوزيع — راجع invoice_item_id');
             }
 
-            $ppu = (float) ($distItem->invoiceItem?->points_per_unit ?? 0);
-            $points = (int) floor($qty * $ppu);
+            // Claw back proportional awarded points_value (anti-abuse after catalog rate changes).
+            $points = app(\App\Services\Points\CatalogPointsPolicy::class)
+                ->clawbackForReturn($distItem, $qty);
 
             $prepared[] = [
                 'distribution_item_id' => (int) $distItem->id,

@@ -6,13 +6,14 @@ use App\Models\Product;
 use App\Models\User;
 use App\Services\AdminNotificationService;
 use App\Services\ProductPointsRateService;
+use Illuminate\Support\Facades\Log;
 
 class ProductObserver
 {
     public function updating(Product $product): void
     {
         if ($product->isDirty('points_per_unit')) {
-            $product->pointsRateOldValue = (float) ($product->getOriginal('points_per_unit') ?? 0);
+            $product->pointsRateOldValue = round((float) ($product->getOriginal('points_per_unit') ?? 0), 4);
         }
     }
 
@@ -20,21 +21,28 @@ class ProductObserver
     {
         $points = (float) ($product->points_per_unit ?? 0);
 
+        // مسار API / الاستيراد / أي حفظ خارج صفحة تعديل المنتج في Filament
         if (
             $product->wasChanged('points_per_unit')
             && $product->pointsRateOldValue !== null
             && ! $product->pointsRateAudited
             && $product->exists
+            && $points > 0
         ) {
             try {
                 app(ProductPointsRateService::class)->auditPersistedChange(
                     $product,
                     (float) $product->pointsRateOldValue,
                     auth()->user(),
-                    note: 'تغيير من تعديل المنتج',
+                    note: 'تغيير من تحديث المنتج',
+                    notifyAdmins: true,
                 );
-            } catch (\Throwable) {
-                // Never block product save on audit/notify failures.
+            } catch (\Throwable $e) {
+                Log::warning('product_points_rate_audit_failed', [
+                    'product_id' => $product->id,
+                    'message' => $e->getMessage(),
+                ]);
+                report($e);
             }
         }
 
