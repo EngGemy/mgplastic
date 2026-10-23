@@ -2987,3 +2987,50 @@
   .mg-stock-ledger__parties{grid-template-columns:1fr;text-align:start}
   .mg-stock-ledger__arrow{display:none}
 }
+
+/* -- Points rate factory-change hint --------------------------------------- */
+.mg-points-hint{
+  --mg-ph-accent:#d97706;
+  --mg-ph-soft:#fffbeb;
+  --mg-ph-ink:#78350f;
+  --mg-ph-line:#fbbf24;
+  display:flex;gap:.85rem;align-items:stretch;margin-top:.55rem;
+  border-radius:1rem;overflow:hidden;border:1px solid var(--mg-ph-line);
+  background:linear-gradient(135deg,var(--mg-ph-soft),#fff);
+  box-shadow:0 10px 24px -18px rgba(180,83,9,.45);
+  animation:mg-ph-in .45s ease both;
+}
+.mg-points-hint--info{
+  --mg-ph-accent:#0284c7;--mg-ph-soft:#f0f9ff;--mg-ph-ink:#0c4a6e;--mg-ph-line:#7dd3fc;
+}
+.mg-points-hint__rail{width:.35rem;flex-shrink:0;background:var(--mg-ph-accent)}
+.mg-points-hint__body{padding:.75rem .95rem .85rem;min-width:0}
+.mg-points-hint__kicker{
+  display:inline-block;margin-bottom:.25rem;font-size:.68rem;font-weight:900;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--mg-ph-accent);
+}
+.mg-points-hint__title{display:block;font-size:.92rem;font-weight:900;color:var(--mg-ph-ink);line-height:1.35}
+.mg-points-hint__msg{margin:.35rem 0 0;font-size:.8rem;line-height:1.65;font-weight:650;color:#92400e}
+.mg-points-hint--info .mg-points-hint__msg{color:#075985}
+.mg-points-hint__meta{
+  display:flex;flex-wrap:wrap;gap:.45rem .75rem;align-items:center;
+  margin-top:.55rem;font-size:.72rem;font-weight:800;color:#a16207;
+}
+.mg-points-hint--info .mg-points-hint__meta{color:#0369a1}
+.mg-points-hint__rates{
+  padding:.15rem .5rem;border-radius:.5rem;background:rgba(255,255,255,.7);
+  border:1px solid color-mix(in srgb,var(--mg-ph-line) 70%,transparent);
+  font-variant-numeric:tabular-nums;
+}
+@keyframes mg-ph-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dark .mg-points-hint{background:rgba(30,41,59,.92);border-color:rgba(251,191,36,.35)}
+.dark .mg-points-hint__title{color:#fde68a}
+.dark .mg-points-hint__msg,.dark .mg-points-hint__meta{color:#fcd34d}
+
+.mg-doc-rate-hint{
+  margin-top:.4rem;padding:.45rem .6rem;border-radius:.65rem;font-size:.75rem;line-height:1.55;
+  border:1px dashed #fbbf24;background:#fffbeb;color:#92400e;
+}
+.mg-doc-rate-hint strong{display:block;margin-bottom:.15rem;font-size:.78rem;color:#b45309}
+.mg-doc-rate-hint--info{border-color:#7dd3fc;background:#f0f9ff;color:#075985}
+.mg-doc-rate-hint--info strong{color:#0369a1}

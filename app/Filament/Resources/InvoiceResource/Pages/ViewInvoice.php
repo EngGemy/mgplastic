@@ -39,10 +39,12 @@ class ViewInvoice extends ViewRecord
 
         $this->record->load([
             'items.product.translations',
+            'items.product.latestPointsRateChange',
             'distributions.fromUser',
             'distributions.toUser',
             'distributions.items',
             'sourceDistribution.items.invoiceItem.product.translations',
+            'sourceDistribution.items.invoiceItem.product.latestPointsRateChange',
             'returns.items.product.translations',
             'returns.fromUser',
             'returns.toUser',

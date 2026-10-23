@@ -12,12 +12,14 @@ class InvoiceShareController extends Controller
     {
         $invoice->load([
             'items.product.translations',
+            'items.product.latestPointsRateChange',
             'wholesaleDistributor',
             'plumber',
             'issuer',
             'reviewer',
             'counterparty',
             'sourceDistribution.items.invoiceItem.product.translations',
+            'sourceDistribution.items.invoiceItem.product.latestPointsRateChange',
             'returns.items.product.translations',
             'returns.fromUser',
             'returns.toUser',

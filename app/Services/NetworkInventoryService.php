@@ -58,6 +58,7 @@ class NetworkInventoryService
                     'items.product.category.parent.translations',
                     'items.product.tags',
                     'items.product.sizes',
+                    'items.product.latestPointsRateChange',
                     'distributions' => fn ($q) => $q
                         ->where('tier', 1)
                         ->where('to_user_id', $wholesaler->id)
@@ -86,6 +87,8 @@ class NetworkInventoryService
                 $available = (int) ($availableByPair["{$itemId}:{$parentId}"] ?? 0);
                 $this->appendStockSlot($byProduct, $item, $parentId, 2, $available);
             }
+
+            $this->attachProductRateHints($byProduct);
 
             return $this->sortStockByTag(collect(array_values($byProduct)));
         });
@@ -121,6 +124,7 @@ class NetworkInventoryService
                 'items.invoiceItem.product.category.parent.translations',
                 'items.invoiceItem.product.tags',
                 'items.invoiceItem.product.sizes',
+                'items.invoiceItem.product.latestPointsRateChange',
             ])
             ->orderBy('confirmed_at')
             ->orderBy('id')
@@ -137,6 +141,8 @@ class NetworkInventoryService
                 $this->appendStockSlot($byProduct, $item, (int) $distribution->id, 3);
             }
         }
+
+        $this->attachProductRateHints($byProduct);
 
         return $this->sortStockByTag(collect(array_values($byProduct)));
     }
@@ -251,8 +257,10 @@ class NetworkInventoryService
                 'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
                 'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
                 'points_per_unit' => $lotPpu,
+                'catalog_points_per_unit' => $catalogPpu,
                 'available_qty' => 0,
                 'available_points' => 0,
+                'points_rate_hint' => null,
                 'slots' => [],
             ];
         }
@@ -264,6 +272,15 @@ class NetworkInventoryService
         $byProduct[$productId]['points_per_unit'] = $qty > 0
             ? round(((int) $byProduct[$productId]['available_points']) / $qty, 4)
             : $lotPpu;
+        $byProduct[$productId]['catalog_points_per_unit'] = $catalogPpu;
+
+        $slotHint = app(\App\Services\Points\PointsRateHintBuilder::class)->forLot(
+            $product,
+            $receivePpu > 0 ? $receivePpu : $lotPpu,
+            $product?->latestPointsRateChange,
+            includeRates: true,
+        );
+
         $byProduct[$productId]['slots'][] = [
             'invoice_id' => (int) $item->invoice_id,
             'invoice_item_id' => (int) $item->id,
@@ -271,7 +288,31 @@ class NetworkInventoryService
             'available_qty' => $available,
             'points_per_unit' => $lotPpu,
             'receive_points_per_unit' => $receivePpu,
+            'points_rate_hint' => $slotHint,
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $byProduct
+     */
+    private function attachProductRateHints(array &$byProduct): void
+    {
+        $builder = app(\App\Services\Points\PointsRateHintBuilder::class);
+
+        foreach ($byProduct as &$row) {
+            $slotHints = [];
+            foreach ($row['slots'] ?? [] as $slot) {
+                if (! empty($slot['points_rate_hint'])) {
+                    $slotHints[] = $slot['points_rate_hint'];
+                }
+            }
+            $row['points_rate_hint'] = $builder->forProductSlots(
+                $slotHints,
+                isset($row['catalog_points_per_unit']) ? (float) $row['catalog_points_per_unit'] : null,
+            );
+            $row['points_rate_changed'] = $row['points_rate_hint'] !== null;
+        }
+        unset($row);
     }
 
     /**

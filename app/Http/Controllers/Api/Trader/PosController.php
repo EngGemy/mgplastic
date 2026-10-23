@@ -7,7 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\PlumberDistributionPosService;
+use App\Services\Points\PointsRateHintBuilder;
 use App\Services\RetailNetworkLinkService;
+use App\Support\PointsVisibility;
 use App\Support\ProductSizeSorter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -60,30 +62,39 @@ class PosController extends Controller
         $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
         $stock = $this->inventory->stockForWholesaler($wholesaler);
 
+        $hintBuilder = app(PointsRateHintBuilder::class);
+        $hideRates = PointsVisibility::hidePerUnit($request->user());
+
         $items = $this->inventory
-            ->sortStockByTag($stock->map(fn (array $row) => [
-                'product_id' => (int) $row['product_id'],
-                'name' => $row['name'],
-                'image' => $row['image'] ?? null,
-                'image_url' => $row['image'] ?? null,
-                'category_id' => $row['category_id'] ?? null,
-                'category_name' => $row['category_name'] ?? null,
-                'is_accessories' => (bool) ($row['is_accessories'] ?? false),
-                'tags' => $row['tags'] ?? [],
-                'tag' => $row['tag'] ?? null,
-                'group_key' => $row['group_key'] ?? null,
-                'group_name' => $row['group_name'] ?? null,
-                'product_type' => $row['product_type'] ?? null,
-                'product_type_name' => $row['product_type_name'] ?? null,
-                'size_value' => $row['size_value'] ?? null,
-                'size_label' => $row['size_label'] ?? null,
-                'size_unit' => $row['size_unit'] ?? null,
-                'size_sort' => $row['size_sort'] ?? null,
-                'points_per_unit' => null,
-                'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
-                'available_qty' => (int) ($row['available_qty'] ?? 0),
-                'available_quantity' => (int) ($row['available_qty'] ?? 0),
-            ]), $sizeOrder)
+            ->sortStockByTag($stock->map(function (array $row) use ($hintBuilder, $hideRates) {
+                $hint = $hintBuilder->forMobile($row['points_rate_hint'] ?? null, $hideRates);
+
+                return [
+                    'product_id' => (int) $row['product_id'],
+                    'name' => $row['name'],
+                    'image' => $row['image'] ?? null,
+                    'image_url' => $row['image'] ?? null,
+                    'category_id' => $row['category_id'] ?? null,
+                    'category_name' => $row['category_name'] ?? null,
+                    'is_accessories' => (bool) ($row['is_accessories'] ?? false),
+                    'tags' => $row['tags'] ?? [],
+                    'tag' => $row['tag'] ?? null,
+                    'group_key' => $row['group_key'] ?? null,
+                    'group_name' => $row['group_name'] ?? null,
+                    'product_type' => $row['product_type'] ?? null,
+                    'product_type_name' => $row['product_type_name'] ?? null,
+                    'size_value' => $row['size_value'] ?? null,
+                    'size_label' => $row['size_label'] ?? null,
+                    'size_unit' => $row['size_unit'] ?? null,
+                    'size_sort' => $row['size_sort'] ?? null,
+                    'points_per_unit' => null,
+                    'has_points' => ((float) ($row['points_per_unit'] ?? 0)) > 0,
+                    'available_qty' => (int) ($row['available_qty'] ?? 0),
+                    'available_quantity' => (int) ($row['available_qty'] ?? 0),
+                    'points_rate_changed' => $hint !== null,
+                    'points_rate_hint' => $hint,
+                ];
+            }), $sizeOrder)
             ->values();
 
         return $this->success([
@@ -106,10 +117,19 @@ class PosController extends Controller
     protected function mapOwnStockRow(array $row): array
     {
         $ppu = (float) ($row['points_per_unit'] ?? 0);
-        $slots = collect($row['slots'] ?? [])->map(function (array $slot) {
-            unset($slot['points_per_unit']);
+        $hintBuilder = app(PointsRateHintBuilder::class);
+        $hideRates = PointsVisibility::hidePerUnit();
+        $productHint = $hintBuilder->forMobile($row['points_rate_hint'] ?? null, $hideRates);
 
-            return $slot + ['points_per_unit' => null];
+        $slots = collect($row['slots'] ?? [])->map(function (array $slot) use ($hintBuilder, $hideRates) {
+            $slotHint = $hintBuilder->forMobile($slot['points_rate_hint'] ?? null, $hideRates);
+            unset($slot['points_per_unit'], $slot['receive_points_per_unit']);
+
+            return $slot + [
+                'points_per_unit' => null,
+                'points_rate_changed' => $slotHint !== null,
+                'points_rate_hint' => $slotHint,
+            ];
         })->values()->all();
 
         return [
@@ -140,6 +160,8 @@ class PosController extends Controller
             'has_points' => $ppu > 0,
             'available_qty' => (int) ($row['available_qty'] ?? 0),
             'available_points' => null,
+            'points_rate_changed' => $productHint !== null,
+            'points_rate_hint' => $productHint,
             'slots' => $slots,
         ];
     }

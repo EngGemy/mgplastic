@@ -55,12 +55,14 @@ class InvoiceDocumentController extends Controller
     {
         return [
             'items.product.translations',
+            'items.product.latestPointsRateChange',
             'wholesaleDistributor',
             'plumber',
             'issuer',
             'reviewer',
             'counterparty',
             'sourceDistribution.items.invoiceItem.product.translations',
+            'sourceDistribution.items.invoiceItem.product.latestPointsRateChange',
             'returns.items.product.translations',
             'returns.fromUser',
             'returns.toUser',
@@ -95,6 +97,7 @@ class InvoiceDocumentController extends Controller
 
         $invoice->load([
             'items.product.translations',
+            'items.product.latestPointsRateChange',
             'wholesaleDistributor',
             'plumber',
             'issuer',
@@ -103,6 +106,7 @@ class InvoiceDocumentController extends Controller
         ]);
 
         $summary = $invoice->isOutgoing() ? $invoice->returnSummary() : null;
+        $hintBuilder = app(\App\Services\Points\PointsRateHintBuilder::class);
 
         $payload = [
             'serial_number' => $invoice->serial_number,
@@ -136,13 +140,19 @@ class InvoiceDocumentController extends Controller
                     ])->values(),
                 ]),
             ] : null,
-            'items' => $invoice->items->map(fn ($item) => [
-                'product_id' => $item->product_id,
-                'product_name' => localized_name($item->product, 'name'),
-                'quantity' => (int) $item->quantity,
-                'points_per_unit' => (float) $item->points_per_unit,
-                'total_points' => (int) $item->total_points,
-            ])->values(),
+            'items' => $invoice->items->map(function ($item) use ($hintBuilder) {
+                $hint = $hintBuilder->forInvoiceItem($item, includeRates: true);
+
+                return [
+                    'product_id' => $item->product_id,
+                    'product_name' => localized_name($item->product, 'name'),
+                    'quantity' => (int) $item->quantity,
+                    'points_per_unit' => (float) $item->points_per_unit,
+                    'total_points' => (int) $item->total_points,
+                    'points_rate_changed' => $hint !== null,
+                    'points_rate_hint' => $hint,
+                ];
+            })->values(),
         ];
 
         $filename = ($invoice->number ?? 'invoice-'.$invoice->id).'.json';

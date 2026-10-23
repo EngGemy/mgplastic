@@ -123,6 +123,16 @@
                                         <div>
                                             <div class="mg-stock-ledger__pname">{{ $row['name'] ?? ('#'.$pid) }}</div>
                                             <div class="mg-stock-ledger__pid">#{{ $pid }}</div>
+                                            @if (! empty($row['points_rate_hint']))
+                                                <div class="mg-points-hint mg-points-hint--{{ $row['points_rate_hint']['tone'] ?? 'warning' }}" style="margin-top:.45rem">
+                                                    <div class="mg-points-hint__rail" aria-hidden="true"></div>
+                                                    <div class="mg-points-hint__body">
+                                                        <span class="mg-points-hint__kicker">تنبيه سعر النقاط</span>
+                                                        <strong class="mg-points-hint__title">{{ $row['points_rate_hint']['title_ar'] }}</strong>
+                                                        <p class="mg-points-hint__msg">{{ $row['points_rate_hint']['message_ar'] }}</p>
+                                                    </div>
+                                                </div>
+                                            @endif
                                         </div>
                                     </div>
                                 </td>

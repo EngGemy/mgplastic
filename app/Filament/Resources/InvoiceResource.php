@@ -434,6 +434,13 @@ class InvoiceResource extends Resource
                                 ->badge()
                                 ->color('success')
                                 ->visible(fn ($record) => (int) ($record->total_points ?? 0) > 0),
+
+                            Infolists\Components\ViewEntry::make('points_rate_hint_banner')
+                                ->label('')
+                                ->view('filament.infolists.points-rate-hint')
+                                ->columnSpanFull()
+                                ->visible(fn ($record) => app(\App\Services\Points\PointsRateHintBuilder::class)
+                                    ->forInvoiceItem($record, includeRates: true) !== null),
                         ])
                         ->columns(4)
                         ->visible(fn ($record) => $record->items->isNotEmpty()),

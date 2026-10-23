@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources\Plumber;
 
+use App\Services\Points\PointsRateHintBuilder;
+use App\Support\PointsVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -11,10 +13,15 @@ class ReceivedDistributionResource extends JsonResource
     {
         $trader = $this->fromUser;
         $traderName = $trader?->brand_name ?: $trader?->name;
+        $hintBuilder = app(PointsRateHintBuilder::class);
+        $hideRates = PointsVisibility::hidePerUnit($request->user());
 
-        $items = $this->whenLoaded('items', function () {
-            return $this->items->map(function ($item) {
+        $items = $this->whenLoaded('items', function () use ($hintBuilder, $hideRates) {
+            return $this->items->map(function ($item) use ($hintBuilder, $hideRates) {
                 $product = $item->invoiceItem?->product;
+                $hint = $item->invoiceItem
+                    ? $hintBuilder->forMobile($hintBuilder->forInvoiceItem($item->invoiceItem, includeRates: true), $hideRates)
+                    : null;
 
                 return [
                     'id' => $item->id,
@@ -29,6 +36,8 @@ class ReceivedDistributionResource extends JsonResource
                         'id' => $item->invoiceItem->id,
                         'points_per_unit' => null,
                     ] : null,
+                    'points_rate_changed' => $hint !== null,
+                    'points_rate_hint' => $hint,
                 ];
             })->values();
         });

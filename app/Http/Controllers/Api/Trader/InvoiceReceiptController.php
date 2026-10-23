@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Services\DistributionService;
+use App\Services\Points\PointsRateHintBuilder;
+use App\Support\PointsVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -107,14 +109,21 @@ class InvoiceReceiptController extends Controller
     protected function mapPendingInvoice(Invoice $inv): array
     {
         $dist = $inv->sourceDistribution;
-        $items = $dist?->items?->map(function ($di) {
+        $hintBuilder = app(PointsRateHintBuilder::class);
+        $hideRates = PointsVisibility::hidePerUnit();
+        $items = $dist?->items?->map(function ($di) use ($hintBuilder, $hideRates) {
             $product = $di->invoiceItem?->product;
+            $hint = $di->invoiceItem
+                ? $hintBuilder->forMobile($hintBuilder->forInvoiceItem($di->invoiceItem, includeRates: true), $hideRates)
+                : null;
 
             return [
                 'product_id' => (int) ($di->invoiceItem?->product_id ?? 0),
                 'name' => localized_name($product, 'name', 'منتج'),
                 'quantity' => (int) $di->quantity,
                 'points_value' => null,
+                'points_rate_changed' => $hint !== null,
+                'points_rate_hint' => $hint,
             ];
         })->values()->all() ?? [];
 

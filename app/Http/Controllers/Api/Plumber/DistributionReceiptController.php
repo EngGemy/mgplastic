@@ -88,14 +88,21 @@ class DistributionReceiptController extends Controller
     /** @return array<string, mixed> */
     protected function mapPending(InvoiceDistribution $d): array
     {
-        $items = $d->items->map(function ($di) {
+        $hintBuilder = app(\App\Services\Points\PointsRateHintBuilder::class);
+        $hideRates = \App\Support\PointsVisibility::hidePerUnit();
+        $items = $d->items->map(function ($di) use ($hintBuilder, $hideRates) {
             $product = $di->invoiceItem?->product;
+            $hint = $di->invoiceItem
+                ? $hintBuilder->forMobile($hintBuilder->forInvoiceItem($di->invoiceItem, includeRates: true), $hideRates)
+                : null;
 
             return [
                 'product_id' => (int) ($di->invoiceItem?->product_id ?? 0),
                 'name' => localized_name($product, 'name', 'منتج'),
                 'quantity' => (int) $di->quantity,
                 'points_value' => null,
+                'points_rate_changed' => $hint !== null,
+                'points_rate_hint' => $hint,
             ];
         })->values()->all();
 

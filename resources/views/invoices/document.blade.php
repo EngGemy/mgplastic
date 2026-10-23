@@ -97,6 +97,14 @@
         tbody tr:nth-child(even) { background: #fafafa; }
         .col-product { text-align: right !important; min-width: 140px; }
         .col-points { color: #d97706; font-weight: 700; }
+        .mg-doc-rate-hint {
+            margin-top: .4rem; padding: .45rem .6rem; border-radius: .65rem;
+            font-size: .75rem; line-height: 1.55; font-weight: 600;
+            border: 1px dashed #fbbf24; background: #fffbeb; color: #92400e;
+        }
+        .mg-doc-rate-hint strong { display: block; margin-bottom: .15rem; font-size: .78rem; color: #b45309; font-weight: 800; }
+        .mg-doc-rate-hint--info { border-color: #7dd3fc; background: #f0f9ff; color: #075985; }
+        .mg-doc-rate-hint--info strong { color: #0369a1; }
         .totals {
             padding: 1rem 2rem 1.5rem;
             display: grid;
@@ -336,8 +344,20 @@
                     @endforeach
                 @else
                     @forelse($invoice->items as $item)
+                        @php
+                            $rateHint = app(\App\Services\Points\PointsRateHintBuilder::class)
+                                ->forInvoiceItem($item, includeRates: true);
+                        @endphp
                         <tr>
-                            <td class="col-product">{{ localized_name($item->product, 'name') }}</td>
+                            <td class="col-product">
+                                {{ localized_name($item->product, 'name') }}
+                                @if($rateHint)
+                                    <div class="mg-doc-rate-hint mg-doc-rate-hint--{{ $rateHint['tone'] ?? 'info' }}">
+                                        <strong>{{ $rateHint['title_ar'] }}</strong>
+                                        <span>{{ $rateHint['message_ar'] }}</span>
+                                    </div>
+                                @endif
+                            </td>
                             <td>
                                 <strong>{{ number_format($item->quantity) }}</strong>
                                 @if((int) $item->box_count > 0 && (int) $item->pieces_per_box > 0)

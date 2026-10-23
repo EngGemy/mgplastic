@@ -113,9 +113,20 @@
     </thead>
     <tbody>
         @foreach($items as $i => $item)
+            @php
+                $rateHint = app(\App\Services\Points\PointsRateHintBuilder::class)
+                    ->forInvoiceItem($item, includeRates: true);
+            @endphp
             <tr>
                 <td>{{ $i + 1 }}</td>
-                <td class="name">{{ localized_name($item->product, 'name', 'منتج #'.$item->product_id) }}</td>
+                <td class="name">
+                    {{ localized_name($item->product, 'name', 'منتج #'.$item->product_id) }}
+                    @if($rateHint)
+                        <div style="margin-top:4px;font-size:9px;color:#b45309;font-weight:bold;line-height:1.45">
+                            {{ $rateHint['title_ar'] }} — {{ $rateHint['message_ar'] }}
+                        </div>
+                    @endif
+                </td>
                 <td>{{ (int) $item->quantity }}</td>
                 <td>{{ $item->box_count ?: '—' }}</td>
                 <td>{{ rtrim(rtrim(number_format((float) $item->points_per_unit, 4, '.', ''), '0'), '.') }}</td>
@@ -130,6 +141,18 @@
     <div class="row"><span>إجمالي النقاط</span><span>{{ number_format($totalPoints) }}</span></div>
 </div>
 <div class="clear"></div>
+
+@php
+    $anyRateHint = $items->contains(fn ($item) => app(\App\Services\Points\PointsRateHintBuilder::class)
+        ->forInvoiceItem($item, includeRates: true) !== null);
+@endphp
+@if($anyRateHint)
+    <div style="margin-top:14px;padding:10px 12px;border:1px solid #fbbf24;background:#fffbeb;border-radius:6px;font-size:10px;line-height:1.55;color:#92400e">
+        <strong>ملاحظة:</strong>
+        إذا ظهر تنبيه تحت منتج، فالمصنع عدّل سعر نقاط الكتالوج بعد إصدار هذه الفاتورة.
+        النقاط على البنود أعلاه تبقى بسعر الاستلام المثبت على الفاتورة؛ المخزون المتبقي يُباع بنفس السعر حتى ينفد.
+    </div>
+@endif
 
 <div class="footer">
     وثيقة صادرة من نظام MG Plastic — {{ now()->format('Y-m-d H:i') }}
