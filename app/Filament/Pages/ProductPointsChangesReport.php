@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Filament\Resources\ProductResource;
 use App\Models\Product;
 use App\Models\ProductPointsRateChange;
+use App\Services\NetworkInventoryService;
 use Filament\Pages\Page;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -16,11 +17,11 @@ class ProductPointsChangesReport extends Page
 {
     use WithPagination;
 
-    protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
+    protected static ?string $navigationIcon = 'heroicon-o-chart-bar-square';
 
     protected static string $view = 'filament.pages.product-points-changes-report';
 
-    protected static ?int $navigationSort = 13;
+    protected static ?int $navigationSort = 1;
 
     public string $search = '';
 
@@ -33,17 +34,17 @@ class ProductPointsChangesReport extends Page
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'أسعار نقاط المنتجات';
     }
 
     public static function getNavigationLabel(): string
     {
-        return 'تقرير تغيرات الأسعار';
+        return 'التقرير والسجل';
     }
 
     public function getTitle(): string
     {
-        return 'تقرير تغيرات أسعار النقاط';
+        return 'تقرير وسجل تغيرات أسعار النقاط';
     }
 
     public function getHeading(): string
@@ -165,6 +166,28 @@ class ProductPointsChangesReport extends Page
             ->with(['translations', 'latestPointsRateChange'])
             ->withCount('pointsRateChanges')
             ->find($this->selectedProductId);
+    }
+
+    /**
+     * Live remaining stock per trader for the selected product (admin power view).
+     *
+     * @return array{
+     *   wholesale_remaining_qty:int,
+     *   retail_remaining_qty:int,
+     *   wholesale_holders:int,
+     *   retail_holders:int,
+     *   wholesale_by_trader:list<array{user_id:int, name:string, qty:int}>,
+     *   retail_by_trader:list<array{user_id:int, name:string, qty:int}>
+     * }|null
+     */
+    public function getSelectedNetworkStockProperty(): ?array
+    {
+        if (! $this->selectedProductId) {
+            return null;
+        }
+
+        return app(NetworkInventoryService::class)
+            ->networkRemainingForProduct((int) $this->selectedProductId);
     }
 
     public function productEditUrl(Product $product): string

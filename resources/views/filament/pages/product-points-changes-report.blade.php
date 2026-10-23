@@ -3,65 +3,61 @@
     $dossiers = $this->productDossiers;
     $selected = $this->selectedProduct;
     $timeline = $this->selectedTimeline;
+    $network = $this->selectedNetworkStock;
 @endphp
 
 <x-filament-panels::page>
-    <div class="mg-points-page mg-rate-ledger" dir="rtl">
-        <x-mg-ops-rail
-            kicker="نظام النقاط · تقرير مستقل"
-            title="تقرير تغيرات أسعار النقاط"
-            lead="مكان واحد لكل منتج: <em>السعر الحالي</em>، آخر تغيير، الهامش، والتاريخ. اضغط أي منتج لفتح خط الزمن الكامل للتغييرات."
-            :steps="[
-                'كل بطاقة = منتج واحد: الحالي بكام + آخر تغيير + تاريخه.',
-                'الفلاتر: منتجات لها تغييرات · آخر 30 يوم · الكل.',
-                'التعديل يتم من صفحة «تعديل أسعار النقاط» أو من بطاقة المنتج.',
-            ]"
-            :actions="[
-                ['label' => 'تعديل سعر نقاط', 'url' => $stats['edit_url'], 'tone' => 'brass'],
-            ]"
-        />
+    <div class="mg-points-page mg-rate-hub" dir="rtl">
+        <header class="mg-rate-hub__hero">
+            <div class="mg-rate-hub__hero-copy">
+                <span class="mg-rate-hub__eyebrow">أسعار نقاط المنتجات · مركز التحكم</span>
+                <h2 class="mg-rate-hub__title">التقرير وسجل التغيرات</h2>
+                <p class="mg-rate-hub__lead">
+                    لكل منتج: السعر الحالي، معدل آخر تغيير، التاريخ، ومخزون الجملة والقطاعي عند كل تاجر.
+                    التغييرات محفوظة هنا — ليست على بطاقة المنتج في الموبايل.
+                </p>
+            </div>
+            <div class="mg-rate-hub__hero-actions">
+                <a href="{{ $stats['edit_url'] }}" class="mg-rate-hub__btn mg-rate-hub__btn--primary">تغيير سعر منتج</a>
+            </div>
+        </header>
 
-        <div class="mg-rate-ledger__stats">
-            <div class="mg-rate-ledger__stat">
-                <span class="mg-rate-ledger__stat-num">{{ number_format($stats['total_changes']) }}</span>
-                <span class="mg-rate-ledger__stat-lbl">إجمالي التغييرات</span>
+        <div class="mg-rate-hub__stats">
+            <div class="mg-rate-hub__stat">
+                <span class="mg-rate-hub__stat-num">{{ number_format($stats['total_changes']) }}</span>
+                <span class="mg-rate-hub__stat-lbl">إجمالي التغييرات</span>
             </div>
-            <div class="mg-rate-ledger__stat">
-                <span class="mg-rate-ledger__stat-num">{{ number_format($stats['products_touched']) }}</span>
-                <span class="mg-rate-ledger__stat-lbl">منتجات تغيّر سعرها</span>
+            <div class="mg-rate-hub__stat">
+                <span class="mg-rate-hub__stat-num">{{ number_format($stats['products_touched']) }}</span>
+                <span class="mg-rate-hub__stat-lbl">منتجات تغيّر سعرها</span>
             </div>
-            <div class="mg-rate-ledger__stat mg-rate-ledger__stat--up">
-                <span class="mg-rate-ledger__stat-num">{{ number_format($stats['up_count']) }}</span>
-                <span class="mg-rate-ledger__stat-lbl">زيادات</span>
+            <div class="mg-rate-hub__stat mg-rate-hub__stat--up">
+                <span class="mg-rate-hub__stat-num">{{ number_format($stats['up_count']) }}</span>
+                <span class="mg-rate-hub__stat-lbl">زيادات</span>
             </div>
-            <div class="mg-rate-ledger__stat mg-rate-ledger__stat--down">
-                <span class="mg-rate-ledger__stat-num">{{ number_format($stats['down_count']) }}</span>
-                <span class="mg-rate-ledger__stat-lbl">تخفيضات</span>
+            <div class="mg-rate-hub__stat mg-rate-hub__stat--down">
+                <span class="mg-rate-hub__stat-num">{{ number_format($stats['down_count']) }}</span>
+                <span class="mg-rate-hub__stat-lbl">تخفيضات</span>
             </div>
-            <div class="mg-rate-ledger__stat mg-rate-ledger__stat--muted">
-                <span class="mg-rate-ledger__stat-num" style="font-size:1rem">{{ $stats['last_change_at'] ?? '—' }}</span>
-                <span class="mg-rate-ledger__stat-lbl">آخر تغيير</span>
+            <div class="mg-rate-hub__stat mg-rate-hub__stat--muted">
+                <span class="mg-rate-hub__stat-num mg-rate-hub__stat-num--sm">{{ $stats['last_change_at'] ?? '—' }}</span>
+                <span class="mg-rate-hub__stat-lbl">آخر تغيير</span>
             </div>
         </div>
 
-        <div class="mg-rate-ledger__toolbar">
-            <div class="mg-rate-ledger__filters" role="tablist">
-                <button type="button" role="tab" class="mg-rate-ledger__chip {{ $filter === 'changed' ? 'is-on' : '' }}" wire:click="$set('filter', 'changed')">لها تغييرات</button>
-                <button type="button" role="tab" class="mg-rate-ledger__chip {{ $filter === 'recent' ? 'is-on' : '' }}" wire:click="$set('filter', 'recent')">آخر 30 يوم</button>
-                <button type="button" role="tab" class="mg-rate-ledger__chip {{ $filter === 'all' ? 'is-on' : '' }}" wire:click="$set('filter', 'all')">كل المنتجات</button>
+        <div class="mg-rate-hub__toolbar">
+            <div class="mg-rate-hub__filters" role="tablist">
+                <button type="button" class="mg-rate-hub__chip {{ $filter === 'changed' ? 'is-on' : '' }}" wire:click="$set('filter', 'changed')">لها تغييرات</button>
+                <button type="button" class="mg-rate-hub__chip {{ $filter === 'recent' ? 'is-on' : '' }}" wire:click="$set('filter', 'recent')">آخر 30 يوم</button>
+                <button type="button" class="mg-rate-hub__chip {{ $filter === 'all' ? 'is-on' : '' }}" wire:click="$set('filter', 'all')">كل المنتجات</button>
             </div>
-            <div class="mg-rate-ledger__search">
-                <input
-                    type="search"
-                    wire:model.live.debounce.350ms="search"
-                    placeholder="بحث باسم المنتج…"
-                    class="mg-rate-ledger__search-input"
-                />
+            <div class="mg-rate-hub__search">
+                <input type="search" wire:model.live.debounce.350ms="search" placeholder="بحث باسم المنتج…" class="mg-rate-hub__search-input" />
             </div>
         </div>
 
-        <div class="mg-rate-ledger__layout {{ $selected ? 'has-drawer' : '' }}">
-            <div class="mg-rate-ledger__grid">
+        <div class="mg-rate-hub__layout {{ $selected ? 'has-drawer' : '' }}">
+            <div class="mg-rate-hub__grid">
                 @forelse ($dossiers as $i => $product)
                     @php
                         $name = localized_name($product, 'name', 'منتج #'.$product->id);
@@ -71,51 +67,49 @@
                         $img = $product->display_image_url;
                         $isSelected = $selectedProductId === (int) $product->id;
                     @endphp
-                    <article
-                        class="mg-rate-dossier {{ $isSelected ? 'is-selected' : '' }} mg-rate-dossier--{{ $dir }}"
-                        style="--i: {{ $i % 12 }}"
-                        wire:key="dossier-{{ $product->id }}"
-                    >
-                        <button type="button" class="mg-rate-dossier__hit" wire:click="selectProduct({{ $product->id }})" aria-expanded="{{ $isSelected ? 'true' : 'false' }}">
-                            <div class="mg-rate-dossier__media">
+                    <article class="mg-rate-card {{ $isSelected ? 'is-selected' : '' }} mg-rate-card--{{ $dir }}" style="--i: {{ $i % 12 }}" wire:key="dossier-{{ $product->id }}">
+                        <button type="button" class="mg-rate-card__hit" wire:click="selectProduct({{ $product->id }})">
+                            <div class="mg-rate-card__media">
                                 @if ($img)
                                     <img src="{{ $img }}" alt="" loading="lazy">
                                 @else
-                                    <span class="mg-rate-dossier__ph">{{ mb_substr($name, 0, 1) }}</span>
+                                    <span class="mg-rate-card__ph">{{ mb_substr($name, 0, 1) }}</span>
                                 @endif
                             </div>
-                            <div class="mg-rate-dossier__body">
-                                <h3 class="mg-rate-dossier__name">{{ $name }}</h3>
-                                <div class="mg-rate-dossier__current">
+                            <div class="mg-rate-card__body">
+                                <h3 class="mg-rate-card__name">{{ $name }}</h3>
+                                <div class="mg-rate-card__current">
                                     <span>الحالي</span>
                                     <strong>{{ number_format($current, 2) }}</strong>
                                     <small>نقطة / وحدة</small>
                                 </div>
-
                                 @if ($last)
-                                    <div class="mg-rate-dossier__change">
-                                        <div class="mg-rate-dossier__arrow-row">
-                                            <span class="mg-rate-dossier__old">{{ number_format((float) $last->old_points_per_unit, 2) }}</span>
-                                            <span class="mg-rate-dossier__to" aria-hidden="true">→</span>
-                                            <span class="mg-rate-dossier__new">{{ number_format((float) $last->new_points_per_unit, 2) }}</span>
-                                            @php
-                                                $pct = $last->change_percent;
-                                                $sign = (float) $last->delta_points_per_unit >= 0 ? '+' : '';
-                                            @endphp
-                                            <span class="mg-rate-dossier__pct {{ $dir }}">
+                                    @php
+                                        $pct = $last->change_percent;
+                                        $sign = (float) $last->delta_points_per_unit >= 0 ? '+' : '';
+                                    @endphp
+                                    <div class="mg-rate-card__change">
+                                        <div class="mg-rate-card__arrow-row">
+                                            <span class="mg-rate-card__old">{{ number_format((float) $last->old_points_per_unit, 2) }}</span>
+                                            <span class="mg-rate-card__to">→</span>
+                                            <span class="mg-rate-card__new">{{ number_format((float) $last->new_points_per_unit, 2) }}</span>
+                                            <span class="mg-rate-card__pct {{ $dir }}">
                                                 {{ $pct !== null ? $sign.number_format((float) $pct, 1).'%' : $sign.number_format((float) $last->delta_points_per_unit, 2) }}
                                             </span>
                                         </div>
-                                        <time class="mg-rate-dossier__when" datetime="{{ $last->created_at?->toIso8601String() }}">
+                                        <time class="mg-rate-card__when" datetime="{{ $last->created_at?->toIso8601String() }}">
                                             {{ $last->created_at?->format('Y-m-d H:i') }}
                                             <em>· {{ $last->created_at?->diffForHumans() }}</em>
                                         </time>
+                                        <div class="mg-rate-card__stock-mini">
+                                            جملة {{ number_format((int) $last->wholesale_remaining_qty) }}
+                                            · قطاعي {{ number_format((int) $last->retail_remaining_qty) }}
+                                        </div>
                                     </div>
                                 @else
-                                    <p class="mg-rate-dossier__none">لا يوجد تغيير مسجّل بعد</p>
+                                    <p class="mg-rate-card__none">لا يوجد تغيير مسجّل بعد</p>
                                 @endif
-
-                                <footer class="mg-rate-dossier__meta">
+                                <footer class="mg-rate-card__meta">
                                     <span>{{ (int) $product->points_rate_changes_count }} تغيير</span>
                                     @if ($last?->author)
                                         <span>{{ $last->author->name }}</span>
@@ -125,10 +119,9 @@
                         </button>
                     </article>
                 @empty
-                    <div class="mg-rate-ledger__empty">
-                        <span>◈</span>
-                        <p>لا توجد منتجات مطابقة للفلتر أو البحث.</p>
-                        <a href="{{ $stats['edit_url'] }}" class="mg-rate-board__btn mg-rate-board__btn--commit">سجّل أول تغيير سعر</a>
+                    <div class="mg-rate-hub__empty">
+                        <p>لا توجد منتجات مطابقة.</p>
+                        <a href="{{ $stats['edit_url'] }}" class="mg-rate-hub__btn mg-rate-hub__btn--primary">سجّل أول تغيير</a>
                     </div>
                 @endforelse
             </div>
@@ -139,45 +132,96 @@
                     $selCurrent = (float) ($selected->points_per_unit ?? 0);
                     $selImg = $selected->display_image_url;
                 @endphp
-                <aside class="mg-rate-ledger__drawer" wire:key="drawer-{{ $selected->id }}">
-                    <header class="mg-rate-ledger__drawer-head">
-                        <div class="mg-rate-ledger__drawer-id">
+                <aside class="mg-rate-drawer" wire:key="drawer-{{ $selected->id }}">
+                    <header class="mg-rate-drawer__head">
+                        <div class="mg-rate-drawer__id">
                             @if ($selImg)
                                 <img src="{{ $selImg }}" alt="">
                             @else
-                                <span class="mg-rate-dossier__ph">{{ mb_substr($selName, 0, 1) }}</span>
+                                <span class="mg-rate-card__ph">{{ mb_substr($selName, 0, 1) }}</span>
                             @endif
                             <div>
-                                <p class="mg-rate-ledger__drawer-kicker">ملف المنتج · تغيرات السعر</p>
+                                <p class="mg-rate-drawer__kicker">ملف المنتج</p>
                                 <h3>{{ $selName }}</h3>
                             </div>
                         </div>
-                        <button type="button" class="mg-rate-ledger__close" wire:click="clearSelection" aria-label="إغلاق">×</button>
+                        <button type="button" class="mg-rate-drawer__close" wire:click="clearSelection" aria-label="إغلاق">×</button>
                     </header>
 
-                    <div class="mg-rate-ledger__drawer-current">
+                    <div class="mg-rate-drawer__current">
                         <span>السعر الحالي للكتالوج</span>
                         <strong>{{ number_format($selCurrent, 2) }} <small>نقطة/وحدة</small></strong>
                     </div>
 
-                    <div class="mg-rate-ledger__drawer-actions">
-                        <a href="{{ $this->productEditUrl($selected) }}" class="mg-rate-ledger__link">تعديل المنتج</a>
-                        <a href="{{ $this->ratesEditUrl($selected->id) }}" class="mg-rate-ledger__link mg-rate-ledger__link--brass">تغيير السعر من اللوحة</a>
+                    <div class="mg-rate-drawer__actions">
+                        <a href="{{ $this->productEditUrl($selected) }}" class="mg-rate-hub__btn mg-rate-hub__btn--ghost">تعديل المنتج</a>
+                        <a href="{{ $this->ratesEditUrl() }}" class="mg-rate-hub__btn mg-rate-hub__btn--primary">تغيير السعر</a>
                     </div>
 
-                    <h4 class="mg-rate-ledger__timeline-title">خط الزمن ({{ $timeline->count() }})</h4>
-                    <ol class="mg-rate-ledger__timeline">
+                    @if ($network)
+                        <section class="mg-rate-drawer__section">
+                            <h4>المخزون المتبقي الآن عند التجار</h4>
+                            <div class="mg-rate-drawer__stock-sum">
+                                <div>
+                                    <span>جملة</span>
+                                    <strong>{{ number_format((int) $network['wholesale_remaining_qty']) }}</strong>
+                                    <small>{{ (int) $network['wholesale_holders'] }} تاجر</small>
+                                </div>
+                                <div>
+                                    <span>قطاعي</span>
+                                    <strong>{{ number_format((int) $network['retail_remaining_qty']) }}</strong>
+                                    <small>{{ (int) $network['retail_holders'] }} تاجر</small>
+                                </div>
+                            </div>
+
+                            @if (! empty($network['wholesale_by_trader']))
+                                <p class="mg-rate-drawer__sub">موزّعو الجملة</p>
+                                <ul class="mg-rate-trader-list">
+                                    @foreach ($network['wholesale_by_trader'] as $row)
+                                        <li>
+                                            <span>{{ $row['name'] }}</span>
+                                            <strong>{{ number_format((int) $row['qty']) }}</strong>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                            @endif
+
+                            @if (! empty($network['retail_by_trader']))
+                                <p class="mg-rate-drawer__sub">تجار القطاعي</p>
+                                <ul class="mg-rate-trader-list">
+                                    @foreach ($network['retail_by_trader'] as $row)
+                                        <li>
+                                            <span>{{ $row['name'] }}</span>
+                                            <strong>{{ number_format((int) $row['qty']) }}</strong>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                            @endif
+
+                            @if (empty($network['wholesale_by_trader']) && empty($network['retail_by_trader']))
+                                <p class="mg-rate-drawer__empty-stock">لا يوجد مخزون متبقٍ لهذا المنتج عند التجار حالياً.</p>
+                            @endif
+                        </section>
+                    @endif
+
+                    <h4 class="mg-rate-drawer__timeline-title">سجل التغييرات ({{ $timeline->count() }})</h4>
+                    <ol class="mg-rate-timeline">
                         @forelse ($timeline as $idx => $change)
-                            @php $d = $change->direction(); @endphp
-                            <li class="mg-rate-ledger__event mg-rate-ledger__event--{{ $d }}" style="--i: {{ $idx }}">
-                                <div class="mg-rate-ledger__event-dot" aria-hidden="true"></div>
-                                <div class="mg-rate-ledger__event-card">
+                            @php
+                                $d = $change->direction();
+                                $snap = is_array($change->impact_snapshot) ? $change->impact_snapshot : [];
+                                $wTraders = $snap['wholesale_by_trader'] ?? [];
+                                $rTraders = $snap['retail_by_trader'] ?? [];
+                            @endphp
+                            <li class="mg-rate-timeline__event mg-rate-timeline__event--{{ $d }}" style="--i: {{ $idx }}">
+                                <div class="mg-rate-timeline__dot"></div>
+                                <div class="mg-rate-timeline__card">
                                     <time>{{ $change->created_at?->format('Y-m-d H:i') }} · {{ $change->created_at?->diffForHumans() }}</time>
-                                    <div class="mg-rate-ledger__event-rates">
+                                    <div class="mg-rate-timeline__rates">
                                         <span>{{ number_format((float) $change->old_points_per_unit, 2) }}</span>
-                                        <span class="mg-rate-ledger__event-arrow">→</span>
+                                        <span class="mg-rate-timeline__arrow">→</span>
                                         <strong>{{ number_format((float) $change->new_points_per_unit, 2) }}</strong>
-                                        <span class="mg-rate-ledger__event-pct">
+                                        <span class="mg-rate-timeline__pct">
                                             @if ($change->change_percent !== null)
                                                 {{ ((float) $change->delta_points_per_unit >= 0 ? '+' : '').number_format((float) $change->change_percent, 1) }}%
                                             @else
@@ -185,13 +229,13 @@
                                             @endif
                                         </span>
                                     </div>
-                                    <dl class="mg-rate-ledger__event-stats">
+                                    <dl class="mg-rate-timeline__stats">
                                         <div>
-                                            <dt>جملة متبقٍ</dt>
+                                            <dt>جملة وقت التغيير</dt>
                                             <dd>{{ number_format((int) $change->wholesale_remaining_qty) }} <small>({{ $change->wholesale_holders }})</small></dd>
                                         </div>
                                         <div>
-                                            <dt>قطاعي متبقٍ</dt>
+                                            <dt>قطاعي وقت التغيير</dt>
                                             <dd>{{ number_format((int) $change->retail_remaining_qty) }} <small>({{ $change->retail_holders }})</small></dd>
                                         </div>
                                         <div>
@@ -199,24 +243,43 @@
                                             <dd>{{ sprintf('%+d', (int) $change->estimated_points_delta) }}</dd>
                                         </div>
                                     </dl>
-                                    <p class="mg-rate-ledger__event-meta">
+
+                                    @if (! empty($wTraders) || ! empty($rTraders))
+                                        <details class="mg-rate-timeline__holders">
+                                            <summary>مخزون كل تاجر وقت التغيير</summary>
+                                            @if (! empty($wTraders))
+                                                <p class="mg-rate-drawer__sub">جملة</p>
+                                                <ul class="mg-rate-trader-list mg-rate-trader-list--compact">
+                                                    @foreach ($wTraders as $row)
+                                                        <li><span>{{ $row['name'] ?? ('#'.$row['user_id']) }}</span><strong>{{ number_format((int) ($row['qty'] ?? 0)) }}</strong></li>
+                                                    @endforeach
+                                                </ul>
+                                            @endif
+                                            @if (! empty($rTraders))
+                                                <p class="mg-rate-drawer__sub">قطاعي</p>
+                                                <ul class="mg-rate-trader-list mg-rate-trader-list--compact">
+                                                    @foreach ($rTraders as $row)
+                                                        <li><span>{{ $row['name'] ?? ('#'.$row['user_id']) }}</span><strong>{{ number_format((int) ($row['qty'] ?? 0)) }}</strong></li>
+                                                    @endforeach
+                                                </ul>
+                                            @endif
+                                        </details>
+                                    @endif
+
+                                    <p class="mg-rate-timeline__meta">
                                         {{ $change->author?->name ?? 'نظام' }}
-                                        @if ($change->note)
-                                            · {{ $change->note }}
-                                        @endif
+                                        @if ($change->note) · {{ $change->note }} @endif
                                     </p>
                                 </div>
                             </li>
                         @empty
-                            <li class="mg-rate-ledger__timeline-empty">لا تغييرات مسجّلة لهذا المنتج.</li>
+                            <li class="mg-rate-timeline__empty">لا تغييرات مسجّلة.</li>
                         @endforelse
                     </ol>
                 </aside>
             @endif
         </div>
 
-        <div class="mg-rate-ledger__pager">
-            {{ $dossiers->links() }}
-        </div>
+        <div class="mg-rate-hub__pager">{{ $dossiers->links() }}</div>
     </div>
 </x-filament-panels::page>

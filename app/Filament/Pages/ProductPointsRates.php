@@ -22,11 +22,11 @@ class ProductPointsRates extends Page implements HasForms, HasTable
     use InteractsWithForms;
     use InteractsWithTable;
 
-    protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
+    protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
     protected static string $view = 'filament.pages.product-points-rates';
 
-    protected static ?int $navigationSort = 12;
+    protected static ?int $navigationSort = 2;
 
     /** @var array<string, mixed>|null */
     public ?array $data = [];
@@ -36,17 +36,17 @@ class ProductPointsRates extends Page implements HasForms, HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'أسعار نقاط المنتجات';
     }
 
     public static function getNavigationLabel(): string
     {
-        return 'تعديل أسعار النقاط';
+        return 'تغيير السعر';
     }
 
     public function getTitle(): string
     {
-        return 'تعديل أسعار نقاط المنتجات';
+        return 'تغيير سعر نقاط منتج';
     }
 
     public function getHeading(): string

@@ -164,12 +164,19 @@ class CatalogPointsSaleReturnTest extends TestCase
 
         app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
 
-        $row = app(NetworkInventoryService::class)->stockForWholesaler($wholesaler)->first();
+        $inventory = app(NetworkInventoryService::class);
+        $row = $inventory->stockForWholesaler($wholesaler)->first();
 
         $this->assertNotNull($row);
         $this->assertSame(12.0, (float) $row['points_per_unit']);
         $this->assertSame(5.0, (float) $row['slots'][0]['receive_points_per_unit']);
         $this->assertSame(240, (int) $row['available_points']); // 20 × 12
+
+        $network = $inventory->networkRemainingForProduct((int) $product->id);
+        $this->assertSame(20, (int) $network['wholesale_remaining_qty']);
+        $this->assertNotEmpty($network['wholesale_by_trader']);
+        $this->assertSame($wholesaler->id, (int) $network['wholesale_by_trader'][0]['user_id']);
+        $this->assertSame(20, (int) $network['wholesale_by_trader'][0]['qty']);
     }
 
     public function test_apply_change_writes_history_and_notify_path(): void

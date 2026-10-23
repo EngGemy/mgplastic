@@ -57,6 +57,7 @@ class AdminPanelProvider extends PanelProvider
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->navigationGroups([
                 'صناعة القرار',
+                'أسعار نقاط المنتجات',
                 'الطلبيات',
                 'نظام النقاط',
                 'المنتجات',

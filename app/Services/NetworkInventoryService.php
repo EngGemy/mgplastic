@@ -261,21 +261,21 @@ class NetworkInventoryService
 
     /**
      * Remaining sellable qty across the network for one catalog product
-     * (wholesalers + retail traders), with distinct holder counts.
+     * (wholesalers + retail traders), with per-trader breakdown.
      *
      * @return array{
      *   wholesale_remaining_qty:int,
      *   retail_remaining_qty:int,
      *   wholesale_holders:int,
-     *   retail_holders:int
+     *   retail_holders:int,
+     *   wholesale_by_trader:list<array{user_id:int, name:string, qty:int}>,
+     *   retail_by_trader:list<array{user_id:int, name:string, qty:int}>
      * }
      */
     public function networkRemainingForProduct(int $productId): array
     {
-        $wholesaleQty = 0;
-        $wholesaleHolders = [];
-        $retailQty = 0;
-        $retailHolders = [];
+        $wholesaleQtyByUser = [];
+        $retailQtyByUser = [];
 
         $invoices = Invoice::query()
             ->where('invoice_type', 'wholesale_pos')
@@ -314,10 +314,9 @@ class NetworkInventoryService
             if ($qty <= 0) {
                 continue;
             }
-            $wholesaleQty += $qty;
             $holderId = (int) ($pairMeta[$key] ?? 0);
             if ($holderId > 0) {
-                $wholesaleHolders[$holderId] = true;
+                $wholesaleQtyByUser[$holderId] = ($wholesaleQtyByUser[$holderId] ?? 0) + $qty;
             }
         }
 
@@ -355,18 +354,44 @@ class NetworkInventoryService
             if ($qty <= 0) {
                 continue;
             }
-            $retailQty += $qty;
             $holderId = (int) ($retailMeta[$key] ?? 0);
             if ($holderId > 0) {
-                $retailHolders[$holderId] = true;
+                $retailQtyByUser[$holderId] = ($retailQtyByUser[$holderId] ?? 0) + $qty;
             }
         }
 
+        $userIds = array_values(array_unique(array_merge(
+            array_keys($wholesaleQtyByUser),
+            array_keys($retailQtyByUser),
+        )));
+        $names = $userIds === []
+            ? []
+            : User::query()->whereIn('id', $userIds)->pluck('name', 'id')->all();
+
+        $mapHolders = function (array $qtyByUser) use ($names): array {
+            $rows = [];
+            foreach ($qtyByUser as $userId => $qty) {
+                $rows[] = [
+                    'user_id' => (int) $userId,
+                    'name' => (string) ($names[$userId] ?? ('تاجر #'.$userId)),
+                    'qty' => (int) $qty,
+                ];
+            }
+            usort($rows, fn ($a, $b) => $b['qty'] <=> $a['qty']);
+
+            return $rows;
+        };
+
+        $wholesaleByTrader = $mapHolders($wholesaleQtyByUser);
+        $retailByTrader = $mapHolders($retailQtyByUser);
+
         return [
-            'wholesale_remaining_qty' => $wholesaleQty,
-            'retail_remaining_qty' => $retailQty,
-            'wholesale_holders' => count($wholesaleHolders),
-            'retail_holders' => count($retailHolders),
+            'wholesale_remaining_qty' => array_sum($wholesaleQtyByUser),
+            'retail_remaining_qty' => array_sum($retailQtyByUser),
+            'wholesale_holders' => count($wholesaleQtyByUser),
+            'retail_holders' => count($retailQtyByUser),
+            'wholesale_by_trader' => $wholesaleByTrader,
+            'retail_by_trader' => $retailByTrader,
         ];
     }
 
