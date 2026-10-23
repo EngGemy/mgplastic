@@ -109,8 +109,6 @@ class ProductController extends Controller
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
             ],
-            // BC: bare array still available as data when legacy=1
-            legacyList: $request->boolean('legacy'),
         );
     }
 
@@ -275,15 +273,12 @@ class ProductController extends Controller
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
             ],
-            legacyList: $request->boolean('legacy'),
         );
     }
 
     /**
-     * Unified list payload so mobile always finds:
-     * - data.items (products sorted by tag number)
-     * - data.groups (tags sorted: 1 → 1.5 → 2 → 6 → 110 مم)
-     * - groups / size_groups also at root (easy access)
+     * BC: `data` stays a product list (data.0.id …).
+     * Tag accordion: use root `groups` / `size_groups` (sorted by number in tag).
      *
      * @param  Collection<int, Product>  $products
      * @param  list<array<string, mixed>>  $groups
@@ -298,7 +293,6 @@ class ProductController extends Controller
         string $message,
         array $filters,
         ?array $meta = null,
-        bool $legacyList = false,
     ): \Illuminate\Http\JsonResponse {
         $items = ProductResource::collection($products)->resolve();
         $meta ??= [
@@ -307,26 +301,17 @@ class ProductController extends Controller
             'per_page' => count($items),
             'total' => count($items),
         ];
-
-        $body = [
-            'items' => $items,
-            'groups' => $groups,
-            'size_groups' => $groups,
-            'filters' => $filters + ['size_order' => $sizeOrder],
-            'pagination' => $meta,
-            'meta' => $meta,
-        ];
+        $filters = $filters + ['size_order' => $sizeOrder];
 
         return response()->json([
             'status' => true,
             'message' => $message,
-            // Object form (preferred for mobile tag accordion).
-            'data' => $legacyList ? $items : $body,
-            // Also expose at root — works whether app reads data.groups or groups.
+            // Keep array shape for existing clients / Feature tests (data.0.id).
+            'data' => $items,
             'items' => $items,
             'groups' => $groups,
             'size_groups' => $groups,
-            'filters' => $body['filters'],
+            'filters' => $filters,
             'meta' => $meta,
         ])->header('Content-Language', $lang);
     }
