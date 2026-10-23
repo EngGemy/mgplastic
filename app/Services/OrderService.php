@@ -1147,15 +1147,25 @@ class OrderService
                 'points_per_unit' => (float) $item->points_per_unit,
             ])->all();
 
-            // Draft distributions only — plumber must POST …/receive to settle stock + points.
+            // Draft distributions + sales invoice document — plumber must receive to settle points.
             $reference = $this->fulfilRetailToPlumber($locked, $lines, confirmNow: false);
+
+            $salesInvoiceId = null;
+            foreach (($reference['reference']['distribution_ids'] ?? []) as $distId) {
+                $salesInvoiceId = Invoice::query()
+                    ->where('source_distribution_id', (int) $distId)
+                    ->value('id');
+                if ($salesInvoiceId) {
+                    break;
+                }
+            }
 
             $locked->update([
                 'status' => OrderStatus::SHIPPING,
                 'shipped_at' => $locked->shipped_at ?? now(),
                 'shipped_by' => $locked->shipped_by ?? $actor->id,
                 'delivered_reference' => $reference['reference'] ?? null,
-                'delivered_invoice_id' => null,
+                'delivered_invoice_id' => $salesInvoiceId,
                 'delivered_at' => null,
                 'delivered_by' => null,
             ]);

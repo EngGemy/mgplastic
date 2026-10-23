@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\DistributionService;
 use App\Services\InvoiceAdjustmentService;
 use App\Services\InvoiceReuseService;
+use App\Services\OutgoingInvoiceService;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Notifications\Notification;
@@ -25,6 +26,12 @@ class ViewInvoice extends ViewRecord
     {
         parent::mount($record);
 
+        // Older outgoing invoices had no invoice_items — backfill from distribution lines.
+        if ($this->record->isOutgoing() && ! $this->record->items()->exists()) {
+            app(OutgoingInvoiceService::class)->syncLineItemsFromDistribution($this->record);
+            $this->record->refresh();
+        }
+
         $this->record->load([
             'items.product.translations',
             'distributions.fromUser',
@@ -35,6 +42,8 @@ class ViewInvoice extends ViewRecord
             'returns.fromUser',
             'returns.toUser',
             'wholesaleDistributor',
+            'counterparty',
+            'plumber',
             'issuer',
         ]);
     }

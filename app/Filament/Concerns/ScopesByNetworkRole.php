@@ -41,15 +41,20 @@ trait ScopesByNetworkRole
                 ->where('wholesale_distributor_id', $user->id),
 
             'retail_trader' => $query->where(function (Builder $q) use ($user) {
-                $q->where('counterparty_user_id', $user->id)
-                    ->where('invoice_flow', 'outgoing')
-                    ->orWhereHas(
-                        'distributions',
-                        fn (Builder $d) => $d
-                            ->where('to_user_id', $user->id)
-                            ->where('tier', 2)
-                            ->whereIn('status', ['confirmed', 'points_awarded'])
-                    );
+                // Purchases from wholesale (counterparty) + sales they issued (POS / طلبات سباك)
+                $q->where(function (Builder $inner) use ($user) {
+                    $inner->where('counterparty_user_id', $user->id)
+                        ->where('invoice_flow', 'outgoing');
+                })->orWhere(function (Builder $inner) use ($user) {
+                    $inner->where('issued_by', $user->id)
+                        ->where('invoice_flow', 'outgoing');
+                })->orWhereHas(
+                    'distributions',
+                    fn (Builder $d) => $d
+                        ->where('to_user_id', $user->id)
+                        ->where('tier', 2)
+                        ->whereIn('status', ['confirmed', 'points_awarded'])
+                );
             }),
 
             default => $query->whereRaw('0 = 1'),

@@ -12,6 +12,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class ReturnsRelationManager extends RelationManager
@@ -29,7 +30,9 @@ class ReturnsRelationManager extends RelationManager
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         /** @var Invoice $ownerRecord */
-        return $ownerRecord->isWholesalePos() && $ownerRecord->isOutgoing();
+        // Outgoing sales docs (جملة→قطاعي أو قطاعي→سباك) + أي فاتورة عليها مرتجعات.
+        return ($ownerRecord->isWholesalePos() && $ownerRecord->isOutgoing())
+            || $ownerRecord->returns()->exists();
     }
 
     public function form(Form $form): Form
@@ -37,12 +40,26 @@ class ReturnsRelationManager extends RelationManager
         return $form->schema([]);
     }
 
+    protected function getTableQuery(): Builder
+    {
+        /** @var Invoice $owner */
+        $owner = $this->getOwnerRecord();
+
+        return InvoiceReturn::query()
+            ->where(function (Builder $q) use ($owner) {
+                $q->where('invoice_id', $owner->id);
+                if ($owner->source_distribution_id) {
+                    $q->orWhere('distribution_id', $owner->source_distribution_id);
+                }
+            })
+            ->with(['items.product.translations', 'fromUser', 'toUser', 'creator'])
+            ->latest('id');
+    }
+
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query
-                ->with(['items.product.translations', 'fromUser', 'toUser', 'creator'])
-                ->latest('id'))
+            ->modifyQueryUsing(fn ($query) => $query)
             ->columns([
                 Tables\Columns\TextColumn::make('return_number')
                     ->label('رقم المرتجع')

@@ -57,7 +57,8 @@ class DistributionService
 
             $created = $created->load('items.invoiceItem.product');
 
-            if ($tier === 2) {
+            // Document invoice for wholesale→retail (2) and retail→plumber (3).
+            if (in_array($tier, [2, 3], true)) {
                 app(OutgoingInvoiceService::class)->createFromDistribution($created);
             }
 
@@ -284,7 +285,7 @@ class DistributionService
 
     private function syncOutgoingInvoiceStatus(InvoiceDistribution $distribution): void
     {
-        if ((int) $distribution->tier !== 2) {
+        if (! in_array((int) $distribution->tier, [2, 3], true)) {
             return;
         }
 

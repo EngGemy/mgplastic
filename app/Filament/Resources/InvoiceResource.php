@@ -183,11 +183,15 @@ class InvoiceResource extends Resource
                 Tables\Columns\TextColumn::make('party_name')
                     ->label('الطرف')
                     ->state(fn (Invoice $record) => match (true) {
+                        $record->isOutgoing() && $record->plumber_id => $record->plumber?->name
+                            ?? $record->counterparty?->name
+                            ?? '—',
                         $record->isOutgoing() => $record->counterparty?->name ?? '—',
                         $record->isWholesalePos() => $record->wholesaleDistributor?->name ?? '—',
                         default => $record->plumber?->name ?? '—',
                     })
                     ->description(fn (Invoice $record) => match (true) {
+                        $record->isOutgoing() && $record->plumber_id => 'سباك (بيع قطاعي)',
                         $record->isOutgoing() => 'تاجر قطاعي',
                         $record->isWholesalePos() => 'من المصنع',
                         default => 'سباك',
@@ -431,9 +435,33 @@ class InvoiceResource extends Resource
                                 ->color('success')
                                 ->visible(fn ($record) => (int) ($record->total_points ?? 0) > 0),
                         ])
-                        ->columns(4),
+                        ->columns(4)
+                        ->visible(fn ($record) => $record->items->isNotEmpty()),
+
+                    // Fallback for legacy outgoing invoices before line snapshots existed.
+                    Infolists\Components\RepeatableEntry::make('sourceDistribution.items')
+                        ->label('')
+                        ->schema([
+                            Infolists\Components\TextEntry::make('product_name')
+                                ->label('المنتج')
+                                ->state(fn ($record) => localized_name($record->invoiceItem?->product, 'name', 'منتج'))
+                                ->weight('bold'),
+                            Infolists\Components\TextEntry::make('quantity')
+                                ->label('الكمية')
+                                ->badge()
+                                ->color('info'),
+                            Infolists\Components\TextEntry::make('points_value')
+                                ->label('إجمالي النقاط')
+                                ->badge()
+                                ->color('success'),
+                        ])
+                        ->columns(3)
+                        ->visible(fn ($record) => $record->items->isEmpty()
+                            && $record->isOutgoing()
+                            && ($record->sourceDistribution?->items?->isNotEmpty() ?? false)),
                 ])
-                ->visible(fn ($record) => $record->items->isNotEmpty()),
+                ->visible(fn ($record) => $record->items->isNotEmpty()
+                    || ($record->isOutgoing() && ($record->sourceDistribution?->items?->isNotEmpty() ?? false))),
 
             Infolists\Components\Section::make('نظام توزيع النقاط')
                 ->schema([

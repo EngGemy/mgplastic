@@ -534,7 +534,7 @@ class InvoiceReturnService
 
     protected function resolveDocumentInvoice(InvoiceDistribution $distribution): Invoice
     {
-        if ((int) $distribution->tier === 2) {
+        if (in_array((int) $distribution->tier, [2, 3], true)) {
             $outgoing = Invoice::query()
                 ->where('source_distribution_id', $distribution->id)
                 ->first();

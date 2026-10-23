@@ -294,10 +294,10 @@ class OrderResource extends Resource
                         ], true))
                     ->requiresConfirmation()
                     ->modalHeading('تنفيذ الطلب كفاتورة')
-                    ->modalDescription('سيتم خصم المخزون ومنح النقاط وتغيير الحالة إلى «تم التسليم».')
+                    ->modalDescription('يُنشأ فاتورة بيع وتُحجز الكميات. اكتمال التسليم والنقاط بعد تأكيد استلام السباك.')
                     ->action(fn (Order $record) => static::runTransition(
                         fn () => app(OrderService::class)->fulfillAsInvoice($record, auth()->user()),
-                        'تم التنفيذ ✓',
+                        'تم التنفيذ — فاتورة بانتظار استلام السباك',
                     )),
 
                 Tables\Actions\Action::make('receive')
