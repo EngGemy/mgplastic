@@ -130,6 +130,11 @@ class PosController extends Controller
             'size_label' => $row['size_label'] ?? null,
             'size_unit' => $row['size_unit'] ?? null,
             'size_sort' => isset($row['size_sort']) ? (float) $row['size_sort'] : null,
+            'pieces_per_box' => isset($row['pieces_per_box']) && (int) $row['pieces_per_box'] > 0
+                ? (int) $row['pieces_per_box']
+                : null,
+            'order_unit' => ($row['order_unit'] ?? null)
+                ?? ((isset($row['pieces_per_box']) && (int) $row['pieces_per_box'] > 0) ? 'box' : 'piece'),
             // Per-unit points hidden — apps show cart/order totals only.
             'points_per_unit' => null,
             'has_points' => $ppu > 0,
@@ -145,8 +150,19 @@ class PosController extends Controller
             'plumber_id' => ['required', 'exists:users,id'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
+            'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
         ]);
+
+        $v->after(function ($validator) use ($request) {
+            foreach ($request->input('lines', []) as $i => $line) {
+                $boxes = $line['boxes'] ?? null;
+                $qty = $line['quantity'] ?? null;
+                if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
+                    $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+                }
+            }
+        });
 
         if ($v->fails()) {
             return $this->error('بيانات غير صالحة', 422, $v->errors());
@@ -180,19 +196,20 @@ class PosController extends Controller
 
             return $this->created([
                 'distributions' => $distributions,
+                'pending_receipt' => true,
                 'total_points' => collect($distributions)->sum(fn ($d) => $d->total_points ?? (int) $d->items?->sum('points_value')),
                 'plumber_id' => $plumber->id,
                 'plumber_name' => $plumber->name,
+                // Points settle only after plumber confirms receipt.
                 'plumber_balance_points' => $balancePoints,
                 'balance_points' => $balancePoints,
                 'new_badges' => $reputation['new_badges'] ?? [],
                 'score_delta' => (int) ($reputation['score_delta'] ?? 0),
                 'level_changed' => (bool) ($reputation['level_changed'] ?? false),
-                // مشاركة واتساب لصاحب رقم السباك
                 'whatsapp_share' => $share,
                 'share_url' => $share['share_url'] ?? null,
                 'whatsapp_url' => $share['whatsapp_url'] ?? null,
-            ], 'تم توزيع النقاط للسبّاك');
+            ], 'تم إصدار الفاتورة — بانتظار تأكيد استلام السباك');
         } catch (\DomainException $e) {
             return $this->error($e->getMessage(), 422);
         }

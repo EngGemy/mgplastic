@@ -35,12 +35,14 @@ use App\Http\Controllers\Api\Mobile\InvoiceShareController;
 use App\Http\Controllers\Api\Mobile\TestimonialController;
 use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardController;
 use App\Http\Controllers\Api\Plumber\InvoiceReturnController as PlumberInvoiceReturnController;
+use App\Http\Controllers\Api\Plumber\DistributionReceiptController as PlumberDistributionReceiptController;
 use App\Http\Controllers\Api\Plumber\OrderController as PlumberOrderController;
 use App\Http\Controllers\Api\Plumber\ProductCatalogController as PlumberProductCatalogController;
 use App\Http\Controllers\Api\Plumber\WalletApiController;
 use App\Http\Controllers\Api\Plumber\WalletController;
 use App\Http\Controllers\Api\Plumber\WithdrawalController;
 use App\Http\Controllers\Api\Trader\DashboardController as TraderDashboardController;
+use App\Http\Controllers\Api\Trader\InvoiceReceiptController as TraderInvoiceReceiptController;
 use App\Http\Controllers\Api\Trader\InvoiceReturnController as TraderInvoiceReturnController;
 use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
@@ -169,6 +171,11 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('orders/{order}/receive', [PlumberOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [PlumberOrderController::class, 'cancel']);
 
+        // Pending POS/fulfill receipts — plumber must confirm before points settle
+        Route::get('pending-receipts', [PlumberDistributionReceiptController::class, 'pending']);
+        Route::post('distributions/{distribution}/receive', [PlumberDistributionReceiptController::class, 'receive'])
+            ->whereNumber('distribution');
+
         // Invoice returns — retail→plumber distributions (buyer side)
         Route::get('distributions', [PlumberInvoiceReturnController::class, 'distributions']);
         Route::get('returns', [PlumberInvoiceReturnController::class, 'index']);
@@ -279,6 +286,13 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('orders/{order}/reject', [TraderOrderController::class, 'reject']);
         Route::post('orders/{order}/receive', [TraderOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [TraderOrderController::class, 'cancel']);
+
+        // Pending wholesale POS invoices — retail must confirm receipt before stock settles
+        Route::get('pending-receipts', [TraderInvoiceReceiptController::class, 'pending']);
+        Route::post('invoices/{invoice}/receive', [TraderInvoiceReceiptController::class, 'receiveInvoice'])
+            ->whereNumber('invoice');
+        Route::post('distributions/{distribution}/receive', [TraderInvoiceReceiptController::class, 'receiveDistribution'])
+            ->whereNumber('distribution');
 
         // Invoice returns — retail→plumber (distributions) + retail←wholesale (invoices)
         Route::get('returns', [TraderInvoiceReturnController::class, 'index']);

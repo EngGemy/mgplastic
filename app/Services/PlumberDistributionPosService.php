@@ -11,10 +11,11 @@ class PlumberDistributionPosService
     public function __construct(
         protected NetworkInventoryService $inventory,
         protected DistributionService $distributions,
+        protected OrderService $orders,
     ) {}
 
     /**
-     * @param  array<int, array{product_id:int, quantity:int}>  $lines
+     * @param  array<int, array{product_id:int, quantity?:int, boxes?:int}>  $lines
      * @return array{distributions:list, reputation:array{new_badges:list,score_delta:int,level_changed:bool}}
      */
     public function issueToPlumber(User $retailTrader, User $plumber, array $lines, User $issuedBy): array
@@ -43,6 +44,11 @@ class PlumberDistributionPosService
             throw new \DomainException('مخزونك فارغ — لا توجد بضاعة واصلة من موزع الجملة');
         }
 
+        $lines = $this->orders->expandLinesToPieces($lines, enforceFactoryBoxes: false);
+        if ($lines === []) {
+            throw new \DomainException('أضف منتجاً واحداً على الأقل من مخزونك');
+        }
+
         $requested = collect($lines)
             ->groupBy('product_id')
             ->map(fn ($group) => (int) $group->sum('quantity'))
@@ -52,9 +58,9 @@ class PlumberDistributionPosService
         // Plumber wallet is credited on confirm (tier 3); seller wallet is not debited.
         $groups = $this->inventory->allocateFromStock($stock, $requested);
 
-        $pack = DB::transaction(function () use ($groups, $retailTrader, $plumber) {
+        // Draft only — plumber must confirm receipt before points are awarded.
+        return DB::transaction(function () use ($groups, $retailTrader, $plumber) {
             $created = [];
-            $reputation = ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false];
 
             foreach ($groups as $group) {
                 $invoice = Invoice::query()->findOrFail($group['invoice_id']);
@@ -68,38 +74,14 @@ class PlumberDistributionPosService
                     parentId: $group['parent_distribution_id'],
                 );
 
-                $rep = $this->distributions->confirmDistribution($distribution->fresh(['items']));
-                $created[] = $distribution->fresh(['items', 'invoice']);
-                $reputation['score_delta'] += (int) ($rep['score_delta'] ?? 0);
-                $reputation['level_changed'] = $reputation['level_changed'] || ! empty($rep['level_changed']);
-                $reputation['new_badges'] = array_merge($reputation['new_badges'], $rep['new_badges'] ?? []);
+                $created[] = $distribution->fresh(['items', 'invoice', 'fromUser', 'toUser']);
             }
 
-            return ['distributions' => $created, 'reputation' => $reputation];
+            return [
+                'distributions' => $created,
+                'reputation' => ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false],
+                'pending_receipt' => true,
+            ];
         });
-
-        $distributions = $pack['distributions'];
-        $totalPoints = (int) collect($distributions)->sum(
-            fn ($distribution) => (int) $distribution->items->sum('points_value')
-        );
-        $lineCount = (int) collect($distributions)->sum(
-            fn ($distribution) => $distribution->items->count()
-        );
-
-        try {
-            app(WhatsAppBusinessAlerts::class)->plumberSale(
-                $plumber,
-                $retailTrader,
-                $totalPoints,
-                max(1, $lineCount),
-            );
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('[WhatsApp] plumber sale notify skipped', [
-                'plumber_id' => $plumber->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        return $pack;
     }
 }

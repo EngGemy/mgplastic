@@ -67,7 +67,20 @@ class DistributionService
         // WhatsApp: InvoiceObserver fires on outgoing Invoice::create (tier 2).
         // Confirm / points alerts come from InvoiceDistributionObserver.
 
+        $this->bustStockCaches($distribution);
+
         return $distribution;
+    }
+
+    protected function bustStockCaches(InvoiceDistribution $distribution): void
+    {
+        $inventory = app(NetworkInventoryService::class);
+        if ((int) $distribution->tier === 2 && $distribution->from_user_id) {
+            $inventory->forgetWholesalerStockCache((int) $distribution->from_user_id);
+        }
+        if ((int) $distribution->tier === 1 && $distribution->to_user_id) {
+            $inventory->forgetWholesalerStockCache((int) $distribution->to_user_id);
+        }
     }
 
     private function validateTierRoles(int $tier, User $from, User $to): void
@@ -137,6 +150,66 @@ class DistributionService
     }
 
     /**
+     * Buyer (المستلم) confirms receipt of a draft distribution issued by the seller.
+     * Stock/points settle only after this call — seller POS never auto-completes.
+     *
+     * @return array{new_badges:list,score_delta:int,level_changed:bool,distribution:InvoiceDistribution}
+     */
+    public function receiveAsBuyer(User $buyer, InvoiceDistribution $distribution): array
+    {
+        if (in_array($buyer->role, ['super_admin', 'admin'], true)) {
+            // admins may force-receive for support
+        } elseif ((int) $buyer->id !== (int) $distribution->to_user_id) {
+            throw new \DomainException('تأكيد الاستلام متاح للمستلم فقط (الطرف الآخر)');
+        }
+
+        if ($distribution->status !== 'draft') {
+            if (in_array($distribution->status, ['confirmed', 'points_awarded'], true)) {
+                throw new \DomainException('تم تأكيد استلام هذا التوزيع مسبقاً');
+            }
+
+            throw new \DomainException('لا يمكن تأكيد استلام توزيع بحالته الحالية');
+        }
+
+        $reputation = $this->confirmDistribution($distribution->fresh(['items']));
+
+        return $reputation + [
+            'distribution' => $distribution->fresh(['items.invoiceItem.product', 'fromUser', 'toUser', 'invoice']),
+        ];
+    }
+
+    /**
+     * Retail trader confirms receipt of a wholesale outgoing invoice (POS or order).
+     *
+     * @return array{new_badges:list,score_delta:int,level_changed:bool,distribution:InvoiceDistribution,invoice:Invoice}
+     */
+    public function receiveOutgoingInvoiceAsBuyer(User $buyer, Invoice $invoice): array
+    {
+        if ((int) $invoice->counterparty_user_id !== (int) $buyer->id
+            && ! in_array($buyer->role, ['super_admin', 'admin'], true)) {
+            throw new \DomainException('هذه الفاتورة ليست لك');
+        }
+
+        if ($invoice->invoice_flow !== 'outgoing' || $invoice->invoice_type !== 'wholesale_pos') {
+            throw new \DomainException('نوع الفاتورة غير صالح لتأكيد الاستلام');
+        }
+
+        $distribution = InvoiceDistribution::query()
+            ->whereKey($invoice->source_distribution_id)
+            ->first();
+
+        if (! $distribution) {
+            throw new \DomainException('لا يوجد توزيع مرتبط بهذه الفاتورة');
+        }
+
+        $result = $this->receiveAsBuyer($buyer, $distribution);
+
+        return $result + [
+            'invoice' => $invoice->fresh(),
+        ];
+    }
+
+    /**
      * @return array{new_badges:list,score_delta:int,level_changed:bool}
      */
     public function confirmDistribution(InvoiceDistribution $distribution): array
@@ -147,6 +220,7 @@ class DistributionService
 
         $distribution->confirm();
         $distribution->loadMissing('items');
+        $this->bustStockCaches($distribution);
 
         $totalPoints = (int) $distribution->items->sum('points_value');
 

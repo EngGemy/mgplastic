@@ -45,8 +45,19 @@ class PosController extends Controller
             'retail_trader_id' => ['required', 'exists:users,id'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
+            'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
         ]);
+
+        $v->after(function ($validator) use ($request) {
+            foreach ($request->input('lines', []) as $i => $line) {
+                $boxes = $line['boxes'] ?? null;
+                $qty = $line['quantity'] ?? null;
+                if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
+                    $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+                }
+            }
+        });
 
         if ($v->fails()) {
             return $this->error('بيانات غير صالحة', 422, $v->errors());
@@ -75,10 +86,11 @@ class PosController extends Controller
 
             return $this->created([
                 'invoices' => $invoices,
+                'pending_receipt' => true,
                 'whatsapp_share' => $share,
                 'share_url' => $share['share_url'] ?? null,
                 'whatsapp_url' => $share['whatsapp_url'] ?? null,
-            ], 'تم البيع للتاجر القطاعي');
+            ], 'تم إصدار الفاتورة — بانتظار تأكيد استلام القطاعي');
         } catch (\DomainException $e) {
             return $this->error($e->getMessage(), 422);
         }

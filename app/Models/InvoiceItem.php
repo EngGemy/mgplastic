@@ -44,17 +44,22 @@ class InvoiceItem extends Model
         return $this->hasMany(InvoiceDistributionItem::class);
     }
 
-    public function availableQuantityForTier(int $tier, ?int $parentDistributionId = null): int
-    {
+    public function availableQuantityForTier(
+        int $tier,
+        ?int $parentDistributionId = null,
+        ?int $exceptDistributionId = null,
+    ): int {
         if ($tier === 1) {
-            $confirmed = (int) $this->distributionItems()
+            // draft = reserved awaiting buyer receipt — must not be double-sold.
+            $reserved = (int) $this->distributionItems()
+                ->when($exceptDistributionId, fn ($q) => $q->where('distribution_id', '!=', $exceptDistributionId))
                 ->whereHas('distribution', fn ($q) => $q
                     ->where('tier', 1)
-                    ->whereIn('status', ['confirmed', 'points_awarded'])
+                    ->whereIn('status', ['draft', 'confirmed', 'points_awarded'])
                 )
                 ->sum(\Illuminate\Support\Facades\DB::raw('quantity - COALESCE(returned_quantity, 0)'));
 
-            return max(0, (int) $this->quantity - $confirmed);
+            return max(0, (int) $this->quantity - $reserved);
         }
 
         $parentItem = InvoiceDistributionItem::where('distribution_id', $parentDistributionId)
@@ -67,14 +72,15 @@ class InvoiceItem extends Model
 
         $parentNet = (int) $parentItem->quantity - (int) ($parentItem->returned_quantity ?? 0);
 
-        $alreadyConfirmed = (int) $this->distributionItems()
+        $alreadyReserved = (int) $this->distributionItems()
+            ->when($exceptDistributionId, fn ($q) => $q->where('distribution_id', '!=', $exceptDistributionId))
             ->whereHas('distribution', fn ($q) => $q
                 ->where('tier', $tier)
                 ->where('parent_distribution_id', $parentDistributionId)
-                ->whereIn('status', ['confirmed', 'points_awarded'])
+                ->whereIn('status', ['draft', 'confirmed', 'points_awarded'])
             )
             ->sum(\Illuminate\Support\Facades\DB::raw('quantity - COALESCE(returned_quantity, 0)'));
 
-        return max(0, $parentNet - $alreadyConfirmed);
+        return max(0, $parentNet - $alreadyReserved);
     }
 }

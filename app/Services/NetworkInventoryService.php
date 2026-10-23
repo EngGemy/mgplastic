@@ -28,6 +28,12 @@ class NetworkInventoryService
      *   slots:array<int, array{invoice_id:int, invoice_item_id:int, parent_distribution_id:int, available_qty:int, points_per_unit:float}>
      * }>
      */
+    public function forgetWholesalerStockCache(int|User $wholesaler): void
+    {
+        $id = $wholesaler instanceof User ? (int) $wholesaler->id : (int) $wholesaler;
+        Cache::store('array')->forget('net_inv:wholesaler:'.$id);
+    }
+
     public function stockForWholesaler(User $wholesaler): Collection
     {
         if (! $wholesaler->isWholesaleDistributor()) {
@@ -161,7 +167,8 @@ class NetworkInventoryService
             ->join('invoice_distributions', 'invoice_distributions.id', '=', 'invoice_distribution_items.distribution_id')
             ->where('invoice_distributions.tier', $tier)
             ->whereIn('invoice_distributions.parent_distribution_id', $parentIds)
-            ->whereIn('invoice_distributions.status', ['confirmed', 'points_awarded'])
+            // Include draft: reserved until the buyer confirms receipt.
+            ->whereIn('invoice_distributions.status', ['draft', 'confirmed', 'points_awarded'])
             ->whereIn('invoice_distribution_items.invoice_item_id', $itemIds)
             ->groupBy('invoice_distribution_items.invoice_item_id', 'invoice_distributions.parent_distribution_id')
             ->get()
@@ -219,6 +226,8 @@ class NetworkInventoryService
                 ])),
             );
 
+            $piecesPerBox = (int) ($product?->pieces_per_box ?? 0);
+
             $byProduct[$productId] = [
                 'product_id' => $productId,
                 'name' => localized_name($product, 'name', "منتج #{$productId}"),
@@ -238,6 +247,8 @@ class NetworkInventoryService
                 'size_label' => $size['size_label'],
                 'size_unit' => $size['size_unit'],
                 'size_sort' => $size['size_sort'],
+                'pieces_per_box' => $piecesPerBox > 0 ? $piecesPerBox : null,
+                'order_unit' => $piecesPerBox > 0 ? 'box' : 'piece',
                 'points_per_unit' => $pointsPerUnit,
                 'available_qty' => 0,
                 'available_points' => 0,

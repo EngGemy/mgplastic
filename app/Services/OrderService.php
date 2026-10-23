@@ -177,11 +177,12 @@ class OrderService
 
             $locked->loadMissing('items', 'requester', 'supplier');
 
-            // Plumber fulfill may already move stock while leaving status=shipping.
+            // Plumber fulfill may have created draft distributions — confirm them on buyer receive.
             $alreadyTransferred = filled($locked->delivered_reference)
                 || filled($locked->delivered_invoice_id);
 
             if ($alreadyTransferred) {
+                $this->confirmPendingOrderDistributions($locked, $actor);
                 $reference = [
                     'invoice_id' => $locked->delivered_invoice_id,
                     'reference' => $locked->delivered_reference,
@@ -466,6 +467,23 @@ class OrderService
     }
 
     /**
+     * Expand cart lines (boxes and/or pieces) into piece-only lines for POS / stock allocation.
+     *
+     * @param  array<int, array{product_id:int, quantity?:int, boxes?:int}>  $lines
+     * @return list<array{product_id:int, quantity:int}>
+     */
+    public function expandLinesToPieces(array $lines, bool $enforceFactoryBoxes = false): array
+    {
+        return array_map(
+            fn (array $row) => [
+                'product_id' => (int) $row['product_id'],
+                'quantity' => (int) $row['quantity'],
+            ],
+            $this->prepareLines($lines, $enforceFactoryBoxes)['items']
+        );
+    }
+
+    /**
      * Normalize cart lines into piece quantities.
      *
      * Boxed MG products (pieces_per_box > 0): prefer `boxes` and convert to pieces.
@@ -735,9 +753,9 @@ class OrderService
 
     /**
      * @param  array<int, array{product_id:int, quantity:int, points_per_unit?:float}>  $lines
-     * @return array{invoice_id?:?int, reference?:?array<string, mixed>}
+     * @return array{invoice_id?:?int, reference?:?array<string, mixed>, reputation?:array<string, mixed>}
      */
-    protected function fulfilRetailToPlumber(Order $order, array $lines): array
+    protected function fulfilRetailToPlumber(Order $order, array $lines, bool $confirmNow = true): array
     {
         $retailTrader = $order->supplier;
         $plumber = $order->requester;
@@ -772,18 +790,46 @@ class OrderService
                 skipCallerCheck: true,
             );
 
-            $rep = $this->distributions->confirmDistribution($distribution->fresh(['items']));
             $distributionIds[] = $distribution->id;
-            $reputation['score_delta'] += (int) ($rep['score_delta'] ?? 0);
-            $reputation['level_changed'] = $reputation['level_changed'] || ! empty($rep['level_changed']);
-            $reputation['new_badges'] = array_merge($reputation['new_badges'], $rep['new_badges'] ?? []);
+
+            if ($confirmNow) {
+                $rep = $this->distributions->confirmDistribution($distribution->fresh(['items']));
+                $reputation['score_delta'] += (int) ($rep['score_delta'] ?? 0);
+                $reputation['level_changed'] = $reputation['level_changed'] || ! empty($rep['level_changed']);
+                $reputation['new_badges'] = array_merge($reputation['new_badges'], $rep['new_badges'] ?? []);
+            }
         }
 
         return [
             'invoice_id' => null,
-            'reference' => ['distribution_ids' => $distributionIds],
+            'reference' => ['distribution_ids' => $distributionIds, 'pending_receipt' => ! $confirmNow],
             'reputation' => $reputation,
         ];
+    }
+
+    /**
+     * Confirm draft distributions created at fulfill — runs when the buyer POSTs /receive.
+     */
+    protected function confirmPendingOrderDistributions(Order $order, User $actor): void
+    {
+        $ref = $order->delivered_reference;
+        if (! is_array($ref)) {
+            return;
+        }
+
+        $ids = array_values(array_filter(array_map('intval', $ref['distribution_ids'] ?? [])));
+        if ($ids === []) {
+            return;
+        }
+
+        $drafts = \App\Models\InvoiceDistribution::query()
+            ->whereIn('id', $ids)
+            ->where('status', 'draft')
+            ->get();
+
+        foreach ($drafts as $draft) {
+            $this->distributions->receiveAsBuyer($actor, $draft);
+        }
     }
 
     /**
@@ -1101,9 +1147,9 @@ class OrderService
                 'points_per_unit' => (float) $item->points_per_unit,
             ])->all();
 
-            $reference = $this->fulfilRetailToPlumber($locked, $lines);
+            // Draft distributions only — plumber must POST …/receive to settle stock + points.
+            $reference = $this->fulfilRetailToPlumber($locked, $lines, confirmNow: false);
 
-            // Stock/points moved — wait for plumber (buyer) to confirm receipt.
             $locked->update([
                 'status' => OrderStatus::SHIPPING,
                 'shipped_at' => $locked->shipped_at ?? now(),
@@ -1116,13 +1162,10 @@ class OrderService
 
             $order = $locked;
 
-            $points = (int) $order->total_points;
-            $pointsNote = $points > 0 ? " ({$points} نقطة بانتظار تأكيد استلامك)" : '';
-
             $this->domainNotifications->orderShipped($order->fresh(['requester']));
 
             $fresh = $order->fresh(['items', 'requester', 'supplier']);
-            $fresh->setAttribute('_reputation_celebration', $reference['reputation'] ?? [
+            $fresh->setAttribute('_reputation_celebration', [
                 'new_badges' => [],
                 'score_delta' => 0,
                 'level_changed' => false,

@@ -84,9 +84,11 @@ class InvoiceDistribution extends Model
                     ->lockForUpdate()
                     ->firstOrFail();
 
+                // Exclude this draft itself — its qty is already reserved.
                 $available = $item->invoiceItem->availableQuantityForTier(
                     $this->tier,
-                    $this->parent_distribution_id
+                    $this->parent_distribution_id,
+                    exceptDistributionId: (int) $this->id,
                 );
 
                 if ($item->quantity > $available) {

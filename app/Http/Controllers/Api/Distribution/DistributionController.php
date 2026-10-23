@@ -70,19 +70,19 @@ class DistributionController extends Controller
 
     public function confirm(Request $request, InvoiceDistribution $distribution): JsonResponse
     {
-        if ($distribution->from_user_id !== $request->user()->id
-            && $request->user()->role !== 'super_admin') {
-            return response()->json(['status' => 403, 'message' => 'غير مصرح'], 403);
-        }
-
+        // Receipt is confirmed by the buyer (to_user) — seller cannot complete unilaterally.
         try {
-            $this->distributionService->confirmDistribution($distribution);
+            $result = $this->distributionService->receiveAsBuyer($request->user(), $distribution);
 
             return response()->json([
                 'status' => 200,
-                'message' => $distribution->tier === 3 ? 'تم منح النقاط للسباك' : 'تم تأكيد التوزيع',
-                'data' => $distribution->fresh(['items.invoiceItem.product', 'fromUser', 'toUser', 'invoice']),
+                'message' => $distribution->tier === 3
+                    ? 'تم تأكيد الاستلام ومنح النقاط'
+                    : 'تم تأكيد الاستلام',
+                'data' => $result['distribution'],
             ]);
+        } catch (\DomainException $e) {
+            return response()->json(['status' => 422, 'message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             return response()->json(['status' => 422, 'message' => $e->getMessage()], 422);
         }
