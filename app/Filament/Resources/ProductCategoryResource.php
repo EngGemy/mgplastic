@@ -65,13 +65,17 @@ class ProductCategoryResource extends Resource
                         ->searchable()
                         ->preload()
                         ->placeholder(__('Root (no parent)'))
-                        ->relationship(name: 'parent', titleAttribute: 'name')
+                        ->relationship(
+                            name: 'parent',
+                            titleAttribute: 'name',
+                            ignoreRecord: true,
+                        )
                         ->getOptionLabelFromRecordUsing(fn (ProductCategory $rec) => $rec->name ?? $rec->slug)
                         ->rules([
                             'nullable',
                             Rule::exists('product_categories', 'id'),
                         ])
-                        ->helperText(__('Leave empty to make this a root category.'))
+                        ->helperText(__('Leave empty to make this a root category. Cyclic parents are blocked on save.'))
                         ->columnSpan(4),
 
                     Forms\Components\FileUpload::make('image')

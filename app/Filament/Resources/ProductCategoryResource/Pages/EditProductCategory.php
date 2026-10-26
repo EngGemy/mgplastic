@@ -32,16 +32,17 @@ class EditProductCategory extends EditRecord
         /** @var ProductCategory $record */
         $record = $this->record;
 
-        if (! empty($data['parent_id']) && (int) $data['parent_id'] === (int) $record->id) {
+        $parentId = ! empty($data['parent_id']) ? (int) $data['parent_id'] : null;
+        if (ProductCategory::parentWouldCreateCycle((int) $record->id, $parentId)) {
             throw ValidationException::withMessages([
-                'parent_id' => [__('A category cannot be its own parent.')],
+                'parent_id' => ['لا يمكن اختيار أب يُنشئ حلقة في شجرة التصنيفات.'],
             ]);
         }
 
         return [
             'slug' => $data['slug'] ?? null,
             'image' => $data['image'] ?? null,
-            'parent_id' => $data['parent_id'] ?? null,
+            'parent_id' => $parentId,
         ];
     }
 

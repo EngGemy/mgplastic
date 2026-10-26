@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class ProductCategory extends Model
 {
@@ -17,6 +18,94 @@ class ProductCategory extends Model
     public $translatedAttributes = ['name', 'description'];
 
     protected $fillable = ['image', 'parent_id', 'slug'];
+
+    protected static function booted(): void
+    {
+        static::saving(function (ProductCategory $category): void {
+            if (! $category->isDirty('parent_id')) {
+                return;
+            }
+
+            $parentId = $category->parent_id !== null ? (int) $category->parent_id : null;
+            if (static::parentWouldCreateCycle($category->id ? (int) $category->id : null, $parentId)) {
+                throw ValidationException::withMessages([
+                    'parent_id' => ['لا يمكن اختيار أب يُنشئ حلقة في شجرة التصنيفات.'],
+                ]);
+            }
+        });
+    }
+
+    /**
+     * True when setting $categoryId's parent to $parentId would create a cycle
+     * (self-parent, ancestor loop, or attaching under an already-cyclic chain).
+     */
+    public static function parentWouldCreateCycle(?int $categoryId, ?int $parentId): bool
+    {
+        if ($parentId === null || $parentId <= 0) {
+            return false;
+        }
+
+        if ($categoryId !== null && $parentId === $categoryId) {
+            return true;
+        }
+
+        $seen = [];
+        if ($categoryId !== null && $categoryId > 0) {
+            $seen[$categoryId] = true;
+        }
+
+        $currentId = $parentId;
+        $guard = 0;
+        while ($currentId > 0 && $guard++ < 64) {
+            if (isset($seen[$currentId])) {
+                return true;
+            }
+            $seen[$currentId] = true;
+            $currentId = (int) (static::query()->whereKey($currentId)->value('parent_id') ?? 0);
+        }
+
+        return false;
+    }
+
+    /**
+     * Detach categories whose parent chain loops back. Safe to re-run.
+     *
+     * @return int number of categories whose parent_id was cleared
+     */
+    public static function breakParentCycles(): int
+    {
+        $fixed = 0;
+
+        foreach (static::query()->whereNotNull('parent_id')->orderBy('id')->cursor() as $cat) {
+            if ((int) $cat->parent_id === (int) $cat->id) {
+                $cat->forceFill(['parent_id' => null])->saveQuietly();
+                $fixed++;
+
+                continue;
+            }
+
+            $seen = [(int) $cat->id => true];
+            $walkId = (int) $cat->parent_id;
+            $guard = 0;
+            $cyclic = false;
+
+            while ($walkId > 0 && $guard++ < 64) {
+                if (isset($seen[$walkId])) {
+                    $cyclic = true;
+                    break;
+                }
+                $seen[$walkId] = true;
+                $walkId = (int) (static::query()->whereKey($walkId)->value('parent_id') ?? 0);
+            }
+
+            if ($cyclic || $guard >= 64) {
+                $cat->forceFill(['parent_id' => null])->saveQuietly();
+                $fixed++;
+            }
+        }
+
+        return $fixed;
+    }
 
     /** Absolute image URL, or null when the file is missing (no broken links). */
     public function resolvedImageUrl(): ?string
