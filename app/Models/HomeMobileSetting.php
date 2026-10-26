@@ -17,12 +17,14 @@ class HomeMobileSetting extends Model
         'main_sections_title',
         'new_products_title',
         'stores_title',
+        'layout_version',
     ];
 
     protected function casts(): array
     {
         return [
             'banner_is_active' => 'boolean',
+            'layout_version' => 'integer',
         ];
     }
 
@@ -43,6 +45,7 @@ class HomeMobileSetting extends Model
             'main_sections_title' => 'الأقسام الرئيسية',
             'new_products_title' => 'جديد منتجات MG',
             'stores_title' => 'المتاجر',
+            'layout_version' => 1,
         ];
     }
 
