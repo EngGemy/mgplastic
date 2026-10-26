@@ -31,7 +31,15 @@ class NetworkInventoryService
     public function forgetWholesalerStockCache(int|User $wholesaler): void
     {
         $id = $wholesaler instanceof User ? (int) $wholesaler->id : (int) $wholesaler;
+        Cache::forget('net_inv:wholesaler:'.$id);
         Cache::store('array')->forget('net_inv:wholesaler:'.$id);
+    }
+
+    public function forgetRetailStockCache(int|User $retailTrader): void
+    {
+        $id = $retailTrader instanceof User ? (int) $retailTrader->id : (int) $retailTrader;
+        Cache::forget('net_inv:retail:'.$id);
+        Cache::store('array')->forget('net_inv:retail:'.$id);
     }
 
     public function stockForWholesaler(User $wholesaler): Collection
@@ -42,7 +50,9 @@ class NetworkInventoryService
 
         $cacheKey = 'net_inv:wholesaler:'.$wholesaler->id;
 
-        return Cache::store('array')->remember($cacheKey, 120, function () use ($wholesaler) {
+        // Persistent cache (file/redis) — array store only lasts one request and caused
+        // full rebuilds (+ sync) on every POS stock hit → 25s+ timeouts.
+        return Cache::remember($cacheKey, 45, function () use ($wholesaler) {
             app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
 
             $byProduct = [];
@@ -112,39 +122,57 @@ class NetworkInventoryService
             return collect();
         }
 
-        $byProduct = [];
+        $cacheKey = 'net_inv:retail:'.$retailTrader->id;
 
-        $tier2Distributions = InvoiceDistribution::query()
-            ->where('to_user_id', $retailTrader->id)
-            ->where('tier', 2)
-            ->whereIn('status', ['confirmed', 'points_awarded'])
-            ->with([
-                'items.invoiceItem.product.translations',
-                'items.invoiceItem.product.category.translations',
-                'items.invoiceItem.product.category.parent.translations',
-                'items.invoiceItem.product.tags',
-                'items.invoiceItem.product.sizes',
-                'items.invoiceItem.product.latestPointsRateChange',
-            ])
-            ->orderBy('confirmed_at')
-            ->orderBy('id')
-            ->get();
+        return Cache::remember($cacheKey, 45, function () use ($retailTrader) {
+            $byProduct = [];
 
-        foreach ($tier2Distributions as $distribution) {
-            foreach ($distribution->items as $distItem) {
-                $item = $distItem->invoiceItem;
+            $tier2Distributions = InvoiceDistribution::query()
+                ->where('to_user_id', $retailTrader->id)
+                ->where('tier', 2)
+                ->whereIn('status', ['confirmed', 'points_awarded'])
+                ->with([
+                    'items.invoiceItem.product.translations',
+                    'items.invoiceItem.product.category.translations',
+                    'items.invoiceItem.product.category.parent.translations',
+                    'items.invoiceItem.product.tags',
+                    'items.invoiceItem.product.sizes',
+                    'items.invoiceItem.product.latestPointsRateChange',
+                ])
+                ->orderBy('confirmed_at')
+                ->orderBy('id')
+                ->get();
 
-                if (! $item) {
-                    continue;
+            // Avoid N+1 availableQuantityForTier() (2 queries × every lot line → 25s+ timeouts).
+            $pairs = [];
+            $pairItems = [];
+            foreach ($tier2Distributions as $distribution) {
+                foreach ($distribution->items as $distItem) {
+                    $item = $distItem->invoiceItem;
+                    if (! $item) {
+                        continue;
+                    }
+                    $itemId = (int) $item->id;
+                    $parentId = (int) $distribution->id;
+                    $pairs[] = [
+                        'invoice_item_id' => $itemId,
+                        'parent_distribution_id' => $parentId,
+                    ];
+                    $pairItems[] = [$item, $parentId];
                 }
-
-                $this->appendStockSlot($byProduct, $item, (int) $distribution->id, 3);
             }
-        }
 
-        $this->attachProductRateHints($byProduct);
+            $availableByPair = $this->bulkAvailableForTier($pairs, tier: 3);
 
-        return $this->sortStockByTag(collect(array_values($byProduct)));
+            foreach ($pairItems as [$item, $parentId]) {
+                $available = (int) ($availableByPair[$item->id.':'.$parentId] ?? 0);
+                $this->appendStockSlot($byProduct, $item, $parentId, 3, $available);
+            }
+
+            $this->attachProductRateHints($byProduct);
+
+            return $this->sortStockByTag(collect(array_values($byProduct)));
+        });
     }
 
     /**

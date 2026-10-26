@@ -22,20 +22,34 @@ class WholesalerPointsSyncService
         }
 
         $cacheKey = 'wholesaler_points_synced:'.$wholesaler->id;
-        if (\Illuminate\Support\Facades\Cache::store('array')->has($cacheKey)) {
+        if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
             return;
         }
 
+        // Only invoices that still need a tier-1 receipt — never re-reconcile every
+        // approved invoice on each POS stock request (that was timing out >25s).
         Invoice::query()
             ->where('wholesale_distributor_id', $wholesaler->id)
             ->where('invoice_type', 'wholesale_pos')
             ->where('invoice_flow', 'incoming')
             ->where('status', 'approved')
+            ->where(function ($q) use ($wholesaler) {
+                $q->whereDoesntHave('distributions', fn ($d) => $d
+                    ->where('tier', 1)
+                    ->where('to_user_id', $wholesaler->id)
+                    ->whereIn('status', ['confirmed', 'points_awarded']))
+                    ->orWhereHas('distributions', fn ($d) => $d
+                        ->where('tier', 1)
+                        ->where('to_user_id', $wholesaler->id)
+                        ->where('status', 'draft'));
+            })
             ->with('items')
             ->orderBy('id')
+            ->limit(50)
+            ->get()
             ->each(fn (Invoice $invoice) => $this->ensureIncomingReceipt($invoice, $wholesaler));
 
-        \Illuminate\Support\Facades\Cache::store('array')->put($cacheKey, true, 120);
+        \Illuminate\Support\Facades\Cache::put($cacheKey, true, now()->addMinutes(10));
     }
 
     public function ensureIncomingReceipt(Invoice $invoice, User $wholesaler): void
