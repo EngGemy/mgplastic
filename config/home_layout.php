@@ -14,7 +14,8 @@ return [
         'low_stock' => ['label' => 'تنبيه نقص المخزون', 'source' => 'app'],
         'shop_quick_links' => ['label' => 'لوحة تحكم المحل', 'source' => 'api'],
         'quick_actions' => ['label' => 'أزرار سريعة', 'source' => 'api'],
-        'reputation' => ['label' => 'سمعتي', 'source' => 'app'],
+        // Personal card is filled per authenticated plumber in HomeMobileLayoutService.
+        'reputation' => ['label' => 'سمعتي', 'source' => 'api'],
         'points_summary' => ['label' => 'ملخص النقاط', 'source' => 'app'],
         'pipe_systems' => ['label' => 'أنظمة المواسير', 'source' => 'api'],
         'main_sections' => ['label' => 'الأقسام الرئيسية', 'source' => 'api'],

@@ -183,7 +183,12 @@ trait InteractsWithMobileHomeLayout
                 Forms\Components\Placeholder::make('app_source_note')
                     ->label('')
                     ->content('هذا القسم بياناته من التطبيق (رصيد / مخزون / …) — الباك إند يتحكم في الإظهار والترتيب فقط.')
-                    ->visible(fn (Forms\Get $get) => in_array($get('type'), ['pending_receipts', 'low_stock', 'reputation', 'points_summary'], true)),
+                    ->visible(fn (Forms\Get $get) => in_array($get('type'), ['pending_receipts', 'low_stock', 'points_summary'], true)),
+
+                Forms\Components\Placeholder::make('reputation_note')
+                    ->label('')
+                    ->content('لكل سباك: درجته + المستوى (برونزي/فضي/…) + النجوم + شارته الخاصة + سلسلة الأسابيع. تُرسل داخل items عند تسجيل الدخول. ضبط المستويات والشارات من: نظام النقاط → إعدادات السمعة والضمان.')
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'reputation'),
 
                 Forms\Components\Repeater::make('fixed_items')
                     ->label('الأزرار / الروابط')

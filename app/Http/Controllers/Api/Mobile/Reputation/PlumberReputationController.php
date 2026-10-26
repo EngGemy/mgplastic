@@ -40,16 +40,23 @@ class PlumberReputationController extends Controller
             $components[] = ['key' => $k, 'value' => (int) $v, 'weight' => (int) config("reputation.weights.{$k}", 0)];
         }
         $badgeCatalog = $badges->catalogFor($user);
+        $home = $scores->homeCard($user);
 
         return $this->success([
             'score' => $score,
             'level' => $level,
             'level_label' => $scores->levelLabel($level),
+            'level_title' => $home['level_title'],
+            'stars' => $home['stars'],
+            'stars_max' => $home['stars_max'],
+            'badge' => $home['badge'],
+            'badges_preview' => $home['badges_preview'],
             'next_level' => $scores->nextLevel($score),
             'components' => $components,
             'rank_percentile' => null,
             'streak' => $streaks->payload($user),
             'badges' => $badgeCatalog,
+            'home_card' => $home,
             'unlock_warranty' => $warranties->unlockProgress($user),
         ], 'سمعة السباك');
     }
@@ -101,19 +108,27 @@ class PlumberReputationController extends Controller
         $catalog = $badges->catalogFor($plumber);
         $warrantiesCount = Warranty::query()->where('plumber_id', $plumber->id)->where('status', 'active')->count();
 
+        $home = $scores->homeCard($plumber);
+
         return $this->success([
             'id' => $plumber->id,
             'name' => $plumber->name,
             'score' => (int) ($row?->score ?? 0),
-            'level' => $row?->level ?? 'bronze',
-            'level_label' => $scores->levelLabel($row?->level ?? 'bronze'),
+            'level' => $home['level'],
+            'level_label' => $home['level_label'],
+            'level_title' => $home['level_title'],
+            'stars' => $home['stars'],
+            'stars_max' => $home['stars_max'],
+            'badge' => $home['badge'],
             'badges' => array_slice($catalog['earned'], 0, 5),
             'active_warranties' => $warrantiesCount,
             'plumber_badge' => [
-                'level' => $row?->level ?? 'bronze',
+                'level' => $home['level'],
+                'stars' => $home['stars'],
                 'top_badges' => array_slice($catalog['earned'], 0, 3),
-                'streak_weeks' => (int) (\App\Models\PlumberStreak::query()->where('user_id', $plumber->id)->value('current_weeks') ?? 0),
+                'streak_weeks' => $home['streak_weeks'],
             ],
+            'home_card' => $home,
         ]);
     }
 }

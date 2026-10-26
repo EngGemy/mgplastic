@@ -59,6 +59,9 @@ class ManageMobileHomePlumbers extends Page implements HasForms
                 Forms\Components\Placeholder::make('hint')
                     ->label('')
                     ->content('هذه الشاشة للسباك فقط. اسحب لترتيب أقسامه، وعدّل أزراره السريعة من داخل قسم «أزرار سريعة».'),
+                Forms\Components\Placeholder::make('reputation_hint')
+                    ->label('')
+                    ->content('بطاقة «سمعتي»: الدرجة والمستوى والنجوم والشارة تُحسب لكل سباك من نظام السمعة (نظام النقاط → إعدادات السمعة والضمان / الشارات). من هنا تضبط ظهور القسم والترتيب ورابط الضغط فقط.'),
                 $this->audienceSectionsRepeater('sections', 'أقسام رئيسية السباك', ['quick_actions']),
             ])
             ->statePath('data');

@@ -87,7 +87,9 @@
                                         <p>{{ $preview['banner_subtitle'] }}</p>
                                         <span>{{ $preview['banner_cta_text'] }}</span>
                                     </div>
-                                @elseif (in_array($type, ['wallet','search','reputation','points_summary','pending_receipts','low_stock'], true))
+                                @elseif ($type === 'reputation')
+                                    <div class="mg-pv-pill">درجة · مستوى · نجوم · شارة (لكل سباك)</div>
+                                @elseif (in_array($type, ['wallet','search','points_summary','pending_receipts','low_stock'], true))
                                     <div class="mg-pv-pill">بيانات من التطبيق</div>
                                 @else
                                     <div class="mg-pv-pill mg-pv-pill--api">محتوى API</div>

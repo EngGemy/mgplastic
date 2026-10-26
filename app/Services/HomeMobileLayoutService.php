@@ -14,6 +14,7 @@ use App\Models\PromoBanner;
 use App\Models\Slider;
 use App\Models\Testimonial;
 use App\Models\User;
+use App\Services\Reputation\PlumberScoreService;
 use App\Support\PublicStorageUrl;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
@@ -107,8 +108,14 @@ class HomeMobileLayoutService
         $this->ensureSeeded();
         $role = $this->normalizeRole($role, $user);
 
-        return Cache::remember('home_mobile:layout:'.$role, 60, function () use ($role, $user) {
-            $settings = HomeMobileSetting::instance();
+        $settings = HomeMobileSetting::instance();
+        // Version + user so سمعتي is personal and admin publishes invalidate all keys.
+        $cacheKey = 'home_mobile:layout:v'.((int) ($settings->layout_version ?? 1)).':'.$role;
+        if ($user) {
+            $cacheKey .= ':u'.$user->id;
+        }
+
+        return Cache::remember($cacheKey, 60, function () use ($role, $user, $settings) {
             $legacy = $settings->toApiLayout();
             $productTypes = app(ProductTypeService::class)->catalogForHome();
             $highlights = $this->mapHighlightsForApi();
@@ -235,6 +242,35 @@ class HomeMobileLayoutService
                 'cta_link' => $settings->banner_cta_link,
                 'image_url' => $settings->bannerImageUrl(),
             ], $settingsPayload);
+        }
+
+        if ($type === 'reputation') {
+            if ($title === null || $title === '') {
+                $title = 'سمعتي';
+            }
+            $settingsPayload = array_merge([
+                'link' => $settingsPayload['link'] ?? 'mgplastic://reputation',
+            ], $settingsPayload);
+
+            $items = null;
+            if ($user && $user->isPlumber()) {
+                try {
+                    $items = [app(PlumberScoreService::class)->homeCard($user)];
+                } catch (\Throwable) {
+                    $items = null;
+                }
+            }
+
+            return [
+                'key' => (string) $row->key,
+                'type' => $type,
+                'title' => $title,
+                'is_active' => true,
+                'limit' => $limit,
+                'see_all' => $seeAll,
+                'settings' => (object) $settingsPayload,
+                'items' => $items,
+            ];
         }
 
         $items = null;

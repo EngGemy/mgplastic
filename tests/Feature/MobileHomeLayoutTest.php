@@ -187,6 +187,28 @@ class MobileHomeLayoutTest extends TestCase
         $this->assertSame('video', $section['items'][0]['media_type'] ?? null);
     }
 
+    public function test_authenticated_plumber_gets_personal_reputation_card(): void
+    {
+        app(HomeMobileLayoutService::class)->ensureSeeded();
+
+        $plumber = User::factory()->create(['role' => 'plumber', 'is_approved' => true, 'is_active' => true]);
+        Sanctum::actingAs($plumber);
+
+        $section = collect($this->getJson('/api/v1/mobile/home/layout')->json('data.sections'))
+            ->firstWhere('type', 'reputation');
+
+        $this->assertNotNull($section);
+        $this->assertIsArray($section['items']);
+        $this->assertNotEmpty($section['items']);
+        $card = $section['items'][0];
+        $this->assertArrayHasKey('score', $card);
+        $this->assertArrayHasKey('level', $card);
+        $this->assertArrayHasKey('level_label', $card);
+        $this->assertArrayHasKey('stars', $card);
+        $this->assertArrayHasKey('badge', $card);
+        $this->assertSame('mgplastic://reputation', $card['link'] ?? null);
+    }
+
     public function test_plumber_and_guest_do_not_get_product_type_links(): void
     {
         app(HomeMobileLayoutService::class)->ensureSeeded();

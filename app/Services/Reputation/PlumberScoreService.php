@@ -98,6 +98,20 @@ class PlumberScoreService
         return (string) (config("reputation.levels.{$level}.label") ?? $level);
     }
 
+    /** Stars 1…N matching the configured level ladder (bronze=1 … diamond=4). */
+    public function starsForLevel(string $level): int
+    {
+        $order = array_keys((array) config('reputation.levels', []));
+        $idx = array_search($level, $order, true);
+
+        return $idx === false ? 1 : $idx + 1;
+    }
+
+    public function starsMax(): int
+    {
+        return max(1, count((array) config('reputation.levels', [])));
+    }
+
     public function nextLevel(int $score): ?array
     {
         $levels = (array) config('reputation.levels', []);
@@ -111,6 +125,54 @@ class PlumberScoreService
         $needed = max(0, (int) $levels[$next]['min'] - $score);
 
         return ['name' => $next, 'label' => $this->levelLabel($next), 'points_needed' => $needed];
+    }
+
+    /**
+     * Compact home-card payload for the authenticated plumber.
+     *
+     * @return array<string, mixed>
+     */
+    public function homeCard(User $plumber): array
+    {
+        $row = PlumberScore::query()->where('user_id', $plumber->id)->first();
+        if (! $row) {
+            $this->compute($plumber);
+            $row = PlumberScore::query()->where('user_id', $plumber->id)->first();
+        }
+
+        $score = (int) ($row?->score ?? 0);
+        $level = (string) ($row?->level ?? 'bronze');
+        $label = $this->levelLabel($level);
+        $catalog = app(BadgeService::class)->catalogFor($plumber);
+        $earned = $catalog['earned'] ?? [];
+        $primary = $earned[0] ?? null;
+        $streakWeeks = (int) (\App\Models\PlumberStreak::query()->where('user_id', $plumber->id)->value('current_weeks') ?? 0);
+
+        return [
+            'score' => $score,
+            'level' => $level,
+            'level_label' => $label,
+            'level_title' => 'المستوى '.$label,
+            'stars' => $this->starsForLevel($level),
+            'stars_max' => $this->starsMax(),
+            'streak_weeks' => $streakWeeks,
+            'badge' => $primary ? [
+                'id' => $primary['id'] ?? null,
+                'key' => $primary['key'] ?? null,
+                'name_ar' => $primary['name_ar'] ?? null,
+                'tier' => $primary['tier'] ?? null,
+                'icon' => $primary['icon'] ?? null,
+            ] : [
+                'id' => null,
+                'key' => $level,
+                'name_ar' => $label,
+                'tier' => $level,
+                'icon' => 'medal',
+            ],
+            'badges_preview' => array_slice($earned, 0, 3),
+            'next_level' => $this->nextLevel($score),
+            'link' => 'mgplastic://reputation',
+        ];
     }
 
     public function confirmedDistributionsQuery(User $plumber)
