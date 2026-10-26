@@ -24,8 +24,15 @@ class HomeMobileLayoutService
 {
     public const ROLES = ['plumber', 'retail_trader', 'wholesale_distributor', 'guest'];
 
+    private bool $seededThisRequest = false;
+
     public function ensureSeeded(): void
     {
+        if ($this->seededThisRequest) {
+            return;
+        }
+        $this->seededThisRequest = true;
+
         if (! Schema::hasTable('home_mobile_settings')) {
             return;
         }
@@ -61,13 +68,12 @@ class HomeMobileLayoutService
      */
     public function productTypeDefinitions(): array
     {
-        $this->ensureSeeded();
-
+        // Hot path (catalog/stock maps every product) — never re-run ensureSeeded here.
         if (! Schema::hasTable('home_product_types')) {
             return app(ProductTypeService::class)->definitionsFromConfigOnly();
         }
 
-        return Cache::remember('home_mobile:product_type_defs', 60, function () {
+        return Cache::remember('home_mobile:product_type_defs', 300, function () {
             $rows = HomeProductType::query()->active()->ordered()->get();
             if ($rows->isEmpty()) {
                 return app(ProductTypeService::class)->definitionsFromConfigOnly();

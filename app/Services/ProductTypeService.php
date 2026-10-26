@@ -9,20 +9,27 @@ use Illuminate\Support\Str;
 
 class ProductTypeService
 {
+    /** @var list<array{key: string, name: string, subtitle: string, icon: string, image: ?string, image_url: ?string, keywords: list<string>, exclude_keywords: list<string>}>|null */
+    private ?array $definitionsMemo = null;
+
     /**
      * @return list<array{key: string, name: string, subtitle: string, icon: string, image: ?string, image_url: ?string, keywords: list<string>, exclude_keywords: list<string>}>
      */
     public function definitions(): array
     {
+        if ($this->definitionsMemo !== null) {
+            return $this->definitionsMemo;
+        }
+
         if (app()->bound(HomeMobileLayoutService::class) || class_exists(HomeMobileLayoutService::class)) {
             try {
-                return app(HomeMobileLayoutService::class)->productTypeDefinitions();
+                return $this->definitionsMemo = app(HomeMobileLayoutService::class)->productTypeDefinitions();
             } catch (\Throwable) {
                 // fall through to config
             }
         }
 
-        return $this->definitionsFromConfigOnly();
+        return $this->definitionsMemo = $this->definitionsFromConfigOnly();
     }
 
     /**

@@ -64,10 +64,13 @@ class ProductCatalogController extends Controller
         );
 
         $baseQuery = $this->catalogQuery($request, applyOrderUnit: false);
-        $boxCount = (clone $baseQuery)->where('pieces_per_box', '>', 0)->count();
-        $pieceCount = (clone $baseQuery)->where(function ($q) {
-            $q->whereNull('pieces_per_box')->orWhere('pieces_per_box', '<=', 0);
-        })->count();
+        // One aggregate instead of two full COUNT scans (was doubling catalog latency).
+        $unitCounts = (clone $baseQuery)->toBase()
+            ->selectRaw('SUM(CASE WHEN pieces_per_box IS NOT NULL AND pieces_per_box > 0 THEN 1 ELSE 0 END) as box_count')
+            ->selectRaw('SUM(CASE WHEN pieces_per_box IS NULL OR pieces_per_box <= 0 THEN 1 ELSE 0 END) as piece_count')
+            ->first();
+        $boxCount = (int) ($unitCounts->box_count ?? 0);
+        $pieceCount = (int) ($unitCounts->piece_count ?? 0);
 
         $filters = [
             'order_unit' => $orderUnit,
@@ -124,20 +127,40 @@ class ProductCatalogController extends Controller
 
         $perPage = min(max((int) $request->integer('per_page', 20), 1), 50);
         $page = $this->catalogQuery($request, applyOrderUnit: true)->latest('id')->paginate($perPage);
-        $items = collect($page->items())
+        $pageItems = collect($page->items());
+        $items = $pageItems
             ->map(fn (Product $product) => $mapProduct($product))
             ->values();
         $items = $this->sortCatalogItems($items, $sizeOrder);
 
-        // Groups must reflect the FULL filtered catalog (not only this page),
-        // otherwise accordion order is incomplete / lexicographic on the client.
-        $allForGroups = $this->catalogQuery($request, applyOrderUnit: true)
-            ->limit(500)
-            ->get()
-            ->map(fn (Product $product) => $mapProduct($product))
-            ->values();
-        $allForGroups = $this->sortCatalogItems($allForGroups, $sizeOrder);
-        $trees = $inventory->groupCatalogBrowse($allForGroups, $sizeOrder);
+        // Groups must reflect the FULL filtered catalog (not only this page).
+        // Cache trees by filter signature so scrolling pages does not rematch 500 products.
+        $groupCacheKey = 'catalog_groups:'.md5(json_encode([
+            $filters,
+            $orderUnit,
+            $sizeOrder,
+            app()->getLocale(),
+        ]));
+        $trees = \Illuminate\Support\Facades\Cache::remember($groupCacheKey, 45, function () use ($request, $mapProduct, $sizeOrder, $inventory, $items) {
+            $allForGroups = $this->catalogQuery($request, applyOrderUnit: true)
+                ->limit(500)
+                ->get();
+
+            // Skip remapping products already mapped for the current page.
+            $mappedById = $items->keyBy('product_id');
+            $allMapped = $allForGroups->map(function (Product $product) use ($mapProduct, $mappedById) {
+                $existing = $mappedById->get($product->id);
+                if (is_array($existing)) {
+                    return $existing;
+                }
+
+                return $mapProduct($product);
+            })->values();
+
+            $allMapped = $this->sortCatalogItems($allMapped, $sizeOrder);
+
+            return $inventory->groupCatalogBrowse($allMapped, $sizeOrder);
+        });
 
         return [
             'items' => $items,
@@ -275,12 +298,7 @@ class ProductCatalogController extends Controller
         // POS filter: pipes vs accessories (ملحقات)
         $family = $this->requestedProductFamily($request);
         if ($family !== null) {
-            $accessoryIds = ProductCategory::query()
-                ->with('parent')
-                ->get()
-                ->filter(fn (ProductCategory $c) => $c->isAccessoriesFamily())
-                ->pluck('id')
-                ->all();
+            $accessoryIds = $this->accessoryCategoryIds();
 
             if ($family === 'accessory') {
                 $query->whereIn('product_category_id', $accessoryIds === [] ? [0] : $accessoryIds);
@@ -495,6 +513,25 @@ class ProductCatalogController extends Controller
     protected function storageUrlIfExists(?string $path): ?string
     {
         return \App\Support\PublicStorageUrl::try($path);
+    }
+
+    /**
+     * Accessory category ids (cached) — avoids loading every category on each catalog request.
+     *
+     * @return list<int>
+     */
+    protected function accessoryCategoryIds(): array
+    {
+        return \Illuminate\Support\Facades\Cache::remember('catalog:accessory_category_ids', 600, function () {
+            return ProductCategory::query()
+                ->with(['parent', 'translations', 'parent.translations'])
+                ->get()
+                ->filter(fn (ProductCategory $c) => $c->isAccessoriesFamily())
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+        });
     }
 
     /**

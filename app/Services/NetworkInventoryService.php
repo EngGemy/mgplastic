@@ -247,8 +247,9 @@ class NetworkInventoryService
 
         if (! isset($byProduct[$productId])) {
             $group = $this->resolveStockGroup($product);
-            $category = $product?->relationLoaded('category') ? $product->category : $product?->category;
-            if ($category && ! $category->relationLoaded('translations')) {
+            $category = $product?->category;
+            // Only touch DB when eager-load was skipped (N+1 guard).
+            if ($category && (! $category->relationLoaded('translations') || ($category->parent_id && ! $category->relationLoaded('parent')))) {
                 $category->loadMissing('translations', 'parent.translations');
             }
 

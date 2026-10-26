@@ -256,9 +256,18 @@ class Product extends Model
     /** هل التصنيف Accessories/ملحقات؟ */
     public function isAccessories(): bool
     {
-        $cat = $this->category?->loadMissing('parent.translations', 'translations');
+        $cat = $this->category;
+        if (! $cat) {
+            return false;
+        }
 
-        return $cat ? $cat->isAccessoriesFamily() : false;
+        // Avoid N+1: only load when callers forgot to eager-load category/parent.
+        if (! $this->relationLoaded('category')
+            || ($cat->parent_id && ! $cat->relationLoaded('parent'))) {
+            $cat->loadMissing('parent.translations', 'translations');
+        }
+
+        return $cat->isAccessoriesFamily();
     }
 
     /** MG network product that awards loyalty points. */

@@ -136,4 +136,60 @@ class NetworkInventoryTest extends TestCase
         $this->assertSame(4, (int) $retailStock->first()['available_qty']);
         $this->assertSame((int) $item->id, (int) $retailStock->first()['slots'][0]['invoice_item_id']);
     }
+
+    public function test_retail_stock_avoids_n_plus_one_available_qty_queries(): void
+    {
+        $wholesaler = User::factory()->create(['role' => 'wholesale_distributor']);
+        User::factory()->create(['role' => 'super_admin']);
+        $retail = User::factory()->create(['role' => 'retail_trader']);
+
+        $invoice = Invoice::factory()->create([
+            'status' => 'approved',
+            'invoice_type' => 'wholesale_pos',
+            'invoice_flow' => 'incoming',
+            'wholesale_distributor_id' => $wholesaler->id,
+        ]);
+
+        $products = Product::factory()->count(8)->create(['points_per_unit' => 1.0]);
+        foreach ($products as $product) {
+            InvoiceItem::factory()->create([
+                'invoice_id' => $invoice->id,
+                'product_id' => $product->id,
+                'quantity' => 5,
+                'points_per_unit' => 1.0,
+                'total_points' => 5,
+            ]);
+        }
+
+        app(WholesalerPointsSyncService::class)->syncForWholesaler($wholesaler);
+        $inventory = app(NetworkInventoryService::class);
+        $stock = $inventory->stockForWholesaler($wholesaler);
+        $groups = $inventory->allocateFromStock(
+            $stock,
+            $products->mapWithKeys(fn ($p) => [$p->id => 2])->all(),
+        );
+
+        $distributions = app(\App\Services\DistributionService::class);
+        $distribution = $distributions->createDistribution(
+            invoice: $invoice,
+            fromUser: $wholesaler,
+            toUser: $retail,
+            tier: 2,
+            items: $groups[0]['items'],
+            parentId: $groups[0]['parent_distribution_id'],
+            skipCallerCheck: true,
+        );
+        $distributions->confirmDistribution($distribution->fresh(['items']));
+        $inventory->forgetRetailStockCache($retail);
+
+        \Illuminate\Support\Facades\DB::flushQueryLog();
+        \Illuminate\Support\Facades\DB::enableQueryLog();
+        $retailStock = $inventory->stockForRetailTrader($retail);
+        $queries = \Illuminate\Support\Facades\DB::getQueryLog();
+        \Illuminate\Support\Facades\DB::disableQueryLog();
+
+        $this->assertCount(8, $retailStock);
+        // Bulk path + memoized type defs: far below 2 queries × every lot line.
+        $this->assertLessThan(40, count($queries), 'retail stock still looks like N+1 ('.count($queries).' queries)');
+    }
 }
