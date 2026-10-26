@@ -12,6 +12,7 @@ use App\Models\WalletAccount;
 use App\Support\ProductSizeSorter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class NetworkInventoryService
@@ -122,39 +123,24 @@ class NetworkInventoryService
     }
 
     /**
-     * Lean stock builder: SQL qty first, then load products only for rows with stock.
+     * Lean stock builder: one SQL for available lots, then load products only for those rows.
      *
      * @return Collection<int, array<string, mixed>>
      */
     protected function buildStockFromParentTier(int $holderUserId, int $parentTier, int $outboundTier): Collection
     {
-        $lotRows = $this->parentLotRows($holderUserId, $parentTier);
+        $lotRows = $this->availableLotRows($holderUserId, $parentTier, $outboundTier);
         if ($lotRows === []) {
             return collect();
         }
 
-        $pairs = array_map(fn (array $r) => [
-            'invoice_item_id' => $r['invoice_item_id'],
-            'parent_distribution_id' => $r['parent_distribution_id'],
-        ], $lotRows);
-
-        $availableByPair = $this->bulkAvailableForTier($pairs, $outboundTier);
-
-        $neededItemIds = [];
-        foreach ($lotRows as $row) {
-            $key = $row['invoice_item_id'].':'.$row['parent_distribution_id'];
-            $available = (int) ($availableByPair[$key] ?? 0);
-            if ($available > 0) {
-                $neededItemIds[$row['invoice_item_id']] = true;
-            }
-        }
-
-        if ($neededItemIds === []) {
-            return collect();
-        }
+        $neededItemIds = array_values(array_unique(array_map(
+            fn (array $r) => $r['invoice_item_id'],
+            $lotRows,
+        )));
 
         $items = InvoiceItem::query()
-            ->whereIn('id', array_keys($neededItemIds))
+            ->whereIn('id', $neededItemIds)
             ->with([
                 'product.translations',
                 'product.category.translations',
@@ -168,16 +154,17 @@ class NetworkInventoryService
 
         $byProduct = [];
         foreach ($lotRows as $row) {
-            $key = $row['invoice_item_id'].':'.$row['parent_distribution_id'];
-            $available = (int) ($availableByPair[$key] ?? 0);
-            if ($available <= 0) {
-                continue;
-            }
             $item = $items->get($row['invoice_item_id']);
             if (! $item) {
                 continue;
             }
-            $this->appendStockSlot($byProduct, $item, $row['parent_distribution_id'], $outboundTier, $available);
+            $this->appendStockSlot(
+                $byProduct,
+                $item,
+                $row['parent_distribution_id'],
+                $outboundTier,
+                $row['available_qty'],
+            );
         }
 
         $this->attachProductRateHints($byProduct);
@@ -186,32 +173,69 @@ class NetworkInventoryService
     }
 
     /**
-     * @return list<array{invoice_item_id:int, parent_distribution_id:int, invoice_id:int, product_id:int}>
+     * Lots with remaining sellable qty only (exhausted lots stay out of PHP).
+     *
+     * @return list<array{invoice_item_id:int, parent_distribution_id:int, invoice_id:int, product_id:int, available_qty:int}>
      */
-    protected function parentLotRows(int $holderUserId, int $parentTier): array
+    protected function availableLotRows(int $holderUserId, int $parentTier, int $outboundTier): array
     {
-        return InvoiceDistributionItem::query()
-            ->join('invoice_distributions as d', 'd.id', '=', 'invoice_distribution_items.distribution_id')
-            ->join('invoice_items as ii', 'ii.id', '=', 'invoice_distribution_items.invoice_item_id')
-            ->where('d.to_user_id', $holderUserId)
-            ->where('d.tier', $parentTier)
-            ->whereIn('d.status', ['confirmed', 'points_awarded'])
-            ->whereNull('d.deleted_at')
-            ->orderBy('d.confirmed_at')
-            ->orderBy('d.id')
-            ->get([
-                'invoice_distribution_items.invoice_item_id',
-                'invoice_distribution_items.distribution_id as parent_distribution_id',
-                'ii.invoice_id',
-                'ii.product_id',
-            ])
-            ->map(fn ($r) => [
-                'invoice_item_id' => (int) $r->invoice_item_id,
-                'parent_distribution_id' => (int) $r->parent_distribution_id,
-                'invoice_id' => (int) $r->invoice_id,
-                'product_id' => (int) $r->product_id,
-            ])
-            ->all();
+        // CASE (not GREATEST) so SQLite tests + MySQL production stay compatible.
+        $rows = DB::select(
+            <<<'SQL'
+            SELECT
+                idi.invoice_item_id AS invoice_item_id,
+                d.id AS parent_distribution_id,
+                ii.invoice_id AS invoice_id,
+                ii.product_id AS product_id,
+                (
+                    (idi.quantity - COALESCE(idi.returned_quantity, 0))
+                    - COALESCE(outbound.confirmed_qty, 0)
+                ) AS available_qty
+            FROM invoice_distribution_items AS idi
+            INNER JOIN invoice_distributions AS d
+                ON d.id = idi.distribution_id
+            INNER JOIN invoice_items AS ii
+                ON ii.id = idi.invoice_item_id
+            LEFT JOIN (
+                SELECT
+                    d2.parent_distribution_id AS parent_distribution_id,
+                    idi2.invoice_item_id AS invoice_item_id,
+                    SUM(idi2.quantity - COALESCE(idi2.returned_quantity, 0)) AS confirmed_qty
+                FROM invoice_distribution_items AS idi2
+                INNER JOIN invoice_distributions AS d2
+                    ON d2.id = idi2.distribution_id
+                WHERE d2.tier = ?
+                  AND d2.status IN ('draft', 'confirmed', 'points_awarded')
+                  AND d2.deleted_at IS NULL
+                  AND d2.parent_distribution_id IN (
+                      SELECT id
+                      FROM invoice_distributions
+                      WHERE to_user_id = ?
+                        AND tier = ?
+                        AND status IN ('confirmed', 'points_awarded')
+                        AND deleted_at IS NULL
+                  )
+                GROUP BY d2.parent_distribution_id, idi2.invoice_item_id
+            ) AS outbound
+                ON outbound.parent_distribution_id = d.id
+               AND outbound.invoice_item_id = idi.invoice_item_id
+            WHERE d.to_user_id = ?
+              AND d.tier = ?
+              AND d.status IN ('confirmed', 'points_awarded')
+              AND d.deleted_at IS NULL
+              AND (idi.quantity - COALESCE(idi.returned_quantity, 0)) > COALESCE(outbound.confirmed_qty, 0)
+            ORDER BY d.confirmed_at ASC, d.id ASC
+            SQL,
+            [$outboundTier, $holderUserId, $parentTier, $holderUserId, $parentTier],
+        );
+
+        return array_map(static fn ($r) => [
+            'invoice_item_id' => (int) $r->invoice_item_id,
+            'parent_distribution_id' => (int) $r->parent_distribution_id,
+            'invoice_id' => (int) $r->invoice_id,
+            'product_id' => (int) $r->product_id,
+            'available_qty' => max(0, (int) $r->available_qty),
+        ], $rows);
     }
 
     /**
@@ -219,26 +243,10 @@ class NetworkInventoryService
      */
     protected function aggregateAvailableQtyByProduct(int $holderUserId, int $parentTier, int $outboundTier): array
     {
-        $lotRows = $this->parentLotRows($holderUserId, $parentTier);
-        if ($lotRows === []) {
-            return [];
-        }
-
-        $pairs = array_map(fn (array $r) => [
-            'invoice_item_id' => $r['invoice_item_id'],
-            'parent_distribution_id' => $r['parent_distribution_id'],
-        ], $lotRows);
-
-        $availableByPair = $this->bulkAvailableForTier($pairs, $outboundTier);
         $byProduct = [];
-        foreach ($lotRows as $row) {
-            $key = $row['invoice_item_id'].':'.$row['parent_distribution_id'];
-            $available = (int) ($availableByPair[$key] ?? 0);
-            if ($available <= 0) {
-                continue;
-            }
+        foreach ($this->availableLotRows($holderUserId, $parentTier, $outboundTier) as $row) {
             $pid = $row['product_id'];
-            $byProduct[$pid] = ($byProduct[$pid] ?? 0) + $available;
+            $byProduct[$pid] = ($byProduct[$pid] ?? 0) + $row['available_qty'];
         }
 
         return $byProduct;
@@ -298,6 +306,9 @@ class NetworkInventoryService
     /**
      * @param  array<int, array<string, mixed>>  $byProduct
      */
+    /** @var array<string, array<string, mixed>|null> */
+    private array $lotHintMemo = [];
+
     private function appendStockSlot(array &$byProduct, InvoiceItem $item, int $parentDistributionId, int $tier, ?int $availableOverride = null): void
     {
         $available = $availableOverride ?? $item->availableQuantityForTier($tier, $parentDistributionId);
@@ -310,8 +321,10 @@ class NetworkInventoryService
         $productId = (int) $item->product_id;
         // Lot receive rate drives sale math; catalog is fallback when lot PPU is 0.
         $receivePpu = (float) $item->points_per_unit;
-        $catalogPpu = app(\App\Services\Points\CatalogPointsPolicy::class)
-            ->catalogRate($product, null);
+        $catalogPpu = (float) ($product?->points_per_unit ?? 0);
+        if ($catalogPpu < 0) {
+            $catalogPpu = 0.0;
+        }
         $lotPpu = $receivePpu > 0 ? $receivePpu : $catalogPpu;
 
         if (! isset($byProduct[$productId])) {
@@ -372,12 +385,15 @@ class NetworkInventoryService
             : $lotPpu;
         $byProduct[$productId]['catalog_points_per_unit'] = $catalogPpu;
 
-        $slotHint = app(\App\Services\Points\PointsRateHintBuilder::class)->forLot(
-            $product,
-            $receivePpu > 0 ? $receivePpu : $lotPpu,
-            $product?->latestPointsRateChange,
-            includeRates: true,
-        );
+        $hintKey = $productId.':'.($receivePpu > 0 ? $receivePpu : $lotPpu);
+        if (! array_key_exists($hintKey, $this->lotHintMemo)) {
+            $this->lotHintMemo[$hintKey] = app(\App\Services\Points\PointsRateHintBuilder::class)->forLot(
+                $product,
+                $receivePpu > 0 ? $receivePpu : $lotPpu,
+                $product?->latestPointsRateChange,
+                includeRates: true,
+            );
+        }
 
         $byProduct[$productId]['slots'][] = [
             'invoice_id' => (int) $item->invoice_id,
@@ -386,7 +402,7 @@ class NetworkInventoryService
             'available_qty' => $available,
             'points_per_unit' => $lotPpu,
             'receive_points_per_unit' => $receivePpu,
-            'points_rate_hint' => $slotHint,
+            'points_rate_hint' => $this->lotHintMemo[$hintKey],
         ];
     }
 
