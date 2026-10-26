@@ -29,20 +29,27 @@ class PosController extends Controller
     public function stock(Request $request): JsonResponse
     {
         $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
-        $stock = $this->inventory->stockForRetailTrader($request->user());
-        $items = $this->inventory
-            ->sortStockByTag($stock->map(fn (array $row) => $this->mapOwnStockRow($row)), $sizeOrder)
-            ->values();
+        $userId = (int) $request->user()->id;
+        $cacheKey = "pos_stock:trader:{$userId}:{$sizeOrder}";
 
-        return $this->success([
-            'items' => $items,
-            'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
-            'size_groups' => $this->inventory->groupStockBySize($items, $sizeOrder),
-            'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
-            'filters' => [
-                'size_order' => $sizeOrder,
-            ],
-        ], 'مخزونك القطاعي — مقاسات مرتّبة (1→1.5→3…) · '.$sizeOrder);
+        $payload = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($request, $sizeOrder) {
+            $stock = $this->inventory->stockForRetailTrader($request->user());
+            $items = $this->inventory
+                ->sortStockByTag($stock->map(fn (array $row) => $this->mapOwnStockRow($row)), $sizeOrder)
+                ->values();
+
+            return [
+                'items' => $items,
+                'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+                'size_groups' => $this->inventory->groupStockBySize($items, $sizeOrder),
+                'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
+                'filters' => [
+                    'size_order' => $sizeOrder,
+                ],
+            ];
+        });
+
+        return $this->success($payload, 'مخزونك القطاعي — مقاسات مرتّبة (1→1.5→3…) · '.$sizeOrder);
     }
 
     /**

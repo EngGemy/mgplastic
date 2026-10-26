@@ -128,7 +128,11 @@ class PlumberShopProductsTest extends TestCase
      */
     private function bindStock(array $rows): void
     {
+        $qtyByProduct = collect($rows)->mapWithKeys(
+            fn (array $row) => [(int) $row['product_id'] => (int) $row['available_qty']]
+        );
         $inventory = Mockery::mock(NetworkInventoryService::class)->makePartial();
+        $inventory->shouldReceive('stockQtyByProductForRetailTrader')->andReturn($qtyByProduct);
         $inventory->shouldReceive('stockForRetailTrader')->andReturn(collect($rows));
         $this->app->instance(NetworkInventoryService::class, $inventory);
     }

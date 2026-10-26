@@ -24,19 +24,26 @@ class PosController extends Controller
     public function stock(Request $request): JsonResponse
     {
         $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
-        $items = $this->inventory
-            ->sortStockByTag($this->inventory->stockForWholesaler($request->user()), $sizeOrder)
-            ->values();
+        $userId = (int) $request->user()->id;
+        $cacheKey = "pos_stock:distributor:{$userId}:{$sizeOrder}";
 
-        return $this->success([
-            'items' => $items,
-            'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
-            'size_groups' => $this->inventory->groupStockBySize($items, $sizeOrder),
-            'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
-            'filters' => [
-                'size_order' => $sizeOrder,
-            ],
-        ], 'مخزون الجملة — مقاسات مرتّبة · '.$sizeOrder);
+        $payload = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($request, $sizeOrder) {
+            $items = $this->inventory
+                ->sortStockByTag($this->inventory->stockForWholesaler($request->user()), $sizeOrder)
+                ->values();
+
+            return [
+                'items' => $items,
+                'groups' => $this->inventory->groupStockByTag($items, $sizeOrder),
+                'size_groups' => $this->inventory->groupStockBySize($items, $sizeOrder),
+                'categories' => $this->inventory->groupStockByCategoryThenTag($items, $sizeOrder),
+                'filters' => [
+                    'size_order' => $sizeOrder,
+                ],
+            ];
+        });
+
+        return $this->success($payload, 'مخزون الجملة — مقاسات مرتّبة · '.$sizeOrder);
     }
 
     public function checkout(Request $request): JsonResponse

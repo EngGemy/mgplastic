@@ -52,7 +52,7 @@ class WholesalerPointsSyncService
         \Illuminate\Support\Facades\Cache::put($cacheKey, true, now()->addMinutes(10));
     }
 
-    public function ensureIncomingReceipt(Invoice $invoice, User $wholesaler): void
+    public function ensureIncomingReceipt(Invoice $invoice, User $wholesaler, bool $reconcile = true): void
     {
         if (! $invoice->isWholesalePos() || $invoice->invoice_flow !== 'incoming') {
             return;
@@ -88,9 +88,13 @@ class WholesalerPointsSyncService
 
         if ($distribution->status === 'draft') {
             $this->distributions->confirmDistribution($distribution->fresh(['items']));
+            $distribution = $distribution->fresh(['items']) ?? $distribution;
         }
 
-        $this->reconcileTierOne($invoice->fresh('items'), $distribution->fresh('items'));
+        // Reconcile is expensive (per-line queries) — skip on hot POS reads.
+        if ($reconcile) {
+            $this->reconcileTierOne($invoice->fresh('items'), $distribution->fresh(['items']) ?? $distribution);
+        }
     }
 
     /**

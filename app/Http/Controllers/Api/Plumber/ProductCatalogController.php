@@ -34,15 +34,15 @@ class ProductCatalogController extends TraderProductCatalogController
             }
 
             $shopId = (int) $shop->id;
+            // Qty-only map — avoids building full POS stock rows/slots on every catalog hit.
             $stock = app(NetworkInventoryService::class)
-                ->stockForRetailTrader($shop)
-                ->keyBy('product_id');
+                ->stockQtyByProductForRetailTrader($shop);
         }
 
         $payload = $this->buildCatalogPayload($request, function (Product $product) use ($stock) {
             $available = null;
             if ($stock instanceof Collection) {
-                $available = (int) ($stock->get($product->id)['available_qty'] ?? 0);
+                $available = (int) ($stock->get($product->id) ?? 0);
             }
 
             return $this->mapCatalogProduct($product, $available);
