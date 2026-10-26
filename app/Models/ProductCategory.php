@@ -164,30 +164,52 @@ class ProductCategory extends Model
     public function isAccessoriesFamily(): bool
     {
         $node = $this;
+        $seen = [];
+        $guard = 0;
 
-        while ($node) {
+        // Guard against parent cycles (A→B→A) which previously hung POS then segfaulted.
+        while ($node && $guard++ < 32) {
+            $id = (int) ($node->id ?? 0);
+            if ($id > 0) {
+                if (isset($seen[$id])) {
+                    break;
+                }
+                $seen[$id] = true;
+            }
+
             $slug = Str::of((string) $node->slug)->lower()->toString();
 
-            // أسماء مترجمة (لو متوفرة)
-            $nameEn = mb_strtolower((string) optional($node->translate('en'))->name);
-            $nameAr = mb_strtolower((string) optional($node->translate('ar'))->name);
-
-            // التطبيع
-            $hit = false;
-            // إنجليزي: accessory / accessories
-            if (Str::contains($slug, 'Accessor') || Str::contains($nameEn, 'Accessor')) {
-                $hit = true;
+            // Prefer eager-loaded translations; avoid extra queries on the hot POS path.
+            $nameEn = '';
+            $nameAr = '';
+            if ($node->relationLoaded('translations')) {
+                foreach ($node->translations as $tr) {
+                    $locale = strtolower((string) ($tr->locale ?? ''));
+                    $name = mb_strtolower((string) ($tr->name ?? ''));
+                    if ($locale === 'en') {
+                        $nameEn = $name;
+                    }
+                    if ($locale === 'ar') {
+                        $nameAr = $name;
+                    }
+                }
+            } else {
+                $nameEn = mb_strtolower((string) optional($node->translate('en'))->name);
+                $nameAr = mb_strtolower((string) optional($node->translate('ar'))->name);
             }
-            // عربي: ملحق / ملحقات
-            if (Str::contains($slug, 'ملحقات') || Str::contains($nameAr, 'ملحق')) {
-                $hit = true;
-            }
 
-            if ($hit) {
+            if (Str::contains($slug, 'accessor') || Str::contains($nameEn, 'accessor')
+                || Str::contains($slug, 'ملحق') || Str::contains($nameAr, 'ملحق')) {
                 return true;
             }
 
-            $node = $node->parent; // اصعد للأب
+            if (! $node->parent_id) {
+                break;
+            }
+
+            $node = $node->relationLoaded('parent')
+                ? $node->parent
+                : $node->parent()->with('translations')->first();
         }
 
         return false;
