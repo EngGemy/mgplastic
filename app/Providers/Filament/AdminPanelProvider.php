@@ -62,6 +62,7 @@ class AdminPanelProvider extends PanelProvider
                 'نظام النقاط',
                 'المنتجات',
                 'المستخدمون',
+                'رئيسية التطبيق',
                 'المحتوى',
                 'الإعدادات',
             ])

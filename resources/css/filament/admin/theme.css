@@ -1,4 +1,4 @@
-/* ── CRM Dashboard — MG Plastic ── */
+/* ââ CRM Dashboard â MG Plastic ââ */
 .fi-page-dashboard .fi-header-heading {
     display: none;
 }
@@ -200,7 +200,7 @@
     height: 0.75rem;
 }
 
-/* Quick Access Widget — MG Plastic Admin (مربعات كبيرة — سهولة قراءة) */
+/* Quick Access Widget â MG Plastic Admin (ÙØ±Ø¨Ø¹Ø§Øª ÙØ¨ÙØ±Ø© â Ø³ÙÙÙØ© ÙØ±Ø§Ø¡Ø©) */
 
 .fi-wi-quick-access {
     padding: 0;
@@ -419,7 +419,7 @@
 .fi-badge-warning { background: #FEF3C7; color: #d97706; }
 .fi-badge-primary { background: #DBEAFE; color: #1d4ed8; }
 
-/* ── POS Wholesale Invoice ── */
+/* ââ POS Wholesale Invoice ââ */
 .pos-wrap { font-family: 'Cairo', sans-serif; }
 .pos-header {
     display: flex; gap: 1rem; flex-wrap: wrap;
@@ -585,7 +585,7 @@
 .pos-product-card--disabled { opacity: 0.45; cursor: not-allowed; }
 .pos-text-danger { color: #dc2626 !important; }
 
-/* ── Invoice distribution panel ── */
+/* ââ Invoice distribution panel ââ */
 .dist-panel {
     font-family: 'Cairo', sans-serif; padding: 1rem 1.25rem;
     background: linear-gradient(135deg, #f0fdf4 0%, #eff6ff 100%);
@@ -623,7 +623,7 @@
 .dist-status--confirmed { background: #dbeafe; color: #1d4ed8; }
 .dist-status--points_awarded { background: #d1fae5; color: #059669; }
 
-/* ── جدول الفواتير ── */
+/* ââ Ø¬Ø¯ÙÙ Ø§ÙÙÙØ§ØªÙØ± ââ */
 .fi-resource-invoices .fi-ta-table {
     font-family: 'Cairo', sans-serif;
 }
@@ -641,7 +641,7 @@
     padding-bottom: 0.65rem !important;
 }
 
-/* ── OpenStreetMap ── */
+/* ââ OpenStreetMap ââ */
 .osm-wrap { margin-top: 0.5rem; }
 .osm-hint {
     font-size: 0.85rem;
@@ -667,7 +667,7 @@
 .osm-coords { color: #6b7280; font-family: monospace; }
 .osm-empty { color: #9ca3af; font-size: 0.85rem; padding: 1rem; text-align: center; }
 
-/* ── المتاجر ── */
+/* ââ Ø§ÙÙØªØ§Ø¬Ø± ââ */
 .fi-resource-stores .fi-ta-table,
 .fi-resource-retail-traders .fi-ta-table {
     font-family: 'Cairo', sans-serif;
@@ -677,7 +677,7 @@
     font-family: 'Cairo', sans-serif;
 }
 
-/* ── معالج إضافة موزع قطاعي ── */
+/* ââ ÙØ¹Ø§ÙØ¬ Ø¥Ø¶Ø§ÙØ© ÙÙØ²Ø¹ ÙØ·Ø§Ø¹Ù ââ */
 .fi-resource-retail-traders .fi-fo-wizard {
     direction: rtl;
     font-family: 'Cairo', sans-serif;
@@ -721,7 +721,7 @@
     font-weight: 700;
 }
 
-/* ── صفحات العرض (Infolist) ── */
+/* ââ ØµÙØ­Ø§Øª Ø§ÙØ¹Ø±Ø¶ (Infolist) ââ */
 .fi-infolist, .fi-infolist-entry-wrapper {
     font-family: 'Cairo', sans-serif;
 }
@@ -735,7 +735,7 @@
     font-size: 0.78rem;
 }
 
-/* بطاقة الملف الشخصي — متاجر / موزعون */
+/* Ø¨Ø·Ø§ÙØ© Ø§ÙÙÙÙ Ø§ÙØ´Ø®ØµÙ â ÙØªØ§Ø¬Ø± / ÙÙØ²Ø¹ÙÙ */
 .net-profile, .inv-profile {
     background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
     border: 1px solid #dbeafe;
@@ -818,7 +818,7 @@
 }
 .inv-profile-main { flex: 1; min-width: 200px; }
 
-/* تحسين شبكة Infolist في RTL */
+/* ØªØ­Ø³ÙÙ Ø´Ø¨ÙØ© Infolist ÙÙ RTL */
 .fi-infolist .fi-section-content {
     direction: rtl;
 }
@@ -855,7 +855,7 @@
     }
 }
 
-/* ── معالج إضافة منتج + معاينة النقاط ── */
+/* ââ ÙØ¹Ø§ÙØ¬ Ø¥Ø¶Ø§ÙØ© ÙÙØªØ¬ + ÙØ¹Ø§ÙÙØ© Ø§ÙÙÙØ§Ø· ââ */
 .fi-resource-products .fi-fo-wizard {
     direction: rtl;
     font-family: 'Cairo', sans-serif;
@@ -1071,7 +1071,7 @@
     color: #a1a1aa;
 }
 
-/* ── تقرير المنتجات والنقاط ── */
+/* ââ ØªÙØ±ÙØ± Ø§ÙÙÙØªØ¬Ø§Øª ÙØ§ÙÙÙØ§Ø· ââ */
 .prod-report-wrap { font-family: 'Cairo', sans-serif; margin-bottom: 1.25rem; }
 .prod-report-stats {
     display: grid;
@@ -1154,7 +1154,7 @@
     color: #059669;
 }
 
-/* ── تقرير المستخدمين ── */
+/* ââ ØªÙØ±ÙØ± Ø§ÙÙØ³ØªØ®Ø¯ÙÙÙ ââ */
 .users-report-wrap {
     font-family: 'Cairo', sans-serif;
     margin-bottom: 1.25rem;
@@ -1285,7 +1285,7 @@
     background: rgb(255 255 255 / 25%);
 }
 
-/* ── فواتير المتجر (موزع الجملة) ── */
+/* ââ ÙÙØ§ØªÙØ± Ø§ÙÙØªØ¬Ø± (ÙÙØ²Ø¹ Ø§ÙØ¬ÙÙØ©) ââ */
 .mg-store-inv-stats {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -1448,7 +1448,7 @@
     margin-top: 0.5rem;
 }
 
-/* ── طلبات السحب ── */
+/* ââ Ø·ÙØ¨Ø§Øª Ø§ÙØ³Ø­Ø¨ ââ */
 .withdrawals-wrap {
     font-family: 'Cairo', sans-serif;
     margin-bottom: 1rem;
@@ -1549,17 +1549,17 @@
     vertical-align: middle;
 }
 
-/* ── تمييز صفوف المستخدمين حسب الدور ── */
+/* ââ ØªÙÙÙØ² ØµÙÙÙ Ø§ÙÙØ³ØªØ®Ø¯ÙÙÙ Ø­Ø³Ø¨ Ø§ÙØ¯ÙØ± ââ */
 .mg-user-row {
     position: relative;
 }
 .mg-user-row td:first-child {
     border-inline-start: 4px solid transparent;
 }
-.mg-user-row--field td:first-child   { border-inline-start-color: #10b981; } /* سباك / بائع */
-.mg-user-row--network td:first-child { border-inline-start-color: #2563eb; } /* موزعون */
-.mg-user-row--admin td:first-child   { border-inline-start-color: #7c3aed; } /* الإدارة */
-.mg-user-row--app td:first-child     { border-inline-start-color: #94a3b8; } /* مستخدم تطبيق */
+.mg-user-row--field td:first-child   { border-inline-start-color: #10b981; } /* Ø³Ø¨Ø§Ù / Ø¨Ø§Ø¦Ø¹ */
+.mg-user-row--network td:first-child { border-inline-start-color: #2563eb; } /* ÙÙØ²Ø¹ÙÙ */
+.mg-user-row--admin td:first-child   { border-inline-start-color: #7c3aed; } /* Ø§ÙØ¥Ø¯Ø§Ø±Ø© */
+.mg-user-row--app td:first-child     { border-inline-start-color: #94a3b8; } /* ÙØ³ØªØ®Ø¯Ù ØªØ·Ø¨ÙÙ */
 
 .mg-user-row--field:hover   { background: #ecfdf5 !important; }
 .mg-user-row--network:hover { background: #eff6ff !important; }
@@ -1569,7 +1569,7 @@
 .dark .mg-user-row--network:hover { background: rgb(30 58 95 / 30%) !important; }
 .dark .mg-user-row--admin:hover   { background: rgb(76 29 149 / 25%) !important; }
 
-/* ── متاجر بانتظار التفعيل ── */
+/* ââ ÙØªØ§Ø¬Ø± Ø¨Ø§ÙØªØ¸Ø§Ø± Ø§ÙØªÙØ¹ÙÙ ââ */
 .mg-pending-store td:first-child {
     border-inline-start: 4px solid #d97706;
 }
@@ -1580,7 +1580,7 @@
     background: rgb(120 53 15 / 20%) !important;
 }
 
-/* شاشة عرض السعر: علامة صح ثم معاينة */
+/* Ø´Ø§Ø´Ø© Ø¹Ø±Ø¶ Ø§ÙØ³Ø¹Ø±: Ø¹ÙØ§ÙØ© ØµØ­ Ø«Ù ÙØ¹Ø§ÙÙØ© */
 .mg-pick {
     font-family: 'Cairo', sans-serif;
     background: #fff;
@@ -2384,7 +2384,7 @@
 .dark .mg-rep-badge--legendary{background:linear-gradient(160deg,#1c1917,#0b1220)}
 .mg-rep-empty{margin:0;font-size:13px;color:#64748b;padding:12px 0}
 
-/* �� Points system ops rail (conversion / badges / warranties / claims) �� */
+/*  Points system ops rail (conversion / badges / warranties / claims)  */
 .mg-points-page{display:flex;flex-direction:column;gap:18px}
 .mg-ops-rail{
   position:relative;overflow:hidden;border-radius:18px;padding:22px 22px 20px;
@@ -2453,7 +2453,7 @@
 }
 .mg-points-page__form{position:relative}
 
-/* ── Product points rate hub (MG design system: #1a56db / #0f3d91) ── */
+/* ââ Product points rate hub (MG design system: #1a56db / #0f3d91) ââ */
 .mg-rate-hub{
   --mg-blue:#1a56db;
   --mg-blue-deep:#0f3d91;
@@ -3052,6 +3052,13 @@
 .mg-home-studio__hero{display:flex;justify-content:space-between;gap:1.25rem;align-items:flex-end;flex-wrap:wrap;padding:1.1rem 1.25rem .4rem}
 .mg-home-studio__eyebrow{display:inline-block;font-size:.72rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--mg-hs-blue);margin-bottom:.35rem}
 .mg-home-studio__title{margin:0;font-size:clamp(1.5rem,2.5vw,2rem);font-weight:900;letter-spacing:-.02em;line-height:1.2}
+.mg-home-studio__subnav{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.85rem}
+.mg-home-studio__subnav-link{
+  display:inline-flex;align-items:center;padding:.4rem .85rem;border-radius:999px;font-size:.78rem;font-weight:800;
+  text-decoration:none;border:1px solid #e2e8f0;background:#fff;color:#475569;
+}
+.mg-home-studio__subnav-link:hover{border-color:#bfdbfe;color:#1a56db}
+.mg-home-studio__subnav-link.is-on{background:#1a56db;border-color:#1a56db;color:#fff;box-shadow:0 8px 18px -12px rgba(26,86,219,.85)}
 .mg-home-studio__lead{margin:.4rem 0 0;max-width:36rem;font-size:.9rem;line-height:1.7;font-weight:600;color:var(--mg-hs-muted)}
 .mg-home-studio__hero-chip{
   padding:.85rem 1.1rem;border-radius:1.1rem;background:linear-gradient(145deg,var(--mg-hs-blue),var(--mg-hs-blue-deep));
@@ -3126,7 +3133,7 @@
 .dark .mg-pv-section-title,.dark .mg-pv-types strong,.dark .mg-pv-banner__copy strong{color:#f8fafc}
 @media (max-width:1100px){.mg-home-studio__grid{grid-template-columns:1fr}.mg-home-studio__preview{position:relative;top:0}}
 
-/* Mobile home studio � section rail extras */
+/* Mobile home studio  section rail extras */
 .mg-home-studio__role-tabs{display:flex;flex-wrap:wrap;gap:.35rem;justify-content:center;margin-bottom:.65rem}
 .mg-home-studio__role-tab{
   appearance:none;border:1px solid #e2e8f0;background:#fff;color:#64748b;border-radius:999px;
