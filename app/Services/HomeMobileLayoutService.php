@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Support\PublicStorageUrl;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class HomeMobileLayoutService
 {
@@ -114,6 +115,12 @@ class HomeMobileLayoutService
 
             $sections = $this->buildSectionsForRole($role, $settings, $productTypes, $highlights, $user);
 
+            // product_type deep links work for shops only — plumber/guest get []
+            // (their main_sections use mgplastic://category/{id} instead).
+            $productTypesForRole = in_array($role, ['retail_trader', 'wholesale_distributor'], true)
+                ? $productTypes
+                : [];
+
             return [
                 'version' => (int) ($settings->layout_version ?? 1),
                 'role' => $role,
@@ -121,7 +128,7 @@ class HomeMobileLayoutService
                 // Backward-compatible top-level fields
                 'banner' => $legacy['banner'],
                 'titles' => $legacy['titles'],
-                'product_types' => $productTypes,
+                'product_types' => $productTypesForRole,
                 'highlights' => $highlights,
                 'highlights_endpoint' => url('/api/v1/mobile/home/highlights'),
                 'product_types_endpoints' => [
@@ -306,7 +313,7 @@ class HomeMobileLayoutService
             'shop_quick_links' => $this->itemsShopQuickLinks($role, $limit, $sectionKey),
             'quick_actions' => $this->itemsQuickActions($limit),
             'pipe_systems' => $this->itemsPipeSystems($limit),
-            'main_sections' => $this->itemsMainSections($productTypes, $limit),
+            'main_sections' => $this->itemsMainSections($productTypes, $limit, $role),
             'new_products' => $this->itemsNewProducts($limit),
             'collections' => $this->itemsCollections($limit),
             'featured_wholesalers' => $this->itemsFeaturedWholesalers($limit),
@@ -369,27 +376,53 @@ class HomeMobileLayoutService
     /** @return list<array<string, mixed>> */
     protected function itemsPipeSystems(?int $limit): array
     {
-        $cats = ProductCategory::query()
-            ->with(['translations', 'children'])
+        $all = ProductCategory::query()
+            ->with([
+                'translations',
+                'children.translations',
+                'children' => fn ($q) => $q->withCount('products'),
+            ])
             ->withCount('products')
-            ->whereNull('parent_id')
             ->orderBy('id')
-            ->when($limit, fn ($q) => $q->limit($limit))
             ->get();
 
-        return $cats->map(function (ProductCategory $c) {
-            $name = localized_name($c, 'name', $c->slug ?? 'نظام');
+        // Prefer EN / ASTM system cards (often children under a pipes parent).
+        $systems = $all
+            ->filter(fn (ProductCategory $c) => $c->systemBadge() !== null)
+            ->values();
+
+        if ($systems->isEmpty()) {
+            $systems = $all
+                ->whereNull('parent_id')
+                ->flatMap(fn (ProductCategory $c) => $c->children)
+                ->filter(fn (ProductCategory $c) => $c->systemBadge() !== null)
+                ->values();
+        }
+
+        // Last resort: non-accessory roots (legacy data without badges).
+        if ($systems->isEmpty()) {
+            $systems = $all
+                ->whereNull('parent_id')
+                ->reject(fn (ProductCategory $c) => $c->isAccessoriesFamily())
+                ->values();
+        }
+
+        if ($limit) {
+            $systems = $systems->take($limit)->values();
+        }
+
+        return $systems->map(function (ProductCategory $c) {
             $count = (int) $c->products_count;
-            foreach ($c->children as $child) {
-                $count += (int) ($child->products()->count());
+            if ($c->relationLoaded('children')) {
+                foreach ($c->children as $child) {
+                    $count += (int) ($child->products_count ?? $child->products()->count());
+                }
             }
 
             return [
                 'id' => $c->id,
-                'title' => $name,
-                'subtitle' => $c->translate('ar')?->description
-                    ?? $c->translate('en')?->description
-                    ?? null,
+                'title' => $c->normalizedDisplayName('ar'),
+                'subtitle' => $c->shortDescription('ar'),
                 'badge' => $c->systemBadge(),
                 'image_url' => $c->resolvedImageUrl(),
                 'products_count' => $count,
@@ -402,25 +435,78 @@ class HomeMobileLayoutService
      * @param  list<array<string, mixed>>  $productTypes
      * @return list<array<string, mixed>>
      */
-    protected function itemsMainSections(array $productTypes, ?int $limit): array
+    protected function itemsMainSections(array $productTypes, ?int $limit, string $role = 'guest'): array
     {
-        $items = array_map(function (array $t) {
-            return [
-                'key' => $t['key'],
-                'title' => $t['name'],
-                'subtitle' => $t['subtitle'] ?? null,
-                'icon' => $t['icon'] ?? $t['key'],
-                'image_url' => $t['image_url'] ?? null,
-                'products_count' => (int) ($t['products_count'] ?? 0),
-                'link' => 'mgplastic://product_type/'.$t['key'],
-            ];
-        }, $productTypes);
+        // Shops: product_type deep links. Plumber/guest: category cards (product_type UI not supported).
+        if (in_array($role, ['retail_trader', 'wholesale_distributor'], true)) {
+            $items = array_map(function (array $t) {
+                return [
+                    'key' => $t['key'],
+                    'title' => $t['name'],
+                    'subtitle' => $t['subtitle'] ?? null,
+                    'icon' => $t['icon'] ?? $t['key'],
+                    'image_url' => $t['image_url'] ?? null,
+                    'products_count' => (int) ($t['products_count'] ?? 0),
+                    'link' => 'mgplastic://product_type/'.$t['key'],
+                ];
+            }, $productTypes);
 
-        if ($limit) {
-            $items = array_slice($items, 0, $limit);
+            if ($limit) {
+                $items = array_slice($items, 0, $limit);
+            }
+
+            return array_values($items);
         }
 
-        return array_values($items);
+        return $this->itemsMainSectionsFromCategories($limit);
+    }
+
+    /**
+     * Catalog-style main sections for plumber / guest (mgplastic://category/{id}).
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function itemsMainSectionsFromCategories(?int $limit): array
+    {
+        $all = ProductCategory::query()
+            ->with(['translations', 'children' => fn ($q) => $q->withCount('products'), 'parent'])
+            ->withCount('products')
+            ->orderBy('id')
+            ->get();
+
+        // Roots that are not EN/ASTM pipe-system cards (those belong in pipe_systems).
+        $roots = $all
+            ->whereNull('parent_id')
+            ->reject(fn (ProductCategory $c) => $c->systemBadge() !== null)
+            ->values();
+
+        // Prefer accessories / fittings family when present.
+        $preferred = $roots->filter(fn (ProductCategory $c) => $c->isAccessoriesFamily())->values();
+        $cats = $preferred->isNotEmpty() ? $preferred : $roots;
+
+        if ($limit) {
+            $cats = $cats->take($limit)->values();
+        }
+
+        return $cats->map(function (ProductCategory $c) {
+            $count = (int) $c->products_count;
+            foreach ($c->children as $child) {
+                $count += (int) ($child->products_count ?? 0);
+            }
+
+            $title = $c->normalizedDisplayName('ar');
+            $key = Str::slug((string) ($c->slug ?: $title), '_') ?: 'category_'.$c->id;
+
+            return [
+                'key' => $key,
+                'title' => $title,
+                'subtitle' => $count > 0 ? $count.' منتج' : ($c->shortDescription('ar') ?? null),
+                'icon' => $c->isAccessoriesFamily() ? 'fitting' : 'grid',
+                'image_url' => $c->resolvedImageUrl(),
+                'products_count' => $count,
+                'link' => 'mgplastic://category/'.$c->id,
+            ];
+        })->values()->all();
     }
 
     /** @return list<array<string, mixed>> */

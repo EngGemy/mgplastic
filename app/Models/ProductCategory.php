@@ -36,7 +36,8 @@ class ProductCategory extends Model
         ]))));
 
         return match (true) {
-            Str::contains($blob, ['اوروب', 'أوروب', 'europ', 'en ']) => 'EN',
+            Str::contains($blob, ['اوروب', 'أوروب', 'europ', 'european'])
+                || (bool) preg_match('/(^|[\s_\-])en([\s_\-]|$)/u', $blob) => 'EN',
             Str::contains($blob, ['امريك', 'أمريك', 'american', 'astm', 'schedule']) => 'ASTM',
             Str::contains($blob, ['ذهب', 'gold']) => null,
             default => null,

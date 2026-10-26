@@ -186,4 +186,54 @@ class MobileHomeLayoutTest extends TestCase
         $this->assertNotNull($section);
         $this->assertSame('video', $section['items'][0]['media_type'] ?? null);
     }
+
+    public function test_plumber_and_guest_do_not_get_product_type_links(): void
+    {
+        app(HomeMobileLayoutService::class)->ensureSeeded();
+
+        $pipes = \App\Models\ProductCategory::query()->create(['slug' => 'pipes', 'parent_id' => null]);
+        $pipes->translateOrNew('ar')->name = 'مواسير';
+        $pipes->save();
+
+        $en = \App\Models\ProductCategory::query()->create(['slug' => 'european-en', 'parent_id' => $pipes->id]);
+        $en->translateOrNew('ar')->name = 'النظام الأوروبي';
+        $en->save();
+
+        $astm = \App\Models\ProductCategory::query()->create(['slug' => 'american-astm', 'parent_id' => $pipes->id]);
+        $astm->translateOrNew('ar')->name = 'النظام الأمريكي';
+        $astm->save();
+
+        $acc = \App\Models\ProductCategory::query()->create(['slug' => 'accessories', 'parent_id' => null]);
+        $acc->translateOrNew('ar')->name = 'الملحقات';
+        $acc->save();
+
+        app(HomeMobileLayoutService::class)->forgetCache();
+
+        $plumber = $this->getJson('/api/v1/mobile/home/layout?role=plumber')->json('data');
+        $this->assertSame([], $plumber['product_types']);
+
+        $main = collect($plumber['sections'])->firstWhere('type', 'main_sections');
+        $this->assertNotNull($main);
+        foreach ($main['items'] as $item) {
+            $this->assertStringStartsWith('mgplastic://category/', $item['link']);
+            $this->assertStringNotContainsString('product_type', $item['link']);
+        }
+
+        $pipesSection = collect($plumber['sections'])->firstWhere('type', 'pipe_systems');
+        $this->assertNotNull($pipesSection);
+        $badges = collect($pipesSection['items'])->pluck('badge')->filter()->values()->all();
+        $this->assertContains('EN', $badges);
+        $this->assertContains('ASTM', $badges);
+        $this->assertCount(2, $pipesSection['items']);
+
+        $trader = User::factory()->create(['role' => 'retail_trader', 'is_approved' => true, 'is_active' => true]);
+        Sanctum::actingAs($trader);
+        app(HomeMobileLayoutService::class)->forgetCache();
+
+        $traderMain = collect($this->getJson('/api/v1/mobile/home/layout')->json('data.sections'))
+            ->firstWhere('type', 'main_sections');
+        $this->assertNotNull($traderMain);
+        $this->assertNotEmpty($traderMain['items']);
+        $this->assertStringContainsString('product_type', $traderMain['items'][0]['link']);
+    }
 }
