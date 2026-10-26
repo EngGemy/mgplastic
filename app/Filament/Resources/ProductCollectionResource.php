@@ -61,16 +61,12 @@ class ProductCollectionResource extends Resource
                                     ->maxLength(200)
                                     ->autofocus()
                                     ->live(onBlur: true)
-                                    ->afterStateUpdated(function ($state, Forms\Set $set, ?ProductCollection $record) {
+                                    ->afterStateUpdated(function ($state, Forms\Set $set, $livewire) {
                                         // فقط عند الإنشاء: توليد slug تلقائي (مخفي عن المستخدم)
-                                        if ($record?->exists || ! filled($state)) {
+                                        if ($livewire instanceof Pages\EditProductCollection || ! filled($state)) {
                                             return;
                                         }
-                                        $base = Str::slug((string) $state);
-                                        if (! filled($base)) {
-                                            $base = 'collection-'.Str::lower(Str::random(6));
-                                        }
-                                        $set('slug', $base);
+                                        $set('slug', ProductCollection::uniqueSlugFor('', (string) $state));
                                     })
                                     ->columnSpanFull(),
 

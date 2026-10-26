@@ -31,25 +31,41 @@ class ProductCollection extends Model
     protected static function booted(): void
     {
         static::saving(function (self $collection) {
-            if (filled($collection->slug)) {
-                return;
-            }
-
-            $base = filled($collection->title)
-                ? (Str::slug($collection->title) ?: null)
-                : null;
-            $base = $base ?: 'collection-'.Str::lower(Str::random(6));
-
-            $slug = $base;
-            $i = 1;
-            while (static::query()
-                ->where('slug', $slug)
-                ->when($collection->exists, fn ($q) => $q->whereKeyNot($collection->id))
-                ->exists()) {
-                $slug = $base.'-'.$i++;
-            }
-            $collection->slug = $slug;
+            $collection->slug = static::uniqueSlugFor(
+                (string) ($collection->slug ?: ''),
+                (string) ($collection->title ?: ''),
+                $collection->exists ? (int) $collection->id : null,
+            );
         });
+    }
+
+    /**
+     * Build a unique slug ≤ 80 chars (DB column limit).
+     * Always re-checks uniqueness so create never 500s on duplicate titles.
+     */
+    public static function uniqueSlugFor(string $slug, string $title = '', ?int $ignoreId = null): string
+    {
+        $base = filled($slug) ? Str::slug($slug) : '';
+        if (! filled($base) && filled($title)) {
+            $base = Str::slug($title);
+        }
+        if (! filled($base)) {
+            $base = 'collection-'.Str::lower(Str::random(6));
+        }
+
+        // Leave room for "-999" suffix inside varchar(80).
+        $base = Str::limit($base, 76, '');
+
+        $candidate = $base;
+        $i = 1;
+        while (static::query()
+            ->where('slug', $candidate)
+            ->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))
+            ->exists()) {
+            $candidate = Str::limit($base, 76, '').'-'.$i++;
+        }
+
+        return $candidate;
     }
 
     public function products(): BelongsToMany

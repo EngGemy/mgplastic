@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ProductCollectionResource\Pages;
 
 use App\Filament\Resources\ProductCollectionResource;
+use App\Models\ProductCollection;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateProductCollection extends CreateRecord
@@ -22,6 +23,20 @@ class CreateProductCollection extends CreateRecord
     public function getSubheading(): ?string
     {
         return 'سمّي المجموعة بأي اسم تبيه، اختر المنتجات، وانشرها في التطبيق — يمكن التعديل لاحقاً.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        $data['slug'] = ProductCollection::uniqueSlugFor(
+            (string) ($data['slug'] ?? ''),
+            (string) ($data['title'] ?? ''),
+        );
+
+        return $data;
     }
 
     protected function getRedirectUrl(): string
