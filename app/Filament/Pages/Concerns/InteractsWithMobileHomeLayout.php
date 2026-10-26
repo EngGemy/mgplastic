@@ -79,6 +79,12 @@ trait InteractsWithMobileHomeLayout
             ->all();
     }
 
+    /** Types whose content comes from the app — no limit / see_all. */
+    protected function appSectionTypes(): array
+    {
+        return ['pending_receipts', 'wallet', 'search', 'low_stock', 'reputation', 'points_summary'];
+    }
+
     /**
      * Section editor for one audience — no roles checklist (the page owns the role).
      *
@@ -87,19 +93,27 @@ trait InteractsWithMobileHomeLayout
     protected function audienceSectionsRepeater(string $statePath, string $label, array $fixedItemTypes = ['quick_actions', 'shop_quick_links']): Forms\Components\Repeater
     {
         $typeOptions = $this->typeOptions();
+        $appTypes = $this->appSectionTypes();
 
         return Forms\Components\Repeater::make($statePath)
             ->label($label)
             ->reorderable()
             ->collapsible()
+            ->collapsed()
             ->cloneable()
             ->itemLabel(function (array $state) use ($typeOptions): ?string {
                 $type = $state['type'] ?? '';
                 $label = $typeOptions[$type] ?? $type;
-                $title = $state['title'] ?? null;
+                $title = filled($state['title'] ?? null) ? $state['title'] : null;
                 $active = ($state['is_active'] ?? true) ? '' : ' · مخفي';
+                $extra = match ($type) {
+                    'search' => filled($state['setting_placeholder'] ?? null) ? ' · '.$state['setting_placeholder'] : '',
+                    'wallet' => filled($state['setting_button_text'] ?? null) ? ' · '.$state['setting_button_text'] : '',
+                    'quick_actions', 'shop_quick_links' => ' · '.count($state['fixed_items'] ?? []).' عنصر',
+                    default => filled($state['limit'] ?? null) ? ' · حد '.$state['limit'] : '',
+                };
 
-                return ($title ?: $label).' · '.($state['key'] ?? '').$active;
+                return ($title ?: $label).' · '.($state['key'] ?? '').$extra.$active;
             })
             ->schema([
                 Forms\Components\Hidden::make('id'),
@@ -110,52 +124,67 @@ trait InteractsWithMobileHomeLayout
                     Forms\Components\TextInput::make('key')
                         ->label('المفتاح')
                         ->required()
-                        ->maxLength(64),
+                        ->maxLength(64)
+                        ->disabled()
+                        ->dehydrated(),
                     Forms\Components\Select::make('type')
                         ->label('النوع')
                         ->options($typeOptions)
                         ->required()
                         ->searchable()
                         ->native(false)
-                        ->live(),
+                        ->live()
+                        ->disabled(fn (Forms\Get $get) => filled($get('id')))
+                        ->dehydrated(),
                     Forms\Components\Toggle::make('is_active')
                         ->label('ظاهر')
                         ->default(true)
                         ->inline(false),
                 ]),
+
+                // —— Search settings (visible, not buried) ——
+                Forms\Components\TextInput::make('setting_placeholder')
+                    ->label('نص مربع البحث (placeholder)')
+                    ->helperText('هذا اللي يظهر داخل خانة البحث في التطبيق')
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'search')
+                    ->columnSpanFull(),
+
+                // —— Wallet settings ——
+                Forms\Components\Grid::make(2)->schema([
+                    Forms\Components\TextInput::make('setting_button_text')->label('نص زر المحفظة'),
+                    Forms\Components\TextInput::make('setting_button_link')->label('رابط زر المحفظة')->placeholder('mgplastic://wallet'),
+                ])->visible(fn (Forms\Get $get) => $get('type') === 'wallet'),
+
+                // —— Reputation / points ——
+                Forms\Components\TextInput::make('setting_link')
+                    ->label('رابط الضغط على القسم')
+                    ->visible(fn (Forms\Get $get) => in_array($get('type'), ['reputation', 'points_summary'], true))
+                    ->columnSpanFull(),
+
+                // —— Slider ——
+                Forms\Components\Grid::make(2)->schema([
+                    Forms\Components\Toggle::make('setting_autoplay')->label('تشغيل تلقائي')->inline(false),
+                    Forms\Components\TextInput::make('setting_interval_ms')->label('مدة الشريحة (ms)')->numeric(),
+                ])->visible(fn (Forms\Get $get) => $get('type') === 'slider'),
+
+                // —— Title / limit / see_all for content sections ——
                 Forms\Components\TextInput::make('title')
                     ->label('العنوان')
                     ->maxLength(120)
-                    ->helperText('فارغ = العنوان الافتراضي في التطبيق'),
+                    ->helperText('فارغ = العنوان الافتراضي في التطبيق')
+                    ->visible(fn (Forms\Get $get) => ! in_array($get('type'), ['search', 'wallet', 'pending_receipts'], true)),
                 Forms\Components\Grid::make(3)->schema([
                     Forms\Components\TextInput::make('limit')->label('حد العناصر')->numeric()->minValue(1),
                     Forms\Components\TextInput::make('see_all_text')->label('نص «عرض المزيد»')->maxLength(80),
                     Forms\Components\TextInput::make('see_all_link')->label('رابط عرض المزيد')->maxLength(255)->placeholder('mgplastic://…'),
-                ]),
-                Forms\Components\Section::make('إعدادات سريعة')
-                    ->collapsed()
-                    ->schema([
-                        Forms\Components\TextInput::make('setting_button_text')
-                            ->label('نص زر المحفظة')
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'wallet'),
-                        Forms\Components\TextInput::make('setting_button_link')
-                            ->label('رابط زر المحفظة')
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'wallet'),
-                        Forms\Components\TextInput::make('setting_placeholder')
-                            ->label('نص البحث')
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'search'),
-                        Forms\Components\TextInput::make('setting_link')
-                            ->label('رابط القسم')
-                            ->visible(fn (Forms\Get $get) => in_array($get('type'), ['reputation', 'points_summary'], true)),
-                        Forms\Components\Toggle::make('setting_autoplay')
-                            ->label('تشغيل تلقائي')
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'slider'),
-                        Forms\Components\TextInput::make('setting_interval_ms')
-                            ->label('مدة الشريحة (ms)')
-                            ->numeric()
-                            ->visible(fn (Forms\Get $get) => $get('type') === 'slider'),
-                    ])
-                    ->columns(2),
+                ])->visible(fn (Forms\Get $get) => ! in_array($get('type'), $appTypes, true)
+                    && ! in_array($get('type'), ['quick_actions', 'shop_quick_links', 'mg_banner', 'slider'], true)),
+
+                Forms\Components\Placeholder::make('app_source_note')
+                    ->label('')
+                    ->content('هذا القسم بياناته من التطبيق (رصيد / مخزون / …) — الباك إند يتحكم في الإظهار والترتيب فقط.')
+                    ->visible(fn (Forms\Get $get) => in_array($get('type'), ['pending_receipts', 'low_stock', 'reputation', 'points_summary'], true)),
+
                 Forms\Components\Repeater::make('fixed_items')
                     ->label('الأزرار / الروابط')
                     ->helperText('عنوان، أيقونة، لون، رابط — بدون JSON')
@@ -163,6 +192,7 @@ trait InteractsWithMobileHomeLayout
                     ->collapsible()
                     ->reorderable()
                     ->cloneable()
+                    ->defaultItems(0)
                     ->itemLabel(fn (array $state): ?string => $state['title'] ?? $state['key'] ?? 'عنصر')
                     ->schema([
                         Forms\Components\TextInput::make('key')->label('المفتاح')->required()->maxLength(64),
