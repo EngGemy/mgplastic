@@ -70,6 +70,8 @@ Route::prefix('v1/mobile')->group(function () {
 
     // Wholesale home green-banner icons (المشاريع · الصرف · مياه الشرب)
     Route::get('home/highlights', [HomeHighlightsController::class, 'index']);
+    // Editable home copy: green banner + section titles + product types snapshot
+    Route::get('home/layout', \App\Http\Controllers\Api\Mobile\HomeLayoutController::class);
 
     // Wallet visibility — apps read this to hide/show the wallet UI
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);

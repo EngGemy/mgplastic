@@ -99,6 +99,7 @@ class SettingsController extends Controller
                 'endpoint' => url('/api/v1/mobile/testimonials'),
             ],
             'home' => [
+                'layout' => url('/api/v1/mobile/home/layout'),
                 'highlights' => url('/api/v1/mobile/home/highlights'),
                 'product_types' => [
                     'trader' => url('/api/v1/mobile/trader/products/types'),

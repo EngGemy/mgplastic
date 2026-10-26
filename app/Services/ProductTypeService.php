@@ -14,6 +14,22 @@ class ProductTypeService
      */
     public function definitions(): array
     {
+        if (app()->bound(HomeMobileLayoutService::class) || class_exists(HomeMobileLayoutService::class)) {
+            try {
+                return app(HomeMobileLayoutService::class)->productTypeDefinitions();
+            } catch (\Throwable) {
+                // fall through to config
+            }
+        }
+
+        return $this->definitionsFromConfigOnly();
+    }
+
+    /**
+     * @return list<array{key: string, name: string, subtitle: string, icon: string, image: ?string, image_url: ?string, keywords: list<string>, exclude_keywords: list<string>}>
+     */
+    public function definitionsFromConfigOnly(): array
+    {
         $out = [];
         foreach (config('product_types', []) as $row) {
             if (! is_array($row) || empty($row['key'])) {

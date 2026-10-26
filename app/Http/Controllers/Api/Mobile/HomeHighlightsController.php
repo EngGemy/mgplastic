@@ -20,7 +20,8 @@ class HomeHighlightsController extends Controller
             ->get();
 
         $items = [];
-        foreach (config('home_highlights', []) as $row) {
+        $rows = app(\App\Services\HomeMobileLayoutService::class)->highlightDefinitions();
+        foreach ($rows as $row) {
             if (! is_array($row) || empty($row['key'])) {
                 continue;
             }
