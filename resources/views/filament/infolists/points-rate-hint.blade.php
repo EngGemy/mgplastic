@@ -1,8 +1,10 @@
 @php
-    /** @var \App\Models\InvoiceItem $getRecord */
-    $item = $getRecord;
-    $hint = app(\App\Services\Points\PointsRateHintBuilder::class)
-        ->forInvoiceItem($item, includeRates: true);
+    // Filament ViewEntry passes $getRecord as a Closure — must call it.
+    $item = is_callable($getRecord ?? null) ? $getRecord() : ($getRecord ?? null);
+    $hint = ($item instanceof \App\Models\InvoiceItem)
+        ? app(\App\Services\Points\PointsRateHintBuilder::class)
+            ->forInvoiceItem($item, includeRates: true)
+        : null;
 @endphp
 
 @if ($hint)
