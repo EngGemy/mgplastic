@@ -14,6 +14,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 
 class ProductPromotionResource extends Resource
@@ -53,7 +54,7 @@ class ProductPromotionResource extends Resource
                 Forms\Components\Group::make()
                     ->schema([
                         Forms\Components\Section::make('نص الإعلان')
-                            ->description('العنوان والوصف اللي يظهروا للمستخدم في التطبيق.')
+                            ->description('العنوان والوصف الظاهران في التطبيق.')
                             ->icon('heroicon-o-document-text')
                             ->schema([
                                 Forms\Components\TextInput::make('title')
@@ -61,6 +62,7 @@ class ProductPromotionResource extends Resource
                                     ->placeholder('مثال: مقارنة أنابيب MG مع الأنواع التقليدية')
                                     ->required()
                                     ->maxLength(200)
+                                    ->live(onBlur: true)
                                     ->autofocus()
                                     ->columnSpanFull(),
 
@@ -77,9 +79,9 @@ class ProductPromotionResource extends Resource
                                     ->columnSpanFull(),
                             ]),
 
-                        Forms\Components\Section::make('الوسائط')
-                            ->description('اختر نوع المحتوى ثم ارفع الملفات المناسبة.')
-                            ->icon('heroicon-o-photo')
+                        Forms\Components\Section::make('استوديو الوسائط')
+                            ->description('صورة · فيديو (رفع أو رابط) · مقارنة قبل/بعد')
+                            ->icon('heroicon-o-film')
                             ->schema([
                                 Forms\Components\ToggleButtons::make('media_type')
                                     ->label('نوع المحتوى')
@@ -104,19 +106,10 @@ class ProductPromotionResource extends Resource
                                     ->default('image')
                                     ->columnSpanFull(),
 
-                                Forms\Components\Placeholder::make('media_hint')
-                                    ->label('')
-                                    ->content(fn (Get $get) => match ($get('media_type')) {
-                                        'video' => 'اختر: رفع ملف فيديو على السيرفر أو لصق رابط خارجي (يوتيوب / فيميو / Drive / رابط مباشر) — واحد منهم يكفي.',
-                                        'comparison' => 'ارفع صورتين: منتج MG وصورة المنافس أو قبل/بعد.',
-                                        default => 'ارفع صورة واضحة أفقية (يفضّل عرض عريض للتطبيق).',
-                                    })
-                                    ->columnSpanFull(),
-
                                 Forms\Components\FileUpload::make('image_path')
                                     ->label(fn (Get $get) => match ($get('media_type')) {
                                         'comparison' => 'صورة منتج MG',
-                                        'video' => 'صورة غلاف الفيديو (اختياري)',
+                                        'video' => 'غلاف الفيديو (اختياري — يظهر قبل التشغيل)',
                                         default => 'صورة الإعلان',
                                     })
                                     ->disk('public')
@@ -127,6 +120,7 @@ class ProductPromotionResource extends Resource
                                     ->openable()
                                     ->downloadable()
                                     ->maxSize(5120)
+                                    ->live()
                                     ->helperText('حتى 5MB — JPG / PNG / WebP')
                                     ->required(fn (Get $get) => in_array($get('media_type'), ['image', 'comparison'], true))
                                     ->columnSpanFull(),
@@ -145,74 +139,80 @@ class ProductPromotionResource extends Resource
                                     ->required(fn (Get $get) => $get('media_type') === 'comparison')
                                     ->columnSpanFull(),
 
-                                Forms\Components\ToggleButtons::make('video_source')
-                                    ->label('مصدر الفيديو')
-                                    ->options([
-                                        'upload' => 'رفع على السيرفر',
-                                        'link' => 'رابط خارجي',
-                                    ])
-                                    ->icons([
-                                        'upload' => 'heroicon-o-arrow-up-tray',
-                                        'link' => 'heroicon-o-link',
-                                    ])
-                                    ->colors([
-                                        'upload' => 'success',
-                                        'link' => 'info',
-                                    ])
-                                    ->inline()
-                                    ->live()
-                                    ->dehydrated(false)
-                                    ->default('link')
-                                    ->afterStateHydrated(function (Forms\Components\ToggleButtons $component, mixed $state, ?Model $record): void {
-                                        if ($record && filled($record->video_path)) {
-                                            $component->state('upload');
-
-                                            return;
-                                        }
-                                        $component->state('link');
-                                    })
-                                    ->afterStateUpdated(function (?string $state, Set $set): void {
-                                        if ($state === 'upload') {
-                                            $set('video_url', null);
-                                        }
-                                        if ($state === 'link') {
-                                            $set('video_path', null);
-                                        }
-                                    })
+                                Forms\Components\Section::make('مصدر الفيديو')
+                                    ->compact()
                                     ->visible(fn (Get $get) => $get('media_type') === 'video')
-                                    ->columnSpanFull(),
+                                    ->schema([
+                                        Forms\Components\ToggleButtons::make('video_source')
+                                            ->label('كيف تضيف الفيديو؟')
+                                            ->options([
+                                                'upload' => 'رفع على السيرفر',
+                                                'link' => 'رابط خارجي',
+                                            ])
+                                            ->icons([
+                                                'upload' => 'heroicon-o-arrow-up-tray',
+                                                'link' => 'heroicon-o-link',
+                                            ])
+                                            ->colors([
+                                                'upload' => 'success',
+                                                'link' => 'info',
+                                            ])
+                                            ->inline()
+                                            ->live()
+                                            ->dehydrated(false)
+                                            ->default('link')
+                                            ->afterStateHydrated(function (Forms\Components\ToggleButtons $component, mixed $state, ?Model $record): void {
+                                                if ($record && filled($record->video_path)) {
+                                                    $component->state('upload');
 
-                                Forms\Components\FileUpload::make('video_path')
-                                    ->label('ملف الفيديو')
-                                    ->disk('public')
-                                    ->directory('product-promotions/videos')
-                                    ->acceptedFileTypes([
-                                        'video/mp4',
-                                        'video/webm',
-                                        'video/quicktime',
-                                        'video/x-m4v',
-                                    ])
-                                    ->maxSize(102400)
-                                    ->openable()
-                                    ->downloadable()
-                                    ->helperText('MP4 / WebM / MOV — حتى 100MB (تأكد من حد رفع PHP على السيرفر).')
-                                    ->visible(fn (Get $get) => $get('media_type') === 'video' && $get('video_source') === 'upload')
-                                    ->required(fn (Get $get) => $get('media_type') === 'video' && $get('video_source') === 'upload')
-                                    ->columnSpanFull(),
+                                                    return;
+                                                }
+                                                $component->state('link');
+                                            })
+                                            ->afterStateUpdated(function (?string $state, Set $set): void {
+                                                if ($state === 'upload') {
+                                                    $set('video_url', null);
+                                                }
+                                                if ($state === 'link') {
+                                                    $set('video_path', null);
+                                                }
+                                            })
+                                            ->columnSpanFull(),
 
-                                Forms\Components\TextInput::make('video_url')
-                                    ->label('رابط الفيديو الخارجي')
-                                    ->placeholder('https://www.youtube.com/watch?v=… أو Drive / رابط مباشر')
-                                    ->url()
-                                    ->prefixIcon('heroicon-o-link')
-                                    ->visible(fn (Get $get) => $get('media_type') === 'video' && ($get('video_source') ?? 'link') === 'link')
-                                    ->required(fn (Get $get) => $get('media_type') === 'video' && ($get('video_source') ?? 'link') === 'link')
-                                    ->helperText('يوتيوب أو فيميو أو Google Drive أو رابط مباشر لملف فيديو')
-                                    ->columnSpanFull(),
+                                        Forms\Components\FileUpload::make('video_path')
+                                            ->label('ملف الفيديو')
+                                            ->disk('public')
+                                            ->directory('product-promotions/videos')
+                                            ->acceptedFileTypes([
+                                                'video/mp4',
+                                                'video/webm',
+                                                'video/quicktime',
+                                                'video/x-m4v',
+                                            ])
+                                            ->maxSize(102400)
+                                            ->openable()
+                                            ->downloadable()
+                                            ->live()
+                                            ->helperText('MP4 / WebM / MOV — حتى 100MB')
+                                            ->visible(fn (Get $get) => ($get('video_source') ?? 'link') === 'upload')
+                                            ->required(fn (Get $get) => ($get('video_source') ?? 'link') === 'upload')
+                                            ->columnSpanFull(),
+
+                                        Forms\Components\TextInput::make('video_url')
+                                            ->label('رابط الفيديو')
+                                            ->placeholder('YouTube / Vimeo / Google Drive / رابط .mp4 مباشر')
+                                            ->url()
+                                            ->live(debounce: 500)
+                                            ->prefixIcon('heroicon-o-link')
+                                            ->visible(fn (Get $get) => ($get('video_source') ?? 'link') === 'link')
+                                            ->required(fn (Get $get) => ($get('video_source') ?? 'link') === 'link')
+                                            ->helperText('Drive يُعرض عبر /preview — يوتيوب وفيميو يعملان مباشرة في المعاينة')
+                                            ->columnSpanFull(),
+                                    ]),
                             ]),
 
                         Forms\Components\Section::make('ربط بمنتج MG')
-                            ->description('اختياري — عند الضغط في التطبيق يفتح المنتج أو الرابط الخارجي.')
+                            ->description('اختياري — عند الضغط في التطبيق يفتح المنتج أو رابط خارجي.')
                             ->icon('heroicon-o-link')
                             ->collapsed()
                             ->schema([
@@ -229,7 +229,6 @@ class ProductPromotionResource extends Resource
                                     ->searchable()
                                     ->preload()
                                     ->nullable()
-                                    ->helperText('ابحث باسم المنتج')
                                     ->columnSpanFull(),
 
                                 Forms\Components\TextInput::make('product_url')
@@ -237,7 +236,6 @@ class ProductPromotionResource extends Resource
                                     ->placeholder('https://mg-plastic.com/…')
                                     ->url()
                                     ->prefixIcon('heroicon-o-globe-alt')
-                                    ->helperText('إن وُجد يُفضَّل على رابط المنتج الداخلي')
                                     ->columnSpanFull(),
                             ]),
                     ])
@@ -245,6 +243,27 @@ class ProductPromotionResource extends Resource
 
                 Forms\Components\Group::make()
                     ->schema([
+                        Forms\Components\Section::make('معاينة التشغيل')
+                            ->description('مثل شاشة التطبيق — تتحدّث مع الرابط أو الملف.')
+                            ->icon('heroicon-o-tv')
+                            ->schema([
+                                Forms\Components\Placeholder::make('video_studio')
+                                    ->label('')
+                                    ->content(function (Get $get): HtmlString {
+                                        return new HtmlString(
+                                            view('filament.forms.product-promotion-video-studio', [
+                                                'mediaType' => $get('media_type'),
+                                                'source' => $get('video_source') ?: (filled($get('video_path')) ? 'upload' : 'link'),
+                                                'videoUrl' => $get('video_url'),
+                                                'videoPath' => $get('video_path'),
+                                                'coverPath' => $get('image_path'),
+                                                'title' => $get('title'),
+                                            ])->render()
+                                        );
+                                    })
+                                    ->columnSpanFull(),
+                            ]),
+
                         Forms\Components\Section::make('النشر')
                             ->icon('heroicon-o-rocket-launch')
                             ->schema([
@@ -260,14 +279,12 @@ class ProductPromotionResource extends Resource
                                     ->minValue(0)
                                     ->default(0)
                                     ->helperText('الأقل يظهر أولاً'),
-                            ]),
 
-                        Forms\Components\Section::make('تذكير للموبايل')
-                            ->icon('heroicon-o-device-phone-mobile')
-                            ->schema([
                                 Forms\Components\Placeholder::make('api_hint')
                                     ->label('')
-                                    ->content('يظهر عبر: GET /api/v1/mobile/product-promotions'),
+                                    ->content(new HtmlString(
+                                        '<div style="font-size:0.78rem;opacity:0.75;line-height:1.5">API: <code>GET /api/v1/mobile/product-promotions</code><br>الحقول: <code>video_url</code> + <code>video_source</code></div>'
+                                    )),
                             ]),
                     ])
                     ->columnSpan(['lg' => 1]),
@@ -363,8 +380,6 @@ class ProductPromotionResource extends Resource
     }
 
     /**
-     * Keep uploaded file XOR external URL — never both, and require one for video.
-     *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */

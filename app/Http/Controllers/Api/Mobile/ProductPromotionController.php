@@ -50,6 +50,10 @@ class ProductPromotionController extends Controller
             'media_type' => $p->media_type,
             'image_url' => $p->imageUrl(),
             'comparison_image_url' => $p->comparisonImageUrl(),
+            'image_urls' => array_values(array_filter([
+                $p->imageUrl(),
+                $p->media_type === 'comparison' ? $p->comparisonImageUrl() : null,
+            ])),
             // Prefer uploaded file on server; otherwise external YouTube/Vimeo/Drive/direct URL.
             'video_url' => $p->resolvedVideoUrl(),
             'video_source' => $p->videoSource(),

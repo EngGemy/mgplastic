@@ -12,21 +12,23 @@ class EditProductPromotion extends EditRecord
 
     public function getTitle(): string
     {
-        return 'تعديل إعلان الدعاية';
+        return 'استوديو الدعاية';
     }
 
     public function getHeading(): string
     {
-        return 'تعديل: '.$this->record->title;
+        return 'استوديو الدعاية';
     }
 
     public function getSubheading(): ?string
     {
-        return match ($this->record->media_type) {
-            'video' => 'نوع المحتوى: فيديو',
-            'comparison' => 'نوع المحتوى: مقارنة صورتين',
-            default => 'نوع المحتوى: صورة',
+        $type = match ($this->record->media_type) {
+            'video' => $this->record->videoSource() === 'file' ? 'فيديو مرفوع على السيرفر' : 'فيديو برابط خارجي',
+            'comparison' => 'مقارنة صورتين',
+            default => 'إعلان صورة',
         };
+
+        return $this->record->title.' · '.$type;
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
@@ -37,6 +39,13 @@ class EditProductPromotion extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('preview_video')
+                ->label('فتح الفيديو')
+                ->icon('heroicon-o-play')
+                ->color('danger')
+                ->url(fn () => $this->record->resolvedVideoUrl())
+                ->openUrlInNewTab()
+                ->visible(fn () => $this->record->media_type === 'video' && filled($this->record->resolvedVideoUrl())),
             Actions\DeleteAction::make()->label('حذف الإعلان'),
         ];
     }

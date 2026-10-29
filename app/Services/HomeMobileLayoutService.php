@@ -560,15 +560,29 @@ class HomeMobileLayoutService
             ->orderByDesc('id')
             ->when($limit, fn ($q) => $q->limit($limit))
             ->get()
-            ->map(fn (ProductPromotion $p) => [
-                'id' => $p->id,
-                'title' => $p->title,
-                'subtitle' => $p->subtitle,
-                'media_type' => $p->media_type ?: 'image',
-                'image_url' => $p->imageUrl(),
-                'video_url' => $p->video_url,
-                'link' => 'mgplastic://promotion/'.$p->id,
-            ])
+            ->map(function (ProductPromotion $p) {
+                $imageUrl = $p->imageUrl();
+                $comparisonUrl = $p->comparisonImageUrl();
+
+                return [
+                    'id' => $p->id,
+                    'title' => $p->title,
+                    'subtitle' => $p->subtitle,
+                    'media_type' => $p->media_type ?: 'image',
+                    // Primary / left (MG) image
+                    'image_url' => $imageUrl,
+                    // Second / right image for media_type=comparison
+                    'comparison_image_url' => $comparisonUrl,
+                    // Convenience for mobile side-by-side UI (nulls filtered)
+                    'image_urls' => array_values(array_filter([
+                        $imageUrl,
+                        $p->media_type === 'comparison' ? $comparisonUrl : null,
+                    ])),
+                    'video_url' => $p->resolvedVideoUrl(),
+                    'video_source' => $p->videoSource(),
+                    'link' => 'mgplastic://promotion/'.$p->id,
+                ];
+            })
             ->values()
             ->all();
     }
