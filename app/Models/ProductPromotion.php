@@ -16,6 +16,7 @@ class ProductPromotion extends Model
         'image_path',
         'comparison_image_path',
         'video_url',
+        'video_path',
         'product_id',
         'product_url',
         'sort_order',
@@ -43,6 +44,28 @@ class ProductPromotion extends Model
     public function comparisonImageUrl(): ?string
     {
         return PublicStorageUrl::try($this->comparison_image_path);
+    }
+
+    /** Uploaded file on disk wins over external URL. */
+    public function resolvedVideoUrl(): ?string
+    {
+        if (filled($this->video_path)) {
+            return PublicStorageUrl::try($this->video_path);
+        }
+
+        $url = trim((string) ($this->video_url ?? ''));
+
+        return $url !== '' ? $url : null;
+    }
+
+    /** @return 'file'|'external'|null */
+    public function videoSource(): ?string
+    {
+        if (filled($this->video_path)) {
+            return 'file';
+        }
+
+        return filled($this->video_url) ? 'external' : null;
     }
 
     public function resolveProductLink(): ?string

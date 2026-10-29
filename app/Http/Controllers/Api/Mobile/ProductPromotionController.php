@@ -50,7 +50,9 @@ class ProductPromotionController extends Controller
             'media_type' => $p->media_type,
             'image_url' => $p->imageUrl(),
             'comparison_image_url' => $p->comparisonImageUrl(),
-            'video_url' => $p->video_url,
+            // Prefer uploaded file on server; otherwise external YouTube/Vimeo/Drive/direct URL.
+            'video_url' => $p->resolvedVideoUrl(),
+            'video_source' => $p->videoSource(),
             'product_id' => $p->product_id ? (int) $p->product_id : null,
             'product_name' => $product ? localized_name($product, 'name') : null,
             'product_url' => $p->resolveProductLink(),

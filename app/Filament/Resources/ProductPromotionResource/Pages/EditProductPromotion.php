@@ -29,6 +29,11 @@ class EditProductPromotion extends EditRecord
         };
     }
 
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        return ProductPromotionResource::normalizeVideoPayload($data);
+    }
+
     protected function getHeaderActions(): array
     {
         return [

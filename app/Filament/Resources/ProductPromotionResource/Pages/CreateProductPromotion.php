@@ -24,6 +24,11 @@ class CreateProductPromotion extends CreateRecord
         return 'صورة أو فيديو أو مقارنة — يظهر في سكشن دعاية المنتجات بالتطبيق.';
     }
 
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        return ProductPromotionResource::normalizeVideoPayload($data);
+    }
+
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('index');

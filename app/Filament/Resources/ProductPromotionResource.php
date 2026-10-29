@@ -9,9 +9,12 @@ use App\Models\ProductPromotion;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 
 class ProductPromotionResource extends Resource
 {
@@ -104,7 +107,7 @@ class ProductPromotionResource extends Resource
                                 Forms\Components\Placeholder::make('media_hint')
                                     ->label('')
                                     ->content(fn (Get $get) => match ($get('media_type')) {
-                                        'video' => 'ارفع صورة غلاف للفيديو ثم ضع رابط يوتيوب / فيميو / ملف الفيديو.',
+                                        'video' => 'اختر: رفع ملف فيديو على السيرفر أو لصق رابط خارجي (يوتيوب / فيميو / Drive / رابط مباشر) — واحد منهم يكفي.',
                                         'comparison' => 'ارفع صورتين: منتج MG وصورة المنافس أو قبل/بعد.',
                                         default => 'ارفع صورة واضحة أفقية (يفضّل عرض عريض للتطبيق).',
                                     })
@@ -113,7 +116,7 @@ class ProductPromotionResource extends Resource
                                 Forms\Components\FileUpload::make('image_path')
                                     ->label(fn (Get $get) => match ($get('media_type')) {
                                         'comparison' => 'صورة منتج MG',
-                                        'video' => 'صورة غلاف الفيديو',
+                                        'video' => 'صورة غلاف الفيديو (اختياري)',
                                         default => 'صورة الإعلان',
                                     })
                                     ->disk('public')
@@ -142,14 +145,69 @@ class ProductPromotionResource extends Resource
                                     ->required(fn (Get $get) => $get('media_type') === 'comparison')
                                     ->columnSpanFull(),
 
+                                Forms\Components\ToggleButtons::make('video_source')
+                                    ->label('مصدر الفيديو')
+                                    ->options([
+                                        'upload' => 'رفع على السيرفر',
+                                        'link' => 'رابط خارجي',
+                                    ])
+                                    ->icons([
+                                        'upload' => 'heroicon-o-arrow-up-tray',
+                                        'link' => 'heroicon-o-link',
+                                    ])
+                                    ->colors([
+                                        'upload' => 'success',
+                                        'link' => 'info',
+                                    ])
+                                    ->inline()
+                                    ->live()
+                                    ->dehydrated(false)
+                                    ->default('link')
+                                    ->afterStateHydrated(function (Forms\Components\ToggleButtons $component, mixed $state, ?Model $record): void {
+                                        if ($record && filled($record->video_path)) {
+                                            $component->state('upload');
+
+                                            return;
+                                        }
+                                        $component->state('link');
+                                    })
+                                    ->afterStateUpdated(function (?string $state, Set $set): void {
+                                        if ($state === 'upload') {
+                                            $set('video_url', null);
+                                        }
+                                        if ($state === 'link') {
+                                            $set('video_path', null);
+                                        }
+                                    })
+                                    ->visible(fn (Get $get) => $get('media_type') === 'video')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\FileUpload::make('video_path')
+                                    ->label('ملف الفيديو')
+                                    ->disk('public')
+                                    ->directory('product-promotions/videos')
+                                    ->acceptedFileTypes([
+                                        'video/mp4',
+                                        'video/webm',
+                                        'video/quicktime',
+                                        'video/x-m4v',
+                                    ])
+                                    ->maxSize(102400)
+                                    ->openable()
+                                    ->downloadable()
+                                    ->helperText('MP4 / WebM / MOV — حتى 100MB (تأكد من حد رفع PHP على السيرفر).')
+                                    ->visible(fn (Get $get) => $get('media_type') === 'video' && $get('video_source') === 'upload')
+                                    ->required(fn (Get $get) => $get('media_type') === 'video' && $get('video_source') === 'upload')
+                                    ->columnSpanFull(),
+
                                 Forms\Components\TextInput::make('video_url')
-                                    ->label('رابط الفيديو')
-                                    ->placeholder('https://www.youtube.com/watch?v=…')
+                                    ->label('رابط الفيديو الخارجي')
+                                    ->placeholder('https://www.youtube.com/watch?v=… أو Drive / رابط مباشر')
                                     ->url()
                                     ->prefixIcon('heroicon-o-link')
-                                    ->visible(fn (Get $get) => $get('media_type') === 'video')
-                                    ->required(fn (Get $get) => $get('media_type') === 'video')
-                                    ->helperText('يوتيوب أو فيميو أو رابط مباشر لملف فيديو')
+                                    ->visible(fn (Get $get) => $get('media_type') === 'video' && ($get('video_source') ?? 'link') === 'link')
+                                    ->required(fn (Get $get) => $get('media_type') === 'video' && ($get('video_source') ?? 'link') === 'link')
+                                    ->helperText('يوتيوب أو فيميو أو Google Drive أو رابط مباشر لملف فيديو')
                                     ->columnSpanFull(),
                             ]),
 
@@ -242,8 +300,8 @@ class ProductPromotionResource extends Resource
                         'comparison' => 'warning',
                         default => 'primary',
                     })
-                    ->formatStateUsing(fn (string $state) => match ($state) {
-                        'video' => 'فيديو',
+                    ->formatStateUsing(fn (string $state, ProductPromotion $record) => match ($state) {
+                        'video' => $record->videoSource() === 'file' ? 'فيديو (ملف)' : 'فيديو (رابط)',
                         'comparison' => 'مقارنة',
                         default => 'صورة',
                     }),
@@ -302,5 +360,37 @@ class ProductPromotionResource extends Resource
             'create' => Pages\CreateProductPromotion::route('/create'),
             'edit' => Pages\EditProductPromotion::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Keep uploaded file XOR external URL — never both, and require one for video.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function normalizeVideoPayload(array $data): array
+    {
+        if (($data['media_type'] ?? '') !== 'video') {
+            $data['video_url'] = null;
+            $data['video_path'] = null;
+
+            return $data;
+        }
+
+        $hasFile = filled($data['video_path'] ?? null);
+        $hasLink = filled($data['video_url'] ?? null);
+
+        if ($hasFile) {
+            $data['video_url'] = null;
+        } elseif ($hasLink) {
+            $data['video_path'] = null;
+        } else {
+            throw ValidationException::withMessages([
+                'video_url' => ['ارفع ملف فيديو على السيرفر أو الصق رابطًا خارجيًا — واحد منهم مطلوب.'],
+                'video_path' => ['ارفع ملف فيديو على السيرفر أو الصق رابطًا خارجيًا — واحد منهم مطلوب.'],
+            ]);
+        }
+
+        return $data;
     }
 }
