@@ -9,7 +9,8 @@ class WhatsAppRestartSessionCommand extends Command
 {
     protected $signature = 'whatsapp:restart-session
                             {--logout : Logout first (forces QR scan again)}
-                            {--status : Only print session status}';
+                            {--status : Only print session status}
+                            {--wait=90 : Seconds to wait for WORKING / SCAN_QR_CODE}';
 
     protected $description = 'Restart WAHA WhatsApp session (fix FAILED → WORKING for OTP)';
 
@@ -36,7 +37,7 @@ class WhatsAppRestartSessionCommand extends Command
         $this->line('Status:  '.($status ?? 'UNKNOWN'));
 
         if ($this->option('status')) {
-            return strtoupper((string) $status) === 'WORKING' ? self::SUCCESS : self::FAILURE;
+            return $this->finishFromStatus($base, $session, $status);
         }
 
         if ($this->option('logout')) {
@@ -53,11 +54,42 @@ class WhatsAppRestartSessionCommand extends Command
 
         $this->line('Restart HTTP '.$restart->status().': '.$this->shortBody($restart->body()));
 
-        sleep(3);
-        $after = $this->fetchStatus($base, $session, $headers);
-        $this->line('Status after restart: '.($after ?? 'UNKNOWN'));
+        $wait = max(5, (int) $this->option('wait'));
+        $this->line("Waiting up to {$wait}s for WORKING or SCAN_QR_CODE...");
 
-        $upper = strtoupper((string) $after);
+        $after = $this->waitForSettled($base, $session, $headers, $wait);
+        $this->line('Status after wait: '.($after ?? 'UNKNOWN'));
+
+        return $this->finishFromStatus($base, $session, $after);
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     */
+    protected function waitForSettled(string $base, string $session, array $headers, int $seconds): ?string
+    {
+        $deadline = time() + $seconds;
+        $last = null;
+
+        while (time() < $deadline) {
+            $last = $this->fetchStatus($base, $session, $headers);
+            $upper = strtoupper((string) $last);
+
+            if (in_array($upper, ['WORKING', 'SCAN_QR_CODE', 'FAILED', 'STOPPED'], true)) {
+                return $last;
+            }
+
+            $this->line('  … '.$upper);
+            sleep(3);
+        }
+
+        return $last;
+    }
+
+    protected function finishFromStatus(string $base, string $session, ?string $status): int
+    {
+        $upper = strtoupper((string) $status);
+
         if ($upper === 'WORKING') {
             $this->info('Session is WORKING — WhatsApp OTP should work now.');
 
@@ -66,14 +98,22 @@ class WhatsAppRestartSessionCommand extends Command
 
         if ($upper === 'SCAN_QR_CODE') {
             $this->warn('Session needs QR scan.');
-            $this->line("Open WAHA dashboard or: GET {$base}/api/{$session}/auth/qr");
-            $this->line('Scan with the WhatsApp phone linked to this bot, then re-check:');
+            $this->line("QR: {$base}/api/{$session}/auth/qr   (header X-Api-Key)");
+            $this->line('Or open the WAHA dashboard → Sessions → scan with the bot phone.');
+            $this->line('Then: php artisan whatsapp:restart-session --status');
+
+            return self::FAILURE;
+        }
+
+        if ($upper === 'STARTING') {
+            $this->warn('Still STARTING — wait ~30s then run:');
             $this->line('  php artisan whatsapp:restart-session --status');
 
             return self::FAILURE;
         }
 
-        $this->error('Session still not WORKING. Try with --logout then scan QR.');
+        $this->error('Session not WORKING ('.$upper.'). Try:');
+        $this->line('  php artisan whatsapp:restart-session --logout --wait=120');
 
         return self::FAILURE;
     }
