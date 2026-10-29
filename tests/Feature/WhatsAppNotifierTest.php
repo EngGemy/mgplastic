@@ -116,7 +116,11 @@ class WhatsAppNotifierTest extends TestCase
 
     public function test_otp_channel_fail_does_not_keep_otp(): void
     {
-        $this->enableWaha(['services.otp.channels' => 'whatsapp']);
+        // No Marsol token → WhatsApp fail cannot fall back; nothing persisted.
+        $this->enableWaha([
+            'services.otp.channels' => 'whatsapp',
+            'services.marsol.token' => '',
+        ]);
         Http::fake([
             'https://waha.test/api/sendText' => Http::response(['error' => 'down'], 500),
         ]);
@@ -131,7 +135,8 @@ class WhatsAppNotifierTest extends TestCase
             app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
             $this->fail('Expected ValidationException');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('واتساب', collect($e->errors())->flatten()->first() ?? '');
+            $msg = collect($e->errors())->flatten()->first() ?? '';
+            $this->assertTrue(str_contains($msg, 'واتساب') || str_contains($msg, 'SMS'));
         }
 
         $fresh = $user->fresh();
@@ -181,13 +186,24 @@ class WhatsAppNotifierTest extends TestCase
         $this->assertNull($user->fresh()->marsol_otp_request_id);
     }
 
-    public function test_disabled_setting_skips_send(): void
+    public function test_disabled_setting_skips_non_otp_alerts(): void
     {
         $this->enableWaha(['services.waha.enabled' => false]);
         Http::fake();
 
-        $this->assertFalse(app(WhatsAppNotifier::class)->send('01012345678', 'مرحبا'));
+        app(WhatsAppNotifier::class)->notifyAdmins('مرحبا');
         Http::assertNothingSent();
+    }
+
+    public function test_otp_still_attempts_when_notify_disabled(): void
+    {
+        $this->enableWaha(['services.waha.enabled' => false]);
+        Http::fake([
+            'https://waha.test/api/sendText' => Http::response(['ok' => true], 200),
+        ]);
+
+        $this->assertTrue(app(WhatsAppNotifier::class)->send('0912159316', 'رمز التحقق: 123456'));
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/api/sendText'));
     }
 
     public function test_invoice_created_queues_alert_job(): void

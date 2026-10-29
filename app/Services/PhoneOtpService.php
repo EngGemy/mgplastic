@@ -78,8 +78,12 @@ class PhoneOtpService
             }
 
             if (! $whatsappOk) {
-                // Forgot-password / login: don't strand the user — fall back to SMS when enabled.
-                if (in_array('sms', $this->enabledChannels(), true)) {
+                // UI always offers SMS — fall back whenever Marsol can send, even if
+                // OTP_CHANNELS was set to "whatsapp" alone on the server.
+                $canSms = in_array('sms', $this->enabledChannels(), true)
+                    || filled(trim((string) config('services.marsol.token')));
+
+                if ($canSms) {
                     Log::warning('[OTP] WhatsApp failed — falling back to SMS', [
                         'reason' => $reason,
                         'user_id' => $user->id,
@@ -221,28 +225,15 @@ class PhoneOtpService
     }
 
     /**
-     * Channels allowed for actual OTP delivery (OTP_CHANNELS env).
-     * Default = both. Set OTP_CHANNELS=whatsapp to disable SMS delivery.
+     * Channels allowed for actual OTP delivery.
+     * Always matches channelOptions() (WhatsApp + SMS) so the mobile picker
+     * never offers a channel the API then rejects. Missing credentials fail
+     * at send time with a clear message instead.
      *
      * @return list<string>
      */
     public function enabledChannels(): array
     {
-        $raw = trim((string) config('services.otp.channels', 'whatsapp,sms'));
-        $allowed = ['whatsapp', 'sms'];
-
-        if ($raw === '') {
-            return $allowed;
-        }
-
-        $channels = [];
-        foreach (explode(',', $raw) as $part) {
-            $name = strtolower(trim($part));
-            if (in_array($name, $allowed, true)) {
-                $channels[$name] = $name;
-            }
-        }
-
-        return $channels === [] ? $allowed : array_values($channels);
+        return ['whatsapp', 'sms'];
     }
 }

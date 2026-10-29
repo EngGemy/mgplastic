@@ -46,14 +46,23 @@ trait SendsMarsolSmsOtp
         elseif (preg_match('/^(9[1-5]\d{7})$/', $digits)) {
             $digits = '218'.$digits;
         }
+        // Egyptian local: 01[0125]xxxxxxxx → 201xxxxxxxxx
+        elseif (preg_match('/^0(1[0125]\d{8})$/', $digits, $m)) {
+            $digits = '20'.$m[1];
+        }
 
         // Valid Libya mobile
         if (preg_match('/^218(9[1-5])\d{7}$/', $digits)) {
             return $digits;
         }
 
-        // Other international (non-218): 10–15 digits, pass through
-        if (! str_starts_with($digits, '218') && preg_match('/^\d{10,15}$/', $digits)) {
+        // Valid Egypt mobile
+        if (preg_match('/^20(1[0125]\d{8})$/', $digits)) {
+            return $digits;
+        }
+
+        // Other international (non-218/20): 10–15 digits, no leading 0
+        if (! str_starts_with($digits, '0') && preg_match('/^\d{10,15}$/', $digits)) {
             return $digits;
         }
 

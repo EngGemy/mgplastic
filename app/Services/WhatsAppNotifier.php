@@ -115,8 +115,18 @@ class WhatsAppNotifier
     public function deliver(array $messages, bool $skipDelay = false): bool
     {
         try {
-            if (! $this->enabled()) {
+            $otpOnly = $messages !== [] && collect($messages)->every(
+                fn ($m) => (bool) ($m['is_otp'] ?? (($m['recipient_type'] ?? '') === 'otp'))
+            );
+
+            // Marketing alerts respect WHATSAPP_NOTIFY_ENABLED.
+            // Auth OTP must still attempt WAHA when URL/session are configured.
+            if (! $this->enabled() && ! $otpOnly) {
                 return false;
+            }
+
+            if (! $this->enabled() && $otpOnly) {
+                Log::warning('[WhatsAppNotifier] WHATSAPP_NOTIFY_ENABLED is false — attempting OTP anyway');
             }
 
             $prepared = $this->prepareMessages($messages);

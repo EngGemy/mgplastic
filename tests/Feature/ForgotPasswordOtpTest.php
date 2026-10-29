@@ -150,4 +150,58 @@ class ForgotPasswordOtpTest extends TestCase
 
         Http::assertSent(fn ($r) => str_contains($r->url(), 'marsol.ly/public/otp/initiate'));
     }
+
+    public function test_forgot_password_egypt_phone_falls_back_to_sms_with_e164(): void
+    {
+        config([
+            'services.marsol.token' => 'marsol-token',
+            'services.marsol.sender_id' => 'sender-uuid',
+            'services.marsol.base_url' => 'https://api.marsol.ly',
+            // Production often restricts OTP_CHANNELS to whatsapp — SMS must still work.
+            'services.otp.channels' => 'whatsapp',
+        ]);
+
+        Http::fake([
+            'https://waha.test/*' => Http::response(['error' => 'down'], 500),
+            'https://api.marsol.ly/public/senderIds' => Http::response([
+                ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
+            ]),
+            'https://api.marsol.ly/public/otp/initiate' => Http::response([
+                'requestId' => 'req-eg-1',
+                'resendToken' => 'resend-eg',
+                'expiration' => 300,
+            ]),
+        ]);
+
+        $user = User::factory()->create([
+            'phone' => '01277444422',
+            'otp_last_sent_at' => now()->subMinutes(5),
+        ]);
+
+        $ticket = $this->postJson('/api/v1/auth/forgot-password/send-otp', [
+            'phone' => '01277444422',
+        ])->assertOk()->json('otp_ticket');
+
+        $this->postJson('/api/v1/auth/forgot-password/send-otp', [
+            'phone' => '01277444422',
+            'otp_ticket' => $ticket,
+            'channel' => 'whatsapp',
+        ])
+            ->assertOk()
+            ->assertJsonPath('code', 'otp_sent')
+            ->assertJsonPath('channel', 'sms')
+            ->assertJsonPath('fallback_from', 'whatsapp');
+
+        $this->assertSame('req-eg-1', $user->fresh()->marsol_otp_request_id);
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), '/public/otp/initiate')) {
+                return false;
+            }
+            $data = $request->data();
+            $phone = (string) ($data['phoneNumber'] ?? $data['phone'] ?? '');
+
+            return $phone === '201277444422';
+        });
+    }
 }
