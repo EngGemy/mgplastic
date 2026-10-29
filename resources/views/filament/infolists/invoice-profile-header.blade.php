@@ -1,10 +1,24 @@
 @php
     $record = $getRecord();
     $isWholesale = $record->isWholesalePos();
-    $summary = $record->returnSummary();
-    $hasReturns = $summary['returns_count'] > 0;
 
-    $totalQty = $hasReturns ? $summary['net_qty'] : (int) (
+    try {
+        $summary = $record->returnSummary();
+    } catch (\Throwable $e) {
+        report($e);
+        $summary = [
+            'sold_qty' => 0,
+            'returned_qty' => 0,
+            'net_qty' => 0,
+            'sold_points' => 0,
+            'returned_points' => 0,
+            'net_points' => 0,
+            'returns_count' => 0,
+        ];
+    }
+    $hasReturns = ($summary['returns_count'] ?? 0) > 0;
+
+    $totalQty = $hasReturns ? (int) $summary['net_qty'] : (int) (
         $record->isOutgoing() && $record->sourceDistribution
             ? $record->sourceDistribution->items->sum(fn ($i) => $i->quantity - ($i->returned_quantity ?? 0))
             : $record->items->sum('quantity')
@@ -12,7 +26,7 @@
 
     // Prefer line math (qty×ppu) over stale points_awarded when items exist.
     $totalPoints = $hasReturns
-        ? $summary['net_points']
+        ? (int) $summary['net_points']
         : (int) (
             $record->items->isNotEmpty()
                 ? $record->items->sum(fn ($i) => (int) floor((int) $i->quantity * (float) $i->points_per_unit))

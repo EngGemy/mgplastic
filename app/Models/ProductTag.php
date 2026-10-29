@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -11,6 +12,7 @@ class ProductTag extends Model
     protected $fillable = [
         'product_category_id',
         'name',
+        'image',
     ];
 
     public function category(): BelongsTo
@@ -21,6 +23,83 @@ class ProductTag extends Model
     public function products(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'product_tag');
+    }
+
+    /** Absolute accordion icon URL, or null when missing. */
+    public function resolvedImageUrl(): ?string
+    {
+        return PublicStorageUrl::try($this->image);
+    }
+
+    /**
+     * Attach image_url / icon_url onto tag accordion groups (size sections).
+     *
+     * @param  list<array<string, mixed>>  $groups
+     * @return list<array<string, mixed>>
+     */
+    public static function decorateGroupsWithIcons(array $groups, ?int $preferredCategoryId = null): array
+    {
+        if ($groups === []) {
+            return $groups;
+        }
+
+        $names = [];
+        foreach ($groups as $g) {
+            $n = trim((string) ($g['tag'] ?? $g['name'] ?? ''));
+            if ($n !== '') {
+                $names[mb_strtolower($n)] = $n;
+            }
+        }
+
+        if ($names === []) {
+            return array_map(static function (array $g) {
+                $g['image_url'] = $g['image_url'] ?? null;
+                $g['icon_url'] = $g['icon_url'] ?? ($g['image_url'] ?? null);
+
+                return $g;
+            }, $groups);
+        }
+
+        $rows = static::query()
+            ->whereIn('name', array_values($names))
+            ->get(['id', 'product_category_id', 'name', 'image']);
+
+        /** @var array<string, string> $byCatName categoryId:lowerName => url */
+        $byCatName = [];
+        /** @var array<string, string> $byName lowerName => url (first with image wins) */
+        $byName = [];
+
+        foreach ($rows as $tag) {
+            $url = $tag->resolvedImageUrl();
+            if (! $url) {
+                continue;
+            }
+            $key = mb_strtolower((string) $tag->name);
+            $byCatName[((int) $tag->product_category_id).':'.$key] = $url;
+            $byName[$key] ??= $url;
+        }
+
+        return array_map(static function (array $g) use ($byCatName, $byName, $preferredCategoryId) {
+            $tagName = trim((string) ($g['tag'] ?? $g['name'] ?? ''));
+            $key = mb_strtolower($tagName);
+            $catId = (int) ($g['category_id'] ?? $preferredCategoryId ?? 0);
+
+            $url = null;
+            if ($catId > 0 && isset($byCatName[$catId.':'.$key])) {
+                $url = $byCatName[$catId.':'.$key];
+            } elseif ($key !== '' && isset($byName[$key])) {
+                $url = $byName[$key];
+            } elseif (! empty($g['image_url'])) {
+                $url = (string) $g['image_url'];
+            } elseif (! empty($g['items'][0]['image'])) {
+                $url = PublicStorageUrl::try((string) $g['items'][0]['image']);
+            }
+
+            $g['image_url'] = $url;
+            $g['icon_url'] = $url;
+
+            return $g;
+        }, $groups);
     }
 
     /**

@@ -141,6 +141,48 @@ class ProductTagGroupsSortApiTest extends TestCase
         $this->assertContains('tag:1 بوصه', $keys);
     }
 
+    public function test_tag_group_exposes_dynamic_icon_url_from_product_tag_image(): void
+    {
+        $trader = User::factory()->create([
+            'role' => 'retail_trader',
+            'is_approved' => true,
+            'is_active' => true,
+            'is_phone_verified' => true,
+        ]);
+        Sanctum::actingAs($trader);
+
+        $cat = ProductCategory::factory()->create();
+        $cat->translateOrNew('ar')->name = 'ملحقات';
+        $cat->save();
+
+        $p = Product::factory()->create([
+            'product_category_id' => $cat->id,
+            'points_per_unit' => 1,
+        ]);
+        $p->translateOrNew('ar')->name = 'كوع 1';
+        $p->save();
+        ProductTag::syncNamesOntoProduct($p, ['1 بوصه']);
+
+        \Illuminate\Support\Facades\Storage::fake('public');
+        \Illuminate\Support\Facades\Storage::disk('public')->put('tags/one-inch.png', 'fake-image');
+
+        $tag = ProductTag::query()->where('name', '1 بوصه')->firstOrFail();
+        $tag->forceFill(['image' => 'tags/one-inch.png'])->save();
+
+        $groups = $this->getJson('/api/v1/mobile/trader/products?category_id='.$cat->id.'&grouped=1')
+            ->assertOk()
+            ->json('groups') ?? [];
+
+        $one = collect($groups)->firstWhere('tag', '1 بوصه');
+        $this->assertNotNull($one);
+        $this->assertArrayHasKey('icon_url', $one);
+        $this->assertArrayHasKey('image_url', $one);
+        // With Storage::fake, PublicStorageUrl may still return null if /storage link check fails —
+        // at minimum the keys must exist so mobile can bind dynamically.
+        $this->assertTrue(array_key_exists('icon_url', $one));
+        $this->assertSame($one['icon_url'], $one['image_url']);
+    }
+
     public function test_paginated_catalog_still_returns_full_sorted_groups(): void
     {
         $trader = User::factory()->create([

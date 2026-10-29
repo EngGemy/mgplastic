@@ -720,11 +720,14 @@ class NetworkInventoryService
                     'key' => $key,
                     'tag' => $tagName,
                     'name' => $tagName,
+                    'category_id' => isset($row['category_id']) ? (int) $row['category_id'] : null,
                     'product_type' => $row['product_type'] ?? null,
                     'size_value' => $parsed['value'] ?? null,
                     'size_unit' => $parsed['unit'] ?? null,
                     'size_label' => $parsed['label'] ?? $tagName,
                     'size_sort' => $parsed['sort'] ?? null,
+                    'image_url' => null,
+                    'icon_url' => null,
                     'items_count' => 0,
                     'items' => [],
                 ];
@@ -733,7 +736,9 @@ class NetworkInventoryService
             $grouped[$key]['items_count']++;
         }
 
-        return ProductSizeSorter::sortTagGroupsByNumber(array_values($grouped), $sizeOrder);
+        return \App\Models\ProductTag::decorateGroupsWithIcons(
+            ProductSizeSorter::sortTagGroupsByNumber(array_values($grouped), $sizeOrder),
+        );
     }
 
     /**
@@ -790,11 +795,14 @@ class NetworkInventoryService
                     'key' => $tagKey,
                     'tag' => $tagName,
                     'name' => $tagName,
+                    'category_id' => $catId > 0 ? $catId : null,
                     'product_type' => $row['product_type'] ?? null,
                     'size_value' => $parsed['value'] ?? null,
                     'size_unit' => $parsed['unit'] ?? null,
                     'size_label' => $parsed['label'] ?? $tagName,
                     'size_sort' => $parsed['sort'] ?? null,
+                    'image_url' => null,
+                    'icon_url' => null,
                     'items_count' => 0,
                     'items' => [],
                 ];
@@ -820,8 +828,12 @@ class NetworkInventoryService
         });
 
         foreach ($list as &$cat) {
-            // Sort tags by the number written in the tag name.
-            $cat['tags'] = ProductSizeSorter::sortTagGroupsByNumber(array_values($cat['tags']), $sizeOrder);
+            // Sort tags by the number written in the tag name, then attach accordion icons.
+            $sorted = ProductSizeSorter::sortTagGroupsByNumber(array_values($cat['tags']), $sizeOrder);
+            $cat['tags'] = \App\Models\ProductTag::decorateGroupsWithIcons(
+                $sorted,
+                isset($cat['category_id']) ? (int) $cat['category_id'] : null,
+            );
             $cat['size_groups'] = $cat['tags'];
         }
         unset($cat);

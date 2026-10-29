@@ -27,32 +27,46 @@ class ViewInvoice extends ViewRecord
         parent::mount($record);
 
         // Outgoing docs: backfill missing lines + fix qty×ppu ≠ total_points.
+        // Never let repair work take down the whole view page (was causing HTTP 500).
         if ($this->record->isOutgoing()) {
-            $outgoing = app(OutgoingInvoiceService::class);
-            if (! $this->record->items()->exists()) {
-                $outgoing->syncLineItemsFromDistribution($this->record);
-            } else {
-                $outgoing->reconcileLineTotals($this->record);
+            try {
+                $outgoing = app(OutgoingInvoiceService::class);
+                if (! $this->record->items()->exists()) {
+                    $outgoing->syncLineItemsFromDistribution($this->record);
+                } else {
+                    $outgoing->reconcileLineTotals($this->record);
+                }
+                $this->record->refresh();
+            } catch (\Throwable $e) {
+                report($e);
+                Notification::make()
+                    ->warning()
+                    ->title('تعذر مزامنة بنود الفاتورة الصادرة')
+                    ->body($e->getMessage())
+                    ->send();
             }
-            $this->record->refresh();
         }
 
-        $this->record->load([
-            'items.product.translations',
-            'items.product.latestPointsRateChange',
-            'distributions.fromUser',
-            'distributions.toUser',
-            'distributions.items',
-            'sourceDistribution.items.invoiceItem.product.translations',
-            'sourceDistribution.items.invoiceItem.product.latestPointsRateChange',
-            'returns.items.product.translations',
-            'returns.fromUser',
-            'returns.toUser',
-            'wholesaleDistributor',
-            'counterparty',
-            'plumber',
-            'issuer',
-        ]);
+        try {
+            $this->record->load([
+                'items.product.translations',
+                'items.product.latestPointsRateChange',
+                'distributions.fromUser',
+                'distributions.toUser',
+                'distributions.items',
+                'sourceDistribution.items.invoiceItem.product.translations',
+                'sourceDistribution.items.invoiceItem.product.latestPointsRateChange',
+                'returns.items.product.translations',
+                'returns.fromUser',
+                'returns.toUser',
+                'wholesaleDistributor',
+                'counterparty',
+                'plumber',
+                'issuer',
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     protected function getHeaderActions(): array

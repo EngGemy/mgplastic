@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AdminOnlyResource;
 use App\Filament\Resources\ProductCategoryResource\Pages;
+use App\Filament\Resources\ProductCategoryResource\RelationManagers;
 use App\Models\ProductCategory;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -90,9 +91,9 @@ class ProductCategoryResource extends Resource
                         ->columnSpan(4),
 
                     Forms\Components\TagsInput::make('tag_names')
-                        ->label('وسوم التصنيف')
+                        ->label('وسوم التصنيف (أسماء سريعة)')
                         ->placeholder('اكتب وسمًا ثم Enter')
-                        ->helperText('هذه الوسوم تُقترح عند إضافة منتج داخل هذا التصنيف أو أحد فروعه.')
+                        ->helperText('لإضافة الاسم فقط. لرفع أيقونة كل مقاس (1 بوصه…) استخدم تبويب «وسوم المقاسات» أسفل الصفحة بعد الحفظ.')
                         ->splitKeys(['Tab', ','])
                         ->reorderable()
                         ->columnSpanFull(),
@@ -231,6 +232,13 @@ class ProductCategoryResource extends Resource
         return parent::getEloquentQuery()
             ->with('parent')
             ->withCount(['products', 'tags']); // يعتمد على FK الصحيح في علاقة products() بالموديل
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\TagsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
