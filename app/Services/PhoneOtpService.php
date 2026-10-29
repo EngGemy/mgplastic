@@ -27,8 +27,13 @@ class PhoneOtpService
      * Constraint (Marsol): SMS uses Marsol OTP API (own code). WhatsApp uses local hashed OTP.
      * matches() accepts either.
      *
+     * Honor the user's channel choice exactly:
+     * - whatsapp → WAHA only
+     * - sms → Marsol only
+     * Never auto-switch channels.
+     *
      * @param  'whatsapp'|'sms'  $channel
-     * @return array{channel: string, expires_at: Carbon, otp_expires_at: string, fallback_from: ?string}
+     * @return array{channel: string, expires_at: Carbon, otp_expires_at: string}
      */
     public function issue(User $user, string $reason = 'login', ?string $channel = null): array
     {
@@ -58,11 +63,9 @@ class PhoneOtpService
         $expiresAt = Carbon::now()->addMinutes(5);
         $text = WhatsAppMessage::otp($otp);
 
-        $smsOk = false;
         $marsolRequestId = null;
         $marsolResendToken = null;
         $marsolExpiration = 300;
-        $fallbackFrom = null;
 
         if ($channel === 'whatsapp') {
             $whatsappOk = false;
@@ -78,27 +81,14 @@ class PhoneOtpService
             }
 
             if (! $whatsappOk) {
-                // UI always offers SMS — fall back whenever Marsol can send, even if
-                // OTP_CHANNELS was set to "whatsapp" alone on the server.
-                $canSms = in_array('sms', $this->enabledChannels(), true)
-                    || filled(trim((string) config('services.marsol.token')));
-
-                if ($canSms) {
-                    Log::warning('[OTP] WhatsApp failed — falling back to SMS', [
-                        'reason' => $reason,
-                        'user_id' => $user->id,
-                    ]);
-                    $channel = 'sms';
-                    $fallbackFrom = 'whatsapp';
-                } else {
-                    throw ValidationException::withMessages([
-                        'channel' => ['تعذّر إرسال رمز التحقق عبر واتساب — جرّب SMS'],
-                    ]);
-                }
+                throw ValidationException::withMessages([
+                    'channel' => ['تعذّر إرسال رمز التحقق عبر واتساب — جرّب SMS أو حاول لاحقًا'],
+                ]);
             }
         }
 
         if ($channel === 'sms') {
+            $smsOk = false;
             try {
                 $issued = $this->issueMarsolPhoneOtp((string) $user->phone, 6, 300, 'WEB', 'AR', 'CODE');
                 if ($issued && ! empty($issued['requestId'])) {
@@ -117,9 +107,7 @@ class PhoneOtpService
 
             if (! $smsOk) {
                 throw ValidationException::withMessages([
-                    'channel' => $fallbackFrom === 'whatsapp'
-                        ? ['تعذّر الإرسال عبر واتساب وSMS — حاول لاحقًا']
-                        : ['تعذّر إرسال رمز التحقق عبر SMS — جرّب واتساب'],
+                    'channel' => ['تعذّر إرسال رمز التحقق عبر SMS — جرّب واتساب'],
                 ]);
             }
         }
@@ -143,7 +131,6 @@ class PhoneOtpService
             'channel' => $channel,
             'expires_at' => $expiresAt,
             'otp_expires_at' => $expiresAt->toIso8601String(),
-            'fallback_from' => $fallbackFrom,
         ];
 
         // Tests only — never expose OTP in production API responses.

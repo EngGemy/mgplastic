@@ -18,7 +18,9 @@ trait SendsMarsolSmsOtp
     protected ?string $marsolSenderIdResolved = null;
 
     /**
-     * Normalize a phone for Marsol APIs (digits only, Libya → 2189…).
+     * Normalize a phone for Marsol OTP/SMS APIs.
+     * Marsol expects a Libyan *local* mobile: 09xxxxxxxx (see official SDK).
+     * Egyptian / other international numbers are not supported by this account.
      *
      * @throws InvalidArgumentException
      */
@@ -38,32 +40,27 @@ trait SendsMarsolSmsOtp
             throw new InvalidArgumentException('No valid phone number for Marsol');
         }
 
-        // Libyan local: 09xxxxxxxx → 2189xxxxxxxx
-        if (preg_match('/^0(9[1-5]\d{7})$/', $digits, $m)) {
-            $digits = '218'.$m[1];
-        }
-        // Libyan without trunk 0: 9xxxxxxxx → 2189xxxxxxxx
-        elseif (preg_match('/^(9[1-5]\d{7})$/', $digits)) {
-            $digits = '218'.$digits;
-        }
-        // Egyptian local: 01[0125]xxxxxxxx → 201xxxxxxxxx
-        elseif (preg_match('/^0(1[0125]\d{8})$/', $digits, $m)) {
-            $digits = '20'.$m[1];
-        }
-
-        // Valid Libya mobile
-        if (preg_match('/^218(9[1-5])\d{7}$/', $digits)) {
+        // Already local Libya: 09xxxxxxxx
+        if (preg_match('/^0(9[1-5]\d{7})$/', $digits)) {
             return $digits;
         }
 
-        // Valid Egypt mobile
-        if (preg_match('/^20(1[0125]\d{8})$/', $digits)) {
-            return $digits;
+        // International Libya: 2189xxxxxxxx → 09xxxxxxxx
+        if (preg_match('/^218(9[1-5]\d{7})$/', $digits, $m)) {
+            return '0'.$m[1];
         }
 
-        // Other international (non-218/20): 10–15 digits, no leading 0
-        if (! str_starts_with($digits, '0') && preg_match('/^\d{10,15}$/', $digits)) {
-            return $digits;
+        // National without trunk: 9xxxxxxxx → 09xxxxxxxx
+        if (preg_match('/^(9[1-5]\d{7})$/', $digits)) {
+            return '0'.$digits;
+        }
+
+        // Egypt / other — Marsol OTP returns "not a valid local number"
+        if (preg_match('/^0?1[0125]\d{8}$/', $digits) || preg_match('/^20(1[0125]\d{8})$/', $digits)) {
+            Log::warning('[Marsol SMS] Egyptian number rejected — Marsol is Libya-only', [
+                'raw' => $raw,
+            ]);
+            throw new InvalidArgumentException('Marsol SMS supports Libyan numbers only');
         }
 
         Log::error('[Marsol SMS] invalid phone for Marsol', [
@@ -89,7 +86,7 @@ trait SendsMarsolSmsOtp
         try {
             $normalized = $this->normalizeMarsolPhone($phone);
 
-            return (bool) preg_match('/^218(9[1-5])\d{7}$/', $normalized);
+            return (bool) preg_match('/^0(9[1-5]\d{7})$/', $normalized);
         } catch (InvalidArgumentException) {
             return false;
         }

@@ -104,7 +104,7 @@ class ForgotPasswordOtpTest extends TestCase
         });
     }
 
-    public function test_forgot_password_falls_back_to_sms_when_whatsapp_fails(): void
+    public function test_forgot_password_whatsapp_fail_does_not_switch_to_sms(): void
     {
         config([
             'services.marsol.token' => 'marsol-token',
@@ -114,17 +114,10 @@ class ForgotPasswordOtpTest extends TestCase
 
         Http::fake([
             'https://waha.test/*' => Http::response(['error' => 'session down'], 500),
-            'https://api.marsol.ly/public/senderIds' => Http::response([
-                ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
-            ]),
-            'https://api.marsol.ly/public/otp/initiate' => Http::response([
-                'requestId' => 'req-forgot-fallback',
-                'resendToken' => 'resend-fb',
-                'expiration' => 300,
-            ]),
+            'https://api.marsol.ly/*' => Http::response(['should' => 'not'], 500),
         ]);
 
-        $user = User::factory()->create([
+        User::factory()->create([
             'phone' => '0916126065',
             'otp_last_sent_at' => now()->subMinutes(5),
         ]);
@@ -138,70 +131,61 @@ class ForgotPasswordOtpTest extends TestCase
             'otp_ticket' => $ticket,
             'channel' => 'whatsapp',
         ])
-            ->assertOk()
-            ->assertJsonPath('status', true)
-            ->assertJsonPath('code', 'otp_sent')
-            ->assertJsonPath('channel', 'sms')
-            ->assertJsonPath('fallback_from', 'whatsapp');
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'otp_send_failed');
 
-        $fresh = $user->fresh();
-        $this->assertNull($fresh->otp_code);
-        $this->assertSame('req-forgot-fallback', $fresh->marsol_otp_request_id);
-
-        Http::assertSent(fn ($r) => str_contains($r->url(), 'marsol.ly/public/otp/initiate'));
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'marsol.ly'));
     }
 
-    public function test_forgot_password_egypt_phone_falls_back_to_sms_with_e164(): void
+    public function test_forgot_password_sms_channel_uses_marsol_only(): void
     {
         config([
             'services.marsol.token' => 'marsol-token',
             'services.marsol.sender_id' => 'sender-uuid',
             'services.marsol.base_url' => 'https://api.marsol.ly',
-            // Production often restricts OTP_CHANNELS to whatsapp — SMS must still work.
-            'services.otp.channels' => 'whatsapp',
         ]);
 
         Http::fake([
-            'https://waha.test/*' => Http::response(['error' => 'down'], 500),
+            'https://waha.test/*' => Http::response(['should' => 'not'], 500),
             'https://api.marsol.ly/public/senderIds' => Http::response([
                 ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
             ]),
             'https://api.marsol.ly/public/otp/initiate' => Http::response([
-                'requestId' => 'req-eg-1',
-                'resendToken' => 'resend-eg',
+                'requestId' => 'req-sms-choice',
+                'resendToken' => 'resend-sms',
                 'expiration' => 300,
             ]),
         ]);
 
         $user = User::factory()->create([
-            'phone' => '01277444422',
+            'phone' => '0916126065',
             'otp_last_sent_at' => now()->subMinutes(5),
         ]);
 
         $ticket = $this->postJson('/api/v1/auth/forgot-password/send-otp', [
-            'phone' => '01277444422',
+            'phone' => '0916126065',
         ])->assertOk()->json('otp_ticket');
 
         $this->postJson('/api/v1/auth/forgot-password/send-otp', [
-            'phone' => '01277444422',
+            'phone' => '0916126065',
             'otp_ticket' => $ticket,
-            'channel' => 'whatsapp',
+            'channel' => 'sms',
         ])
             ->assertOk()
             ->assertJsonPath('code', 'otp_sent')
-            ->assertJsonPath('channel', 'sms')
-            ->assertJsonPath('fallback_from', 'whatsapp');
+            ->assertJsonPath('channel', 'sms');
 
-        $this->assertSame('req-eg-1', $user->fresh()->marsol_otp_request_id);
-
+        $this->assertNull($user->fresh()->otp_code);
+        $this->assertSame('req-sms-choice', $user->fresh()->marsol_otp_request_id);
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), '/api/sendText'));
         Http::assertSent(function ($request) {
             if (! str_contains($request->url(), '/public/otp/initiate')) {
                 return false;
             }
-            $data = $request->data();
-            $phone = (string) ($data['phoneNumber'] ?? $data['phone'] ?? '');
+            $phone = (string) ($request->data()['phoneNumber'] ?? '');
 
-            return $phone === '201277444422';
+            // Marsol expects Libyan local format.
+            return $phone === '0916126065';
         });
     }
 }

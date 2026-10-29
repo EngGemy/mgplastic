@@ -144,29 +144,25 @@ class WhatsAppNotifierTest extends TestCase
         $this->assertNull($fresh->marsol_otp_request_id);
     }
 
-    public function test_otp_whatsapp_failure_falls_back_to_sms_when_enabled(): void
+    public function test_otp_whatsapp_failure_does_not_switch_to_sms(): void
     {
         $this->enableWaha(['services.otp.channels' => 'whatsapp,sms']);
         Http::fake([
             'https://waha.test/api/sendText' => Http::response(['error' => 'down'], 500),
-            'https://api.marsol.ly/public/senderIds' => Http::response([
-                ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
-            ]),
-            'https://api.marsol.ly/public/otp/initiate' => Http::response([
-                'requestId' => 'req-fb-1',
-                'resendToken' => 'resend-fb',
-                'expiration' => 300,
-            ]),
+            'https://api.marsol.ly/*' => Http::response(['should' => 'not'], 500),
         ]);
 
         $user = User::factory()->create(['phone' => '0916126065']);
 
-        $meta = app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
+        try {
+            app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
+            $this->fail('Expected ValidationException');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('واتساب', collect($e->errors())->flatten()->first() ?? '');
+        }
 
-        $this->assertSame('sms', $meta['channel']);
-        $this->assertSame('whatsapp', $meta['fallback_from']);
-        $this->assertNull($user->fresh()->otp_code);
-        $this->assertSame('req-fb-1', $user->fresh()->marsol_otp_request_id);
+        $this->assertNull($user->fresh()->marsol_otp_request_id);
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'marsol.ly'));
     }
 
     public function test_otp_channels_whatsapp_only_skips_marsol(): void

@@ -565,20 +565,28 @@ class WhatsAppNotifier
     protected function postJson(string $endpoint, array $payload, string $phone, string $action): bool
     {
         try {
-            $response = Http::timeout(20)
-                ->retry(2, 200, throw: false)
-                ->withHeaders([
-                    'X-Api-Key' => (string) config('services.waha.key'),
-                    'Accept' => 'application/json',
-                    'Content-Type' => 'application/json',
-                ])
-                ->post($endpoint, $payload);
+            $response = $this->wahaHttp()->post($endpoint, $payload);
 
             if ($response->successful()) {
                 return true;
             }
 
             $body = $response->body();
+
+            // Session FAILED/STOPPED — one restart then one retry (OTP recovery).
+            if ($this->bodyLooksLikeDeadSession($body) && $this->restartWahaSessionOnce()) {
+                sleep(2);
+                $retry = $this->wahaHttp()->post($endpoint, $payload);
+                if ($retry->successful()) {
+                    Log::info('[WhatsAppNotifier] WAHA '.$action.' ok after session restart', [
+                        'phone' => $phone,
+                    ]);
+
+                    return true;
+                }
+                $body = $retry->body();
+            }
+
             if (strlen($body) > 500) {
                 $body = substr($body, 0, 500).'…';
             }
@@ -595,6 +603,55 @@ class WhatsAppNotifier
                 'phone' => $phone,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
+        }
+    }
+
+    protected function wahaHttp(): \Illuminate\Http\Client\PendingRequest
+    {
+        return Http::timeout(20)
+            ->retry(2, 200, throw: false)
+            ->withHeaders([
+                'X-Api-Key' => (string) config('services.waha.key'),
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ]);
+    }
+
+    protected function bodyLooksLikeDeadSession(string $body): bool
+    {
+        $lower = strtolower($body);
+
+        return str_contains($lower, '"status":"failed"')
+            || str_contains($lower, '"status":"stopped"')
+            || str_contains($lower, 'session status is not as expected');
+    }
+
+    /**
+     * At most one restart attempt per process window (Cache lock).
+     */
+    protected function restartWahaSessionOnce(): bool
+    {
+        $session = $this->sessionName();
+        $base = rtrim(trim((string) config('services.waha.url')), '/');
+        if ($session === '' || $base === '') {
+            return false;
+        }
+
+        $lockKey = 'waha:session_restart:'.$session;
+        if (! Cache::add($lockKey, 1, now()->addMinutes(2))) {
+            return false;
+        }
+
+        try {
+            Log::warning('[WhatsAppNotifier] restarting FAILED WAHA session', ['session' => $session]);
+            $response = $this->wahaHttp()->timeout(45)
+                ->post("{$base}/api/sessions/{$session}/restart");
+
+            return $response->successful() || $response->status() < 500;
+        } catch (\Throwable $e) {
+            Log::error('[WhatsAppNotifier] session restart failed', ['error' => $e->getMessage()]);
 
             return false;
         }
