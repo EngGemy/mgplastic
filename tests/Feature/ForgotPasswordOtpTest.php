@@ -103,4 +103,51 @@ class ForgotPasswordOtpTest extends TestCase
                 && $hasRlm;
         });
     }
+
+    public function test_forgot_password_falls_back_to_sms_when_whatsapp_fails(): void
+    {
+        config([
+            'services.marsol.token' => 'marsol-token',
+            'services.marsol.sender_id' => 'sender-uuid',
+            'services.marsol.base_url' => 'https://api.marsol.ly',
+        ]);
+
+        Http::fake([
+            'https://waha.test/*' => Http::response(['error' => 'session down'], 500),
+            'https://api.marsol.ly/public/senderIds' => Http::response([
+                ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
+            ]),
+            'https://api.marsol.ly/public/otp/initiate' => Http::response([
+                'requestId' => 'req-forgot-fallback',
+                'resendToken' => 'resend-fb',
+                'expiration' => 300,
+            ]),
+        ]);
+
+        $user = User::factory()->create([
+            'phone' => '0916126065',
+            'otp_last_sent_at' => now()->subMinutes(5),
+        ]);
+
+        $ticket = $this->postJson('/api/v1/auth/forgot-password/send-otp', [
+            'phone' => '0916126065',
+        ])->assertOk()->json('otp_ticket');
+
+        $this->postJson('/api/v1/auth/forgot-password/send-otp', [
+            'phone' => '0916126065',
+            'otp_ticket' => $ticket,
+            'channel' => 'whatsapp',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('code', 'otp_sent')
+            ->assertJsonPath('channel', 'sms')
+            ->assertJsonPath('fallback_from', 'whatsapp');
+
+        $fresh = $user->fresh();
+        $this->assertNull($fresh->otp_code);
+        $this->assertSame('req-forgot-fallback', $fresh->marsol_otp_request_id);
+
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'marsol.ly/public/otp/initiate'));
+    }
 }

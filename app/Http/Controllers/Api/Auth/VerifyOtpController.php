@@ -69,16 +69,21 @@ class VerifyOtpController extends Controller
         }
 
         $channel = $meta['channel'];
+        $fallbackFrom = $meta['fallback_from'] ?? null;
+        $message = match (true) {
+            $fallbackFrom === 'whatsapp' && $channel === 'sms' => 'واتساب غير متاح حاليًا — تم إرسال الرمز عبر رسالة SMS',
+            $channel === 'whatsapp' => 'تم إرسال رمز التحقق عبر واتساب',
+            default => 'تم إرسال رمز التحقق عبر رسالة SMS',
+        };
 
         return response()->json([
             'status' => true,
-            'message' => $channel === 'whatsapp'
-                ? 'تم إرسال رمز التحقق عبر واتساب'
-                : 'تم إرسال رمز التحقق عبر رسالة SMS',
+            'message' => $message,
             'code' => 'otp_sent',
             'requires_otp' => true,
             'otp_sent' => true,
             'channel' => $channel,
+            'fallback_from' => $fallbackFrom,
             'otp_expires_at' => $meta['otp_expires_at'],
             'phone_hint' => $this->phoneHint($user->phone),
         ]);

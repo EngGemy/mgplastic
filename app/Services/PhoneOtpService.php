@@ -28,7 +28,7 @@ class PhoneOtpService
      * matches() accepts either.
      *
      * @param  'whatsapp'|'sms'  $channel
-     * @return array{channel: string, expires_at: Carbon, otp_expires_at: string}
+     * @return array{channel: string, expires_at: Carbon, otp_expires_at: string, fallback_from: ?string}
      */
     public function issue(User $user, string $reason = 'login', ?string $channel = null): array
     {
@@ -58,27 +58,39 @@ class PhoneOtpService
         $expiresAt = Carbon::now()->addMinutes(5);
         $text = WhatsAppMessage::otp($otp);
 
-        $whatsappOk = false;
         $smsOk = false;
         $marsolRequestId = null;
         $marsolResendToken = null;
         $marsolExpiration = 300;
+        $fallbackFrom = null;
 
         if ($channel === 'whatsapp') {
+            $whatsappOk = false;
             try {
                 $whatsappOk = $this->whatsapp->send((string) $user->phone, $text, null);
             } catch (\Throwable $e) {
                 Log::error('[OTP] WhatsApp channel failed', [
                     'reason' => $reason,
+                    'phone' => $user->phone,
                     'error' => $e->getMessage(),
                 ]);
                 $whatsappOk = false;
             }
 
             if (! $whatsappOk) {
-                throw ValidationException::withMessages([
-                    'channel' => ['تعذّر إرسال رمز التحقق عبر واتساب — جرّب SMS'],
-                ]);
+                // Forgot-password / login: don't strand the user — fall back to SMS when enabled.
+                if (in_array('sms', $this->enabledChannels(), true)) {
+                    Log::warning('[OTP] WhatsApp failed — falling back to SMS', [
+                        'reason' => $reason,
+                        'user_id' => $user->id,
+                    ]);
+                    $channel = 'sms';
+                    $fallbackFrom = 'whatsapp';
+                } else {
+                    throw ValidationException::withMessages([
+                        'channel' => ['تعذّر إرسال رمز التحقق عبر واتساب — جرّب SMS'],
+                    ]);
+                }
             }
         }
 
@@ -101,7 +113,9 @@ class PhoneOtpService
 
             if (! $smsOk) {
                 throw ValidationException::withMessages([
-                    'channel' => ['تعذّر إرسال رمز التحقق عبر SMS — جرّب واتساب'],
+                    'channel' => $fallbackFrom === 'whatsapp'
+                        ? ['تعذّر الإرسال عبر واتساب وSMS — حاول لاحقًا']
+                        : ['تعذّر إرسال رمز التحقق عبر SMS — جرّب واتساب'],
                 ]);
             }
         }
@@ -125,6 +139,7 @@ class PhoneOtpService
             'channel' => $channel,
             'expires_at' => $expiresAt,
             'otp_expires_at' => $expiresAt->toIso8601String(),
+            'fallback_from' => $fallbackFrom,
         ];
 
         // Tests only — never expose OTP in production API responses.

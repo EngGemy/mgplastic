@@ -139,6 +139,31 @@ class WhatsAppNotifierTest extends TestCase
         $this->assertNull($fresh->marsol_otp_request_id);
     }
 
+    public function test_otp_whatsapp_failure_falls_back_to_sms_when_enabled(): void
+    {
+        $this->enableWaha(['services.otp.channels' => 'whatsapp,sms']);
+        Http::fake([
+            'https://waha.test/api/sendText' => Http::response(['error' => 'down'], 500),
+            'https://api.marsol.ly/public/senderIds' => Http::response([
+                ['id' => 'sender-uuid', 'available' => true, 'isDefault' => true],
+            ]),
+            'https://api.marsol.ly/public/otp/initiate' => Http::response([
+                'requestId' => 'req-fb-1',
+                'resendToken' => 'resend-fb',
+                'expiration' => 300,
+            ]),
+        ]);
+
+        $user = User::factory()->create(['phone' => '0916126065']);
+
+        $meta = app(PhoneOtpService::class)->issue($user, 'login', 'whatsapp');
+
+        $this->assertSame('sms', $meta['channel']);
+        $this->assertSame('whatsapp', $meta['fallback_from']);
+        $this->assertNull($user->fresh()->otp_code);
+        $this->assertSame('req-fb-1', $user->fresh()->marsol_otp_request_id);
+    }
+
     public function test_otp_channels_whatsapp_only_skips_marsol(): void
     {
         $this->enableWaha(['services.otp.channels' => 'whatsapp']);
