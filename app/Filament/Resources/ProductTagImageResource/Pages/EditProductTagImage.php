@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ProductTagImageResource\Pages;
 use App\Filament\Resources\ProductTagImageResource;
 use App\Models\ProductTag;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 
 class EditProductTagImage extends EditRecord
@@ -18,7 +19,19 @@ class EditProductTagImage extends EditRecord
 
     public function getHeading(): string
     {
-        return 'صورة التاج: '.$this->record->name;
+        return 'صورة التاج: '.(string) ($this->record->name ?? '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        // Name / category are locked on edit — only image may change.
+        unset($data['name'], $data['product_category_id']);
+
+        return $data;
     }
 
     protected function afterSave(): void
@@ -27,7 +40,7 @@ class EditProductTagImage extends EditRecord
         $record = $this->record;
         $synced = ProductTagImageResource::syncImageToSameNameTags($record);
         if ($synced > 0) {
-            \Filament\Notifications\Notification::make()
+            Notification::make()
                 ->success()
                 ->title('تم تحديث الصورة')
                 ->body("طُبّقت نفس الصورة على {$synced} تاج آخر بنفس الاسم.")

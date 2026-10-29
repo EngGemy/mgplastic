@@ -49,32 +49,47 @@ class ProductTagImageResource extends Resource
     {
         return $form->schema([
             Forms\Components\Section::make('الوسم')
-                ->description('التاجات تأتي من المنتجات (حقل الوسوم). هنا ترفع صورة الأكورديون اللي تظهر في التطبيق بجانب المقاس.')
+                ->description('التاجات تأتي من المنتجات. ارفع هنا صورة الأكورديون بجانب المقاس في التطبيق.')
                 ->schema([
+                    Forms\Components\Placeholder::make('edit_tag_info')
+                        ->label('التاج')
+                        ->content(function (Forms\Components\Placeholder $component): string {
+                            $record = $component->getRecord();
+                            if (! $record instanceof ProductTag) {
+                                return '—';
+                            }
+                            try {
+                                $cat = $record->category
+                                    ? $record->category->normalizedDisplayName()
+                                    : 'بدون تصنيف';
+                            } catch (\Throwable) {
+                                $cat = 'بدون تصنيف';
+                            }
+
+                            return trim((string) $record->name).' · '.$cat;
+                        })
+                        ->visibleOn('edit'),
+
                     Forms\Components\Select::make('product_category_id')
                         ->label('التصنيف')
-                        ->relationship(
-                            name: 'category',
-                            titleAttribute: 'id',
-                            modifyQueryUsing: fn (Builder $q) => $q->with('translations')->orderBy('id'),
-                        )
-                        ->getOptionLabelFromRecordUsing(
-                            fn (ProductCategory $c) => $c->normalizedDisplayName().' (#'.$c->id.')'
-                        )
+                        ->options(fn () => ProductCategory::query()
+                            ->with('translations')
+                            ->orderBy('id')
+                            ->get()
+                            ->mapWithKeys(fn (ProductCategory $c) => [
+                                $c->id => $c->normalizedDisplayName().' (#'.$c->id.')',
+                            ])
+                            ->all())
                         ->searchable()
-                        ->preload()
                         ->required()
-                        ->disabled(fn (string $operation): bool => $operation === 'edit')
-                        ->dehydrated()
-                        ->helperText('عند التعديل لا يتغيّر التصنيف — غيّر الصورة فقط.'),
+                        ->visibleOn('create'),
 
                     Forms\Components\TextInput::make('name')
                         ->label('اسم التاج / المقاس')
                         ->required()
                         ->maxLength(80)
-                        ->disabled(fn (string $operation): bool => $operation === 'edit')
-                        ->dehydrated()
-                        ->helperText('مثال: 1 بوصه · 110 مم — نفس الاسم المستخدم على المنتج.'),
+                        ->helperText('مثال: 1 بوصه · 110 مم')
+                        ->visibleOn('create'),
 
                     Forms\Components\FileUpload::make('image')
                         ->label('صورة التاج')
@@ -82,10 +97,10 @@ class ProductTagImageResource extends Resource
                         ->directory('tags')
                         ->image()
                         ->imageEditor()
-                        ->imageEditorAspectRatios(['1:1', '4:3', null])
                         ->openable()
                         ->downloadable()
-                        ->helperText('صورة مربعة تظهر في أقسام المقاسات داخل التطبيق. عند الحفظ تُطبَّق على كل تاج بنفس الاسم.')
+                        ->nullable()
+                        ->helperText('صورة مربعة للتطبيق. عند الحفظ تُطبَّق على كل تاج بنفس الاسم.')
                         ->columnSpanFull(),
                 ]),
         ]);
@@ -99,7 +114,8 @@ class ProductTagImageResource extends Resource
                     ->label('الصورة')
                     ->disk('public')
                     ->circular()
-                    ->size(48),
+                    ->size(48)
+                    ->defaultImageUrl(null),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('التاج')
@@ -109,9 +125,15 @@ class ProductTagImageResource extends Resource
 
                 Tables\Columns\TextColumn::make('category_name')
                     ->label('التصنيف')
-                    ->state(fn (ProductTag $record) => $record->category
-                        ? $record->category->normalizedDisplayName()
-                        : '—')
+                    ->state(function (ProductTag $record): string {
+                        try {
+                            return $record->category
+                                ? $record->category->normalizedDisplayName()
+                                : '—';
+                        } catch (\Throwable) {
+                            return '—';
+                        }
+                    })
                     ->wrap()
                     ->toggleable(),
 
@@ -124,7 +146,7 @@ class ProductTagImageResource extends Resource
                 Tables\Columns\IconColumn::make('has_image')
                     ->label('لها صورة')
                     ->boolean()
-                    ->state(fn (ProductTag $record) => filled($record->image)),
+                    ->getStateUsing(fn (ProductTag $record) => filled($record->image)),
 
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label('آخر تحديث')
@@ -136,15 +158,17 @@ class ProductTagImageResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('product_category_id')
                     ->label('التصنيف')
-                    ->relationship('category', 'id')
-                    ->getOptionLabelFromRecordUsing(
-                        fn (ProductCategory $c) => $c->normalizedDisplayName()
-                    )
-                    ->searchable()
-                    ->preload(),
-                Tables\Filters\TernaryFilter::make('image')
+                    ->options(fn () => ProductCategory::query()
+                        ->with('translations')
+                        ->orderBy('id')
+                        ->get()
+                        ->mapWithKeys(fn (ProductCategory $c) => [
+                            $c->id => $c->normalizedDisplayName(),
+                        ])
+                        ->all())
+                    ->searchable(),
+                Tables\Filters\TernaryFilter::make('has_image')
                     ->label('لها صورة')
-                    ->nullable()
                     ->queries(
                         true: fn (Builder $q) => $q->whereNotNull('image')->where('image', '!=', ''),
                         false: fn (Builder $q) => $q->where(fn (Builder $inner) => $inner->whereNull('image')->orWhere('image', '')),
@@ -183,7 +207,7 @@ class ProductTagImageResource extends Resource
             return 0;
         }
 
-        return ProductTag::query()
+        return (int) ProductTag::query()
             ->whereRaw('LOWER(name) = ?', [$name])
             ->where('id', '!=', $tag->id)
             ->update(['image' => $tag->image]);
