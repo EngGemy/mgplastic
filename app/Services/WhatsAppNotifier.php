@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\SendWhatsAppNotification;
 use App\Mail\WhatsAppLimitReachedMail;
 use App\Models\WhatsAppLog;
+use App\Support\WahaResult;
 use App\Support\WhatsAppMessage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -13,6 +14,12 @@ use Illuminate\Support\Facades\Mail;
 
 class WhatsAppNotifier
 {
+    public const BREAKER_CACHE_KEY = 'waha:circuit_breaker';
+
+    public const HEALTH_CACHE_KEY = 'waha:health_snapshot';
+
+    public const LAST_SUCCESS_CACHE_KEY = 'waha:last_success_at';
+
     /**
      * Immediate send (OTP). Never fans out to admins. Never delayed / never counts toward daily limit.
      *
@@ -20,20 +27,14 @@ class WhatsAppNotifier
      */
     public function send(string $phone, string $text, string|array|null $image = null): bool
     {
-        try {
-            return $this->deliver([[
-                'phone' => $phone,
-                'text' => $text,
-                'image' => $image,
-                'event' => 'otp',
-                'recipient_type' => 'otp',
-                'is_otp' => true,
-            ]], skipDelay: true);
-        } catch (\Throwable $e) {
-            Log::error('[WhatsAppNotifier] send exception', ['error' => $e->getMessage()]);
-
-            return false;
-        }
+        return $this->deliverDetailed([[
+            'phone' => $phone,
+            'text' => $text,
+            'image' => $image,
+            'event' => 'otp',
+            'recipient_type' => 'otp',
+            'is_otp' => true,
+        ]], skipDelay: true)->ok;
     }
 
     /**
@@ -53,9 +54,12 @@ class WhatsAppNotifier
                 return;
             }
 
-            if (filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
-                || config('queue.default') === 'sync') {
-                $this->deliver($prepared);
+            // Default: always queue. Sync only when explicitly enabled OR queue driver is sync (tests).
+            $forceSync = filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
+                || config('queue.default') === 'sync';
+
+            if ($forceSync) {
+                $this->deliverDetailed($prepared);
 
                 return;
             }
@@ -114,41 +118,51 @@ class WhatsAppNotifier
      */
     public function deliver(array $messages, bool $skipDelay = false): bool
     {
+        return $this->deliverDetailed($messages, $skipDelay)->ok;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $messages
+     */
+    public function deliverDetailed(array $messages, bool $skipDelay = false): WahaResult
+    {
         try {
             $otpOnly = $messages !== [] && collect($messages)->every(
                 fn ($m) => (bool) ($m['is_otp'] ?? (($m['recipient_type'] ?? '') === 'otp'))
             );
 
-            // Marketing alerts respect WHATSAPP_NOTIFY_ENABLED.
-            // Auth OTP must still attempt WAHA when URL/session are configured.
             if (! $this->enabled() && ! $otpOnly) {
-                return false;
+                return WahaResult::failure(WahaResult::REASON_DISABLED);
             }
 
             if (! $this->enabled() && $otpOnly) {
                 Log::warning('[WhatsAppNotifier] WHATSAPP_NOTIFY_ENABLED is false — attempting OTP anyway');
             }
 
+            if ($this->isBreakerOpen()) {
+                return WahaResult::failure(WahaResult::REASON_BREAKER_OPEN, null, 'circuit breaker open');
+            }
+
             $prepared = $this->prepareMessages($messages);
             if ($prepared === []) {
-                return false;
+                return WahaResult::failure(WahaResult::REASON_SKIPPED, null, 'no messages');
             }
 
             $baseUrl = rtrim(trim((string) config('services.waha.url')), '/');
             if ($baseUrl === '') {
                 Log::error('[WhatsAppNotifier] WAHA_URL is empty');
 
-                return false;
+                return WahaResult::failure(WahaResult::REASON_CONFIG, null, 'WAHA_URL empty');
             }
 
             $session = $this->sessionName();
             if ($session === '') {
                 Log::error('[WhatsAppNotifier] WAHA_SESSION is empty');
 
-                return false;
+                return WahaResult::failure(WahaResult::REASON_CONFIG, null, 'WAHA_SESSION empty');
             }
 
-            $allOk = true;
+            $lastFailure = null;
             $isFirst = true;
 
             foreach ($prepared as $message) {
@@ -162,14 +176,14 @@ class WhatsAppNotifier
                 if (! $isOtp && $this->dailyLimitReached()) {
                     $this->logAttempt($message, 'skipped_limit', null, 'Daily limit reached');
                     $this->maybeAlertDailyLimit();
-                    $allOk = false;
+                    $lastFailure = WahaResult::failure(WahaResult::REASON_SKIPPED, null, 'daily limit');
 
                     continue;
                 }
 
                 if (! $this->isValidInternational($message['phone'])) {
                     $this->logAttempt($message, 'skipped_invalid_phone', null, 'Invalid international phone');
-                    $allOk = false;
+                    $lastFailure = WahaResult::failure(WahaResult::REASON_INVALID_PHONE);
 
                     continue;
                 }
@@ -178,51 +192,124 @@ class WhatsAppNotifier
                     continue;
                 }
 
-                $hasImage = $this->hasImagePayload($message['image'] ?? null);
-                $ok = false;
-                $channel = 'text';
-                $status = 'failed';
-                $error = null;
+                $result = $this->deliverOne($baseUrl, $session, $message, $isOtp);
+                if ($result->ok) {
+                    $this->markCoalesce($message);
+                    Cache::put(self::LAST_SUCCESS_CACHE_KEY, now()->toIso8601String(), now()->addDays(7));
 
-                if ($hasImage) {
-                    $ok = $this->sendImage($baseUrl, $session, $message['phone'], $message['text'], $message['image']);
-                    if ($ok) {
-                        $channel = 'image';
-                        $status = 'sent';
-                    } else {
-                        Log::warning('[WhatsAppNotifier] sendImage failed — fallback sendText', [
-                            'phone' => $message['phone'],
-                        ]);
-                        $ok = $this->sendText($baseUrl, $session, $message['phone'], $message['text']);
-                        if ($ok) {
-                            $channel = 'text';
-                            $status = 'fallback_text';
-                        } else {
-                            $error = 'image and text failed';
-                        }
-                    }
-                } else {
-                    $ok = $this->sendText($baseUrl, $session, $message['phone'], $message['text']);
-                    $status = $ok ? 'sent' : 'failed';
-                    if (! $ok) {
-                        $error = 'sendText failed';
-                    }
+                    continue;
                 }
 
-                $this->logAttempt($message, $status, $channel, $error);
-                if ($ok) {
-                    $this->markCoalesce($message);
-                } else {
-                    $allOk = false;
+                $lastFailure = $result;
+                if ($result->isSessionOrAuthFailure() || $result->reason === WahaResult::REASON_BREAKER_OPEN) {
+                    return $result;
                 }
             }
 
-            return $allOk;
+            return $lastFailure ?? WahaResult::success();
         } catch (\Throwable $e) {
             Log::error('[WhatsAppNotifier] deliver exception', ['error' => $e->getMessage()]);
+            $this->openBreaker('exception: '.$e->getMessage());
 
-            return false;
+            return WahaResult::failure(WahaResult::REASON_TIMEOUT, null, $e->getMessage());
         }
+    }
+
+    /** @param  array<string, mixed>  $message */
+    protected function deliverOne(string $baseUrl, string $session, array $message, bool $isOtp): WahaResult
+    {
+        $hasImage = $this->hasImagePayload($message['image'] ?? null);
+
+        if ($hasImage) {
+            $imageResult = $this->sendImage($baseUrl, $session, $message['phone'], $message['text'], $message['image'], $isOtp);
+            if ($imageResult->ok) {
+                $this->logAttempt($message, 'sent', 'image', null);
+
+                return $imageResult;
+            }
+
+            // Session/auth/timeout/breaker: do NOT try url or text — stop the storm.
+            if ($imageResult->isSessionOrAuthFailure() || $imageResult->reason === WahaResult::REASON_BREAKER_OPEN) {
+                $this->logAttempt($message, 'failed', 'image', $imageResult->reason);
+
+                return $imageResult;
+            }
+
+            // Media-specific failure only → one text fallback.
+            Log::warning('[WhatsAppNotifier] sendImage media error — fallback sendText', [
+                'phone' => $message['phone'],
+                'reason' => $imageResult->reason,
+            ]);
+            $textResult = $this->sendText($baseUrl, $session, $message['phone'], $message['text'], $isOtp);
+            if ($textResult->ok) {
+                $this->logAttempt($message, 'fallback_text', 'text', null);
+
+                return $textResult;
+            }
+            $this->logAttempt($message, 'failed', 'text', $textResult->reason);
+
+            return $textResult;
+        }
+
+        $textResult = $this->sendText($baseUrl, $session, $message['phone'], $message['text'], $isOtp);
+        $this->logAttempt(
+            $message,
+            $textResult->ok ? 'sent' : 'failed',
+            'text',
+            $textResult->ok ? null : $textResult->reason
+        );
+
+        return $textResult;
+    }
+
+    public function isBreakerOpen(): bool
+    {
+        return Cache::has(self::BREAKER_CACHE_KEY);
+    }
+
+    public function breakerReason(): ?string
+    {
+        $payload = Cache::get(self::BREAKER_CACHE_KEY);
+
+        return is_array($payload) ? (string) ($payload['reason'] ?? 'open') : (is_string($payload) ? $payload : null);
+    }
+
+    public function breakerOpenedAt(): ?string
+    {
+        $payload = Cache::get(self::BREAKER_CACHE_KEY);
+
+        return is_array($payload) ? ($payload['opened_at'] ?? null) : null;
+    }
+
+    public function resetBreaker(): void
+    {
+        Cache::forget(self::BREAKER_CACHE_KEY);
+    }
+
+    public function openBreaker(string $reason): void
+    {
+        $ttl = max(30, (int) config('services.waha.breaker_ttl', 300));
+        $already = $this->isBreakerOpen();
+        Cache::put(self::BREAKER_CACHE_KEY, [
+            'reason' => $reason,
+            'opened_at' => now()->toIso8601String(),
+        ], $ttl);
+
+        if (! $already) {
+            Log::error('WAHA DOWN: '.$reason, [
+                'breaker_ttl' => $ttl,
+            ]);
+        }
+    }
+
+    /** Cached health snapshot for admin UI /deep health (never calls WAHA live). */
+    public function cachedHealthSnapshot(): array
+    {
+        return Cache::get(self::HEALTH_CACHE_KEY, [
+            'ok' => null,
+            'reason' => 'unknown',
+            'checked_at' => null,
+        ]);
     }
 
     public function enabled(): bool
@@ -483,64 +570,59 @@ class WhatsAppNotifier
         ]);
     }
 
-    protected function sendText(string $baseUrl, string $session, string $phone, string $text): bool
+    protected function sendText(string $baseUrl, string $session, string $phone, string $text, bool $isOtp = false): WahaResult
     {
-        return $this->postJson($baseUrl.'/api/sendText', [
+        return $this->wahaRequest($baseUrl.'/api/sendText', [
             'session' => $session,
             'chatId' => $phone.'@c.us',
             'text' => $text,
-        ], $phone, 'sendText');
+        ], $phone, 'sendText', $isOtp);
     }
 
     /**
+     * Try ONE image mode only: base64 preferred, else url. No serial storm.
+     *
      * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string}  $image
      */
-    protected function sendImage(string $baseUrl, string $session, string $phone, string $caption, string|array $image): bool
-    {
+    protected function sendImage(
+        string $baseUrl,
+        string $session,
+        string $phone,
+        string $caption,
+        string|array $image,
+        bool $isOtp = false,
+    ): WahaResult {
         $endpoint = $baseUrl.'/api/sendImage';
         $chatId = $phone.'@c.us';
-        $attempts = [];
 
         if (is_array($image) && filled($image['base64'] ?? null)) {
-            $attempts[] = [
-                'mode' => 'base64',
-                'payload' => [
-                    'session' => $session,
-                    'chatId' => $chatId,
-                    'caption' => $caption,
-                    'file' => [
-                        'mimetype' => (string) ($image['mimetype'] ?? 'image/jpeg'),
-                        'filename' => (string) ($image['filename'] ?? 'mg-card.jpg'),
-                        'data' => (string) $image['base64'],
-                    ],
+            return $this->wahaRequest($endpoint, [
+                'session' => $session,
+                'chatId' => $chatId,
+                'caption' => $caption,
+                'file' => [
+                    'mimetype' => (string) ($image['mimetype'] ?? 'image/jpeg'),
+                    'filename' => (string) ($image['filename'] ?? 'mg-card.jpg'),
+                    'data' => (string) $image['base64'],
                 ],
-            ];
+            ], $phone, 'sendImage:base64', $isOtp);
         }
 
         $url = is_array($image) ? ($image['url'] ?? null) : $image;
         if (filled($url) && ! $this->urlLooksLocal((string) $url)) {
-            $attempts[] = [
-                'mode' => 'url',
-                'payload' => [
-                    'session' => $session,
-                    'chatId' => $chatId,
-                    'caption' => $caption,
-                    'file' => [
-                        'mimetype' => 'image/jpeg',
-                        'filename' => 'mg-card.jpg',
-                        'url' => (string) $url,
-                    ],
+            return $this->wahaRequest($endpoint, [
+                'session' => $session,
+                'chatId' => $chatId,
+                'caption' => $caption,
+                'file' => [
+                    'mimetype' => 'image/jpeg',
+                    'filename' => 'mg-card.jpg',
+                    'url' => (string) $url,
                 ],
-            ];
+            ], $phone, 'sendImage:url', $isOtp);
         }
 
-        foreach ($attempts as $attempt) {
-            if ($this->postJson($endpoint, $attempt['payload'], $phone, 'sendImage:'.$attempt['mode'])) {
-                return true;
-            }
-        }
-
-        return false;
+        return WahaResult::failure(WahaResult::REASON_MEDIA_ERROR, null, 'no usable image payload');
     }
 
     protected function urlLooksLocal(string $url): bool
@@ -561,99 +643,101 @@ class WhatsAppNotifier
         return is_array($image) && (filled($image['base64'] ?? null) || filled($image['url'] ?? null));
     }
 
-    /** @param  array<string, mixed>  $payload */
-    protected function postJson(string $endpoint, array $payload, string $phone, string $action): bool
-    {
+    /**
+     * Single choke point for all WAHA HTTP calls.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function wahaRequest(
+        string $endpoint,
+        array $payload,
+        string $phone,
+        string $action,
+        bool $isOtp = false,
+    ): WahaResult {
+        if ($this->isBreakerOpen()) {
+            return WahaResult::failure(WahaResult::REASON_BREAKER_OPEN);
+        }
+
         try {
-            $response = $this->wahaHttp()->post($endpoint, $payload);
+            $response = $this->wahaHttp($isOtp)->post($endpoint, $payload);
 
             if ($response->successful()) {
-                return true;
+                return WahaResult::success($response->status());
             }
 
+            $status = $response->status();
             $body = $response->body();
+            $result = $this->classifyHttpFailure($status, $body);
 
-            // Session FAILED/STOPPED — one restart then one retry (OTP recovery).
-            if ($this->bodyLooksLikeDeadSession($body) && $this->restartWahaSessionOnce()) {
-                sleep(2);
-                $retry = $this->wahaHttp()->post($endpoint, $payload);
-                if ($retry->successful()) {
-                    Log::info('[WhatsAppNotifier] WAHA '.$action.' ok after session restart', [
-                        'phone' => $phone,
-                    ]);
-
-                    return true;
-                }
-                $body = $retry->body();
+            if ($result->shouldOpenBreaker()) {
+                $this->openBreaker($result->reason.($result->detail ? ': '.$result->detail : ''));
             }
 
-            if (strlen($body) > 500) {
-                $body = substr($body, 0, 500).'…';
-            }
+            $logBody = strlen($body) > 500 ? substr($body, 0, 500).'…' : $body;
             Log::error('[WhatsAppNotifier] WAHA '.$action.' failed', [
-                'status' => $response->status(),
+                'status' => $status,
                 'phone' => $phone,
                 'session' => $this->sessionName(),
-                'reason' => $body,
+                'reason' => $result->reason,
+                'body' => $logBody,
             ]);
 
-            return false;
+            return $result;
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $this->openBreaker('timeout: '.$e->getMessage());
+            Log::error('[WhatsAppNotifier] WAHA '.$action.' timeout', [
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+
+            return WahaResult::failure(WahaResult::REASON_TIMEOUT, null, $e->getMessage());
         } catch (\Throwable $e) {
+            $this->openBreaker('exception: '.$e->getMessage());
             Log::error('[WhatsAppNotifier] WAHA '.$action.' exception', [
                 'phone' => $phone,
                 'error' => $e->getMessage(),
             ]);
 
-            return false;
+            return WahaResult::failure(WahaResult::REASON_TIMEOUT, null, $e->getMessage());
         }
     }
 
-    protected function wahaHttp(): \Illuminate\Http\Client\PendingRequest
+    protected function classifyHttpFailure(int $status, string $body): WahaResult
     {
-        return Http::timeout(20)
-            ->retry(2, 200, throw: false)
+        if ($status === 401 || $status === 403) {
+            return WahaResult::failure(WahaResult::REASON_UNAUTHORIZED, $status, 'auth failed');
+        }
+
+        $lower = strtolower($body);
+        if ($status === 422 || str_contains($lower, 'session status is not as expected')
+            || str_contains($lower, '"status":"failed"')
+            || str_contains($lower, '"status":"scan_qr_code"')
+            || str_contains($lower, 'scan_qr_code')) {
+            return WahaResult::failure(WahaResult::REASON_SESSION_DOWN, $status, 'session not WORKING');
+        }
+
+        if ($status >= 500) {
+            return WahaResult::failure(WahaResult::REASON_HTTP_ERROR, $status, 'server error');
+        }
+
+        // Likely media/payload issue — do not open breaker for generic 4xx.
+        return WahaResult::failure(WahaResult::REASON_MEDIA_ERROR, $status, 'http '.$status);
+    }
+
+    protected function wahaHttp(bool $isOtp = false): \Illuminate\Http\Client\PendingRequest
+    {
+        $connect = max(1, (int) config('services.waha.connect_timeout', 3));
+        $timeout = $isOtp
+            ? max(2, (int) config('services.waha.otp_timeout', 6))
+            : max(2, (int) config('services.waha.timeout', 6));
+
+        return Http::connectTimeout($connect)
+            ->timeout($timeout)
             ->withHeaders([
                 'X-Api-Key' => (string) config('services.waha.key'),
                 'Accept' => 'application/json',
                 'Content-Type' => 'application/json',
             ]);
-    }
-
-    protected function bodyLooksLikeDeadSession(string $body): bool
-    {
-        $lower = strtolower($body);
-
-        return str_contains($lower, '"status":"failed"')
-            || str_contains($lower, '"status":"stopped"')
-            || str_contains($lower, 'session status is not as expected');
-    }
-
-    /**
-     * At most one restart attempt per process window (Cache lock).
-     */
-    protected function restartWahaSessionOnce(): bool
-    {
-        $session = $this->sessionName();
-        $base = rtrim(trim((string) config('services.waha.url')), '/');
-        if ($session === '' || $base === '') {
-            return false;
-        }
-
-        $lockKey = 'waha:session_restart:'.$session;
-        if (! Cache::add($lockKey, 1, now()->addMinutes(2))) {
-            return false;
-        }
-
-        try {
-            Log::warning('[WhatsAppNotifier] restarting FAILED WAHA session', ['session' => $session]);
-            $response = $this->wahaHttp()->timeout(45)
-                ->post("{$base}/api/sessions/{$session}/restart");
-
-            return $response->successful() || $response->status() < 500;
-        } catch (\Throwable $e) {
-            Log::error('[WhatsAppNotifier] session restart failed', ['error' => $e->getMessage()]);
-
-            return false;
-        }
     }
 }

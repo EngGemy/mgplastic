@@ -90,9 +90,9 @@ return [
             explode(',', (string) env('WHATSAPP_ADMIN_PHONES', '201030003186,218912159316'))
         ))),
         'default_country_code' => preg_replace('/\D+/', '', (string) env('WHATSAPP_DEFAULT_COUNTRY_CODE', '218')) ?: '218',
-        // Dedicated queue when WAHA_SYNC_ALERTS=false
+        // Dedicated queue when WAHA_SYNC_ALERTS=false (default — never block web requests)
         'queue' => env('WAHA_QUEUE', 'whatsapp'),
-        'sync_alerts' => filter_var(env('WAHA_SYNC_ALERTS', true), FILTER_VALIDATE_BOOLEAN),
+        'sync_alerts' => filter_var(env('WAHA_SYNC_ALERTS', false), FILTER_VALIDATE_BOOLEAN),
         'app_url' => env('MG_APP_URL', env('PLUMBER_APP_URL', env('APP_URL'))),
         'brand_image_url' => env('WAHA_BRAND_IMAGE_URL'),
         'brand_image_path' => env('WAHA_BRAND_IMAGE_PATH'),
@@ -112,6 +112,11 @@ return [
         ))),
         'card_size' => env('WHATSAPP_CARD_SIZE', '1080x1350'),
         'card_quality' => max(60, min(95, (int) env('WHATSAPP_CARD_QUALITY', 85))),
+        // Circuit breaker + HTTP budgets (shared hosting — never hang web workers)
+        'breaker_ttl' => max(30, (int) env('WAHA_BREAKER_TTL', 300)),
+        'connect_timeout' => max(1, (int) env('WAHA_CONNECT_TIMEOUT', 3)),
+        'timeout' => max(2, (int) env('WAHA_TIMEOUT', 6)),
+        'otp_timeout' => max(2, (int) env('WAHA_OTP_TIMEOUT', 6)),
     ],
 
     /*

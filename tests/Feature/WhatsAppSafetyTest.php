@@ -199,10 +199,10 @@ class WhatsAppSafetyTest extends TestCase
                 ->push(['status' => 'WORKING'], 200),
         ]);
 
-        $this->artisan('whatsapp:health')->assertSuccessful();
+        $this->artisan('whatsapp:health')->assertFailed();
         Mail::assertSent(WhatsAppSessionAlertMail::class, fn ($m) => $m->kind === 'down');
 
-        $this->artisan('whatsapp:health')->assertSuccessful();
+        $this->artisan('whatsapp:health')->assertFailed();
         Mail::assertSent(WhatsAppSessionAlertMail::class, 1);
 
         $this->artisan('whatsapp:health')->assertSuccessful();
