@@ -22,10 +22,18 @@ class ClaimController extends Controller
 
     public function index()
     {
+        $claims = Claim::latest()->paginate(50);
+
         return response()->json([
             'status' => true,
             'message' => 'List of all submitted claims',
-            'data' => Claim::latest()->get(),
+            'data' => $claims->items(),
+            'meta' => [
+                'current_page' => $claims->currentPage(),
+                'last_page' => $claims->lastPage(),
+                'per_page' => $claims->perPage(),
+                'total' => $claims->total(),
+            ],
         ]);
     }
 }

@@ -42,6 +42,11 @@ return [
     'debug' => (bool) env('APP_DEBUG', false),
 
     /*
+    | Slow SQL threshold (ms) for performance channel logging (bindings never logged).
+    */
+    'slow_query_ms' => (int) env('SLOW_QUERY_MS', 500),
+
+    /*
     |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------

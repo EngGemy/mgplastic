@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         __DIR__.'/../app/Console/Commands',
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(\App\Http\Middleware\LogSlowRequests::class);
         $middleware->api(
             prepend: [
                 \App\Http\Middleware\ResolveLocale::class,

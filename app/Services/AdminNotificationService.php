@@ -103,16 +103,17 @@ class AdminNotificationService
         array $meta = [],
         bool $sendPush = true,
     ): int {
-        return self::sendToMany(
-            User::query()->where('role', $role)->where('is_active', true)->get(),
-            $title,
-            $body,
-            $status,
-            $url,
-            $actionLabel,
-            $meta,
-            $sendPush,
-        );
+        $count = 0;
+        User::query()
+            ->where('role', $role)
+            ->where('is_active', true)
+            ->select(['id', 'role', 'is_active', 'name', 'phone', 'fcm_token'])
+            ->orderBy('id')
+            ->chunkById(200, function ($users) use (&$count, $title, $body, $status, $url, $actionLabel, $meta, $sendPush) {
+                $count += self::sendToMany($users, $title, $body, $status, $url, $actionLabel, $meta, $sendPush);
+            });
+
+        return $count;
     }
 
     /**
@@ -127,16 +128,16 @@ class AdminNotificationService
         array $meta = [],
         bool $sendPush = true,
     ): int {
-        return self::sendToMany(
-            User::query()->where('is_active', true)->get(),
-            $title,
-            $body,
-            $status,
-            $url,
-            $actionLabel,
-            $meta,
-            $sendPush,
-        );
+        $count = 0;
+        User::query()
+            ->where('is_active', true)
+            ->select(['id', 'role', 'is_active', 'name', 'phone', 'fcm_token'])
+            ->orderBy('id')
+            ->chunkById(200, function ($users) use (&$count, $title, $body, $status, $url, $actionLabel, $meta, $sendPush) {
+                $count += self::sendToMany($users, $title, $body, $status, $url, $actionLabel, $meta, $sendPush);
+            });
+
+        return $count;
     }
 
     /**

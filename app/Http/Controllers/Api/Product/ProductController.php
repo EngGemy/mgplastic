@@ -68,7 +68,7 @@ class ProductController extends Controller
 
         // Accessories / grouped: return full tag tree (sorted), not a random page order.
         if ($groupedAll || $request->filled('category_id') || $request->filled('parent_id')) {
-            $products = $this->sortProductsByTagNumber((clone $query)->limit(500)->get(), $sizeOrder);
+            $products = $this->sortProductsByTagNumber((clone $query)->limit(200)->get(), $sizeOrder);
             $groups = $this->buildTagGroups($products, $sizeOrder);
 
             return $this->productsListResponse(
@@ -88,7 +88,7 @@ class ProductController extends Controller
         $perPage = min(max((int) $request->query('per_page', 20), 1), 100);
         $page = $query->latest('id')->paginate($perPage);
         $allForGroups = $this->sortProductsByTagNumber(
-            (clone $query)->with($this->productRelations())->limit(500)->get(),
+            (clone $query)->with($this->productRelations())->limit(200)->get(),
             $sizeOrder,
         );
         $groups = $this->buildTagGroups($allForGroups, $sizeOrder);
@@ -236,7 +236,7 @@ class ProductController extends Controller
             || in_array(strtolower((string) $request->query('product_family', $request->query('type', ''))), ['accessory', 'accessories', 'ملحقات'], true);
 
         // Always return tag-sorted groups for category/system screens (ملحقات accordion).
-        $products = $this->sortProductsByTagNumber((clone $query)->limit(500)->get(), $sizeOrder);
+        $products = $this->sortProductsByTagNumber((clone $query)->limit(200)->get(), $sizeOrder);
         $groups = $this->buildTagGroups($products, $sizeOrder);
 
         if ($forceGrouped || $perPage <= 0) {

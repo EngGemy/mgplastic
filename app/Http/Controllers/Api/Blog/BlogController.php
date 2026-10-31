@@ -60,11 +60,20 @@ class BlogController extends Controller
     // List blogs (only approved for public)
     public function index()
     {
-        $blogs = Blog::with(['category', 'author'])->where('status', 'approved')->latest()->get();
+        $blogs = Blog::with(['category', 'author'])
+            ->where('status', 'approved')
+            ->latest()
+            ->paginate(30);
 
         return response()->json([
             'status' => true,
-            'data' => $blogs->map(fn (Blog $blog) => $this->blogPayload($blog))->values(),
+            'data' => $blogs->getCollection()->map(fn (Blog $blog) => $this->blogPayload($blog))->values(),
+            'meta' => [
+                'current_page' => $blogs->currentPage(),
+                'last_page' => $blogs->lastPage(),
+                'per_page' => $blogs->perPage(),
+                'total' => $blogs->total(),
+            ],
         ]);
     }
 

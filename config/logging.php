@@ -73,6 +73,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Independent of LOG_LEVEL=error — slow requests/queries always visible here.
+        'performance' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/performance.log'),
+            'level' => 'debug',
+            'days' => 14,
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

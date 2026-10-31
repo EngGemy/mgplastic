@@ -148,20 +148,32 @@ class WarrantyResource extends Resource
                 Tables\Actions\Action::make('export')
                     ->label('تصدير CSV')
                     ->action(function () {
-                        $rows = Warranty::query()->with('plumber')->latest()->limit(2000)->get();
-                        $csv = "code,plumber,customer,status,issued_at,expires_at\n";
-                        foreach ($rows as $r) {
-                            $csv .= implode(',', [
-                                $r->code,
-                                '"'.str_replace('"', '', (string) $r->plumber?->name).'"',
-                                '"'.str_replace('"', '', $r->customer_name).'"',
-                                $r->status,
-                                optional($r->issued_at)->toDateString(),
-                                optional($r->expires_at)->toDateString(),
-                            ])."\n";
-                        }
                         $path = 'exports/warranties-'.now()->format('YmdHis').'.csv';
-                        Storage::disk('public')->put($path, $csv);
+                        $disk = Storage::disk('public');
+                        $disk->makeDirectory('exports');
+                        $absolute = $disk->path($path);
+                        $handle = fopen($absolute, 'wb');
+                        if ($handle === false) {
+                            throw new \RuntimeException('تعذّر فتح ملف التصدير');
+                        }
+                        fputcsv($handle, ['code', 'plumber', 'customer', 'status', 'issued_at', 'expires_at']);
+                        Warranty::query()
+                            ->with('plumber:id,name')
+                            ->latest('id')
+                            ->limit(5000)
+                            ->chunkById(250, function ($rows) use ($handle) {
+                                foreach ($rows as $r) {
+                                    fputcsv($handle, [
+                                        $r->code,
+                                        (string) $r->plumber?->name,
+                                        (string) $r->customer_name,
+                                        $r->status,
+                                        optional($r->issued_at)->toDateString(),
+                                        optional($r->expires_at)->toDateString(),
+                                    ]);
+                                }
+                            });
+                        fclose($handle);
 
                         return redirect(url('storage/'.$path));
                     }),

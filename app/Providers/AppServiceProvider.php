@@ -6,9 +6,12 @@ use App\Ai\AdminToolRegistry;
 use App\Models\InvoiceDistribution;
 use App\Policies\InvoiceDistributionPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use App\Validation\ArabicValidator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
@@ -35,6 +38,21 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->environment('production')) {
             config(['app.debug' => false]);
         }
+
+        // Fail loudly on N+1 in local/test; keep production tolerant.
+        Model::preventLazyLoading(! $this->app->isProduction());
+
+        $slowMs = max(50, (int) config('app.slow_query_ms', 500));
+        DB::listen(function ($query) use ($slowMs) {
+            if ((float) $query->time < $slowMs) {
+                return;
+            }
+            Log::channel('performance')->warning('slow_query', [
+                'sql' => $query->sql, // placeholders only — never bindings (PII)
+                'time_ms' => (int) round((float) $query->time),
+                'connection' => $query->connectionName,
+            ]);
+        });
 
         Gate::policy(InvoiceDistribution::class, InvoiceDistributionPolicy::class);
 
