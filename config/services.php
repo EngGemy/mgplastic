@@ -136,6 +136,12 @@ return [
         'enabled' => (bool) env('FCM_ENABLED', true),
         'project_id' => env('FCM_PROJECT_ID', 'mg-plumbers'),
         'queue' => env('FCM_QUEUE', 'default'),
+        // Prefer FIREBASE_CREDENTIALS (same as config/firebase.php) — never call env() from services.
+        'credentials' => env('FIREBASE_CREDENTIALS', env('GOOGLE_APPLICATION_CREDENTIALS')),
+    ],
+
+    'health' => [
+        'deep_token' => env('HEALTH_DEEP_TOKEN'),
     ],
 
     'ffmpeg' => [

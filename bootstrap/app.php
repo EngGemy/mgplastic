@@ -13,6 +13,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function () {
             require __DIR__.'/../routes/mcp.php';
+            \Illuminate\Support\Facades\Route::get('/health/deep', \App\Http\Controllers\HealthDeepController::class)
+                ->middleware('throttle:30,1');
         },
     )
     ->withCommands([

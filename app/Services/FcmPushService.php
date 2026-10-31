@@ -24,8 +24,7 @@ class FcmPushService
 
         $credentials = (string) (
             config('firebase.projects.app.credentials')
-            ?: env('FIREBASE_CREDENTIALS')
-            ?: env('GOOGLE_APPLICATION_CREDENTIALS')
+            ?: config('services.fcm.credentials')
             ?: ''
         );
 

@@ -72,7 +72,7 @@ Route::middleware('api')->prefix('v1/auth')->group(function () {
     // Forgot by phone
     Route::post('forgot-password/send-otp', [PasswordResetByPhoneController::class, 'sendOtp'])->middleware('throttle:3,1');
     Route::post('forgot-password/verify-otp', [PasswordResetByPhoneController::class, 'verifyOtp'])->middleware('throttle:6,1'); // optional
-    Route::post('forgot-password/reset', [PasswordResetByPhoneController::class, 'reset']);
+    Route::post('forgot-password/reset', [PasswordResetByPhoneController::class, 'reset'])->middleware('throttle:6,1');
 
 });
 
