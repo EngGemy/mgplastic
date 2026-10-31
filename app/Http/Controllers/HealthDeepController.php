@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\WhatsAppNotifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -47,7 +46,12 @@ class HealthDeepController extends Controller
         } catch (\Throwable) {
         }
 
-        $waha = app(WhatsAppNotifier::class)->cachedHealthSnapshot();
+        // Cached snapshot only — never call WAHA from HTTP.
+        $waha = Cache::get('waha:health_snapshot', [
+            'ok' => null,
+            'reason' => 'unknown',
+            'checked_at' => null,
+        ]);
         $diskFree = @disk_free_space(base_path()) ?: 0;
         $diskTotal = @disk_total_space(base_path()) ?: 0;
         $diskFreePct = $diskTotal > 0 ? round(($diskFree / $diskTotal) * 100, 1) : null;
