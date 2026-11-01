@@ -132,7 +132,8 @@ class ForgotPasswordOtpTest extends TestCase
             'channel' => 'whatsapp',
         ])
             ->assertStatus(422)
-            ->assertJsonPath('code', 'otp_send_failed');
+            ->assertJsonPath('code', 'otp_send_failed')
+            ->assertJsonPath('sms_available', true);
 
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'marsol.ly'));
     }
