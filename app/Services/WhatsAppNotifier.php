@@ -20,6 +20,8 @@ class WhatsAppNotifier
 
     public const LAST_SUCCESS_CACHE_KEY = 'waha:last_success_at';
 
+    public const READ_TIMEOUT_STREAK_KEY = 'waha:read_timeout_streak';
+
     /**
      * Immediate send (OTP). Never fans out to admins. Never delayed / never counts toward daily limit.
      *
@@ -27,14 +29,33 @@ class WhatsAppNotifier
      */
     public function send(string $phone, string $text, string|array|null $image = null): bool
     {
-        return $this->deliverDetailed([[
+        return $this->sendDetailed($phone, $text, $image)->ok;
+    }
+
+    /**
+     * OTP send returning full WahaResult (incl. deliveryUnknown on read timeout).
+     *
+     * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string}|null  $image
+     */
+    public function sendDetailed(string $phone, string $text, string|array|null $image = null): WahaResult
+    {
+        // OTP must never block on a branded image — text only in-request.
+        // Any card is queued as a follow-up that cannot affect the OTP result.
+        $followUpImage = $image;
+        $result = $this->deliverDetailed([[
             'phone' => $phone,
             'text' => $text,
-            'image' => $image,
+            'image' => null,
             'event' => 'otp',
             'recipient_type' => 'otp',
             'is_otp' => true,
-        ]], skipDelay: true)->ok;
+        ]], skipDelay: true);
+
+        if ($this->hasImagePayload($followUpImage) && ($result->ok || $result->deliveryUnknown)) {
+            $this->queueOtpBrandFollowUp($phone, $followUpImage);
+        }
+
+        return $result;
     }
 
     /**
@@ -195,7 +216,15 @@ class WhatsAppNotifier
                 $result = $this->deliverOne($baseUrl, $session, $message, $isOtp);
                 if ($result->ok) {
                     $this->markCoalesce($message);
+                    $this->clearReadTimeoutStreak();
                     Cache::put(self::LAST_SUCCESS_CACHE_KEY, now()->toIso8601String(), now()->addDays(7));
+
+                    continue;
+                }
+
+                if ($result->deliveryUnknown) {
+                    // Delivery unknown — do not treat as hard failure for the batch.
+                    $lastFailure = $result;
 
                     continue;
                 }
@@ -209,15 +238,33 @@ class WhatsAppNotifier
             return $lastFailure ?? WahaResult::success();
         } catch (\Throwable $e) {
             Log::error('[WhatsAppNotifier] deliver exception', ['error' => $e->getMessage()]);
-            $this->openBreaker('exception: '.$e->getMessage());
+            $classified = $this->classifyConnectionFailure($e);
+            if ($classified->shouldOpenBreaker()) {
+                $this->openBreaker('exception: '.$e->getMessage());
+            } elseif ($classified->deliveryUnknown && $this->recordReadTimeoutTowardBreaker()) {
+                $this->openBreaker('read_timeout_streak: '.$e->getMessage());
+            }
 
-            return WahaResult::failure(WahaResult::REASON_TIMEOUT, null, $e->getMessage());
+            return $classified;
         }
     }
 
     /** @param  array<string, mixed>  $message */
     protected function deliverOne(string $baseUrl, string $session, array $message, bool $isOtp): WahaResult
     {
+        // OTP code message: at most one WAHA HTTP call (plain text). Brand cards use event=otp_card.
+        if ($isOtp && ($message['event'] ?? 'otp') === 'otp') {
+            $textResult = $this->sendText($baseUrl, $session, $message['phone'], $message['text'], true);
+            $this->logAttempt(
+                $message,
+                $textResult->ok ? 'sent' : ($textResult->deliveryUnknown ? 'pending' : 'failed'),
+                'text',
+                $textResult->ok ? null : $textResult->reason
+            );
+
+            return $textResult;
+        }
+
         $hasImage = $this->hasImagePayload($message['image'] ?? null);
 
         if ($hasImage) {
@@ -656,13 +703,19 @@ class WhatsAppNotifier
         bool $isOtp = false,
     ): WahaResult {
         if ($this->isBreakerOpen()) {
-            return WahaResult::failure(WahaResult::REASON_BREAKER_OPEN);
+            return WahaResult::failure(WahaResult::REASON_BREAKER_OPEN, null, 'circuit breaker open');
         }
+
+        $started = microtime(true);
 
         try {
             $response = $this->wahaHttp($isOtp)->post($endpoint, $payload);
+            $elapsedMs = (int) round((microtime(true) - $started) * 1000);
 
+            // Success = any 2xx (200, 201, empty body, JSON body).
             if ($response->successful()) {
+                $this->clearReadTimeoutStreak();
+
                 return WahaResult::success($response->status());
             }
 
@@ -677,29 +730,167 @@ class WhatsAppNotifier
             $logBody = strlen($body) > 500 ? substr($body, 0, 500).'…' : $body;
             Log::error('[WhatsAppNotifier] WAHA '.$action.' failed', [
                 'status' => $status,
-                'phone' => $phone,
+                'phone' => $this->maskPhone($phone),
                 'session' => $this->sessionName(),
                 'reason' => $result->reason,
+                'elapsed_ms' => $elapsedMs,
+                'breaker_state' => $this->isBreakerOpen() ? 'open' : 'closed',
                 'body' => $logBody,
             ]);
 
             return $result;
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            $this->openBreaker('timeout: '.$e->getMessage());
+            $elapsedMs = (int) round((microtime(true) - $started) * 1000);
+            $result = $this->classifyConnectionFailure($e);
+
+            if ($result->deliveryUnknown) {
+                if ($this->recordReadTimeoutTowardBreaker()) {
+                    $this->openBreaker('read_timeout_streak: '.$e->getMessage());
+                }
+                Log::warning('[WhatsAppNotifier] WAHA '.$action.' delivery_unknown', [
+                    'phone' => $this->maskPhone($phone),
+                    'reason' => $result->reason,
+                    'elapsed_ms' => $elapsedMs,
+                    'breaker_state' => $this->isBreakerOpen() ? 'open' : 'closed',
+                    'error' => $e->getMessage(),
+                ]);
+
+                return $result;
+            }
+
+            if ($result->shouldOpenBreaker()) {
+                $this->openBreaker('timeout: '.$e->getMessage());
+            }
+
             Log::error('[WhatsAppNotifier] WAHA '.$action.' timeout', [
-                'phone' => $phone,
+                'phone' => $this->maskPhone($phone),
+                'reason' => $result->reason,
+                'elapsed_ms' => $elapsedMs,
+                'breaker_state' => $this->isBreakerOpen() ? 'open' : 'closed',
                 'error' => $e->getMessage(),
             ]);
 
-            return WahaResult::failure(WahaResult::REASON_TIMEOUT, null, $e->getMessage());
+            return $result;
         } catch (\Throwable $e) {
-            $this->openBreaker('exception: '.$e->getMessage());
+            $elapsedMs = (int) round((microtime(true) - $started) * 1000);
+            $result = $this->classifyConnectionFailure($e);
+
+            if ($result->deliveryUnknown) {
+                if ($this->recordReadTimeoutTowardBreaker()) {
+                    $this->openBreaker('read_timeout_streak: '.$e->getMessage());
+                }
+            } elseif ($result->shouldOpenBreaker()) {
+                $this->openBreaker('exception: '.$e->getMessage());
+            }
+
             Log::error('[WhatsAppNotifier] WAHA '.$action.' exception', [
-                'phone' => $phone,
+                'phone' => $this->maskPhone($phone),
+                'reason' => $result->reason,
+                'elapsed_ms' => $elapsedMs,
+                'breaker_state' => $this->isBreakerOpen() ? 'open' : 'closed',
                 'error' => $e->getMessage(),
             ]);
 
+            return $result;
+        }
+    }
+
+    /**
+     * Classify network errors: read timeout => delivery unknown; connect/DNS => hard fail.
+     */
+    protected function classifyConnectionFailure(\Throwable $e): WahaResult
+    {
+        $lower = strtolower($e->getMessage());
+
+        $isConnectPhase = str_contains($lower, 'failed to connect')
+            || str_contains($lower, 'could not resolve')
+            || str_contains($lower, 'name or service not known')
+            || str_contains($lower, 'connection refused')
+            || str_contains($lower, 'connection timed out')
+            || str_contains($lower, 'resolving timed out')
+            || str_contains($lower, 'curl error 6')
+            || str_contains($lower, 'curl error 7');
+
+        // Explicit read/response timeout — WAHA may already have accepted the send.
+        $isReadTimeout = str_contains($lower, '0 bytes received')
+            || str_contains($lower, 'operation timed out')
+            || (str_contains($lower, 'curl error 28') && ! $isConnectPhase);
+
+        if ($isReadTimeout && ! $isConnectPhase) {
+            return WahaResult::deliveryUnknown($e->getMessage());
+        }
+
+        if ($isConnectPhase) {
             return WahaResult::failure(WahaResult::REASON_TIMEOUT, null, $e->getMessage());
+        }
+
+        // Ambiguous network error — treat as delivery unknown for SEND safety (OTP).
+        if (str_contains($lower, 'timed out') || str_contains($lower, 'timeout')) {
+            return WahaResult::deliveryUnknown($e->getMessage());
+        }
+
+        return WahaResult::failure(WahaResult::REASON_TIMEOUT, null, $e->getMessage());
+    }
+
+    /** @return bool true when the breaker should open after this streak hit */
+    protected function recordReadTimeoutTowardBreaker(): bool
+    {
+        $need = max(1, (int) config('services.waha.timeout_trip_count', 3));
+        $window = max(10, (int) config('services.waha.timeout_trip_window', 60));
+        $count = (int) Cache::get(self::READ_TIMEOUT_STREAK_KEY, 0) + 1;
+        Cache::put(self::READ_TIMEOUT_STREAK_KEY, $count, $window);
+
+        return $count >= $need;
+    }
+
+    protected function clearReadTimeoutStreak(): void
+    {
+        Cache::forget(self::READ_TIMEOUT_STREAK_KEY);
+    }
+
+    protected function maskPhone(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?: '';
+        if (strlen($digits) < 4) {
+            return '****';
+        }
+
+        return str_repeat('*', max(0, strlen($digits) - 4)).substr($digits, -4);
+    }
+
+    /**
+     * @param  string|array{url?:string,base64?:string,mimetype?:string,filename?:string}  $image
+     */
+    protected function queueOtpBrandFollowUp(string $phone, string|array $image): void
+    {
+        try {
+            $forceSync = filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
+                || config('queue.default') === 'sync';
+
+            $payload = [[
+                'phone' => $phone,
+                'text' => WhatsAppMessage::COMPANY,
+                'image' => $image,
+                'event' => 'otp_card',
+                'recipient_type' => 'otp',
+                'is_otp' => true,
+            ]];
+
+            if ($forceSync) {
+                // Still must not affect OTP result — fire and ignore.
+                $this->deliverDetailed($payload, skipDelay: true);
+
+                return;
+            }
+
+            SendWhatsAppNotification::dispatch($payload)
+                ->onQueue((string) config('services.waha.queue', 'whatsapp'))
+                ->afterCommit();
+        } catch (\Throwable $e) {
+            Log::warning('[WhatsAppNotifier] OTP brand follow-up queue failed', [
+                'phone' => $this->maskPhone($phone),
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -727,10 +918,16 @@ class WhatsAppNotifier
 
     protected function wahaHttp(bool $isOtp = false): \Illuminate\Http\Client\PendingRequest
     {
-        $connect = max(1, (int) config('services.waha.connect_timeout', 3));
-        $timeout = $isOtp
-            ? max(2, (int) config('services.waha.otp_timeout', 6))
-            : max(2, (int) config('services.waha.timeout', 6));
+        $budget = $isOtp
+            ? (array) config('services.waha.timeouts.otp', [])
+            : (array) config('services.waha.timeouts.reminders', []);
+
+        $connect = max(1, (int) ($budget['connect'] ?? config('services.waha.connect_timeout', 3)));
+        $timeout = max(2, (int) ($budget['total'] ?? (
+            $isOtp
+                ? config('services.waha.otp_timeout', 15)
+                : config('services.waha.timeout', 6)
+        )));
 
         return Http::connectTimeout($connect)
             ->timeout($timeout)
