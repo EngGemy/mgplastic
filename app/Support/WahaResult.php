@@ -31,6 +31,7 @@ final class WahaResult
         public readonly string $reason = self::REASON_OK,
         public readonly ?int $status = null,
         public readonly ?string $detail = null,
+        public readonly bool $deliveryUnknown = false,
     ) {}
 
     public static function success(?int $status = 200): self
@@ -40,11 +41,24 @@ final class WahaResult
 
     public static function failure(string $reason, ?int $status = null, ?string $detail = null): self
     {
-        return new self(false, $reason, $status, $detail);
+        return new self(false, $reason, $status, $detail, false);
+    }
+
+    /**
+     * Read/response timeout on a SEND — WAHA may have accepted the message.
+     * Never treat as a hard failure for OTP; do not open the breaker alone.
+     */
+    public static function deliveryUnknown(?string $detail = null): self
+    {
+        return new self(false, self::REASON_TIMEOUT, null, $detail, true);
     }
 
     public function isSessionOrAuthFailure(): bool
     {
+        if ($this->deliveryUnknown) {
+            return false;
+        }
+
         return in_array($this->reason, [
             self::REASON_UNAUTHORIZED,
             self::REASON_SESSION_DOWN,
@@ -55,11 +69,19 @@ final class WahaResult
 
     public function shouldOpenBreaker(): bool
     {
+        if ($this->deliveryUnknown) {
+            return false;
+        }
+
+        if ($this->reason === self::REASON_TIMEOUT) {
+            // Connect/DNS/refused — hard network failure.
+            return true;
+        }
+
         return in_array($this->reason, [
             self::REASON_UNAUTHORIZED,
             self::REASON_SESSION_DOWN,
-            self::REASON_TIMEOUT,
             self::REASON_HTTP_ERROR,
-        ], true) && ($this->status === null || $this->status === 401 || $this->status >= 500 || $this->status === 422);
+        ], true) && ($this->status === null || $this->status === 401 || $this->status === 403 || $this->status >= 500 || $this->status === 422);
     }
 }

@@ -34,8 +34,6 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
 
-
-
     ],
 
     'marsol' => [
@@ -114,9 +112,29 @@ return [
         'card_quality' => max(60, min(95, (int) env('WHATSAPP_CARD_QUALITY', 85))),
         // Circuit breaker + HTTP budgets (shared hosting — never hang web workers)
         'breaker_ttl' => max(30, (int) env('WAHA_BREAKER_TTL', 300)),
+        // Legacy flat keys kept as fallbacks for older .env / callers
         'connect_timeout' => max(1, (int) env('WAHA_CONNECT_TIMEOUT', 3)),
         'timeout' => max(2, (int) env('WAHA_TIMEOUT', 6)),
-        'otp_timeout' => max(2, (int) env('WAHA_OTP_TIMEOUT', 6)),
+        'otp_timeout' => max(2, (int) env('WAHA_OTP_TIMEOUT', 15)),
+        // Per-call budgets — prefer these over the flat keys above
+        'timeouts' => [
+            'otp' => [
+                'connect' => max(1, (int) env('WAHA_OTP_CONNECT_TIMEOUT', env('WAHA_CONNECT_TIMEOUT', 3))),
+                'total' => max(2, (int) env('WAHA_OTP_TIMEOUT', 15)),
+            ],
+            'reminders' => [
+                'connect' => max(1, (int) env('WAHA_CONNECT_TIMEOUT', 3)),
+                'total' => max(2, (int) env('WAHA_TIMEOUT', 6)),
+            ],
+            'bulk' => [
+                'connect' => max(1, (int) env('WAHA_CONNECT_TIMEOUT', 3)),
+                'total' => max(2, (int) env('WAHA_TIMEOUT', 6)),
+            ],
+            'health' => max(2, (int) env('WAHA_HEALTH_TIMEOUT', 5)),
+        ],
+        // Open breaker only after N consecutive SEND read-timeouts within the window
+        'timeout_trip_count' => max(1, (int) env('WAHA_TIMEOUT_TRIP_COUNT', 3)),
+        'timeout_trip_window' => max(10, (int) env('WAHA_TIMEOUT_TRIP_WINDOW', 60)),
     ],
 
     /*
