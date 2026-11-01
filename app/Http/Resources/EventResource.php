@@ -37,10 +37,23 @@ class EventResource extends JsonResource
         }
 
         $cityName = null;
+        $countryId = null;
+        $countryName = null;
         if ($this->relationLoaded('city') && $this->city) {
             $cityName = $lang === 'ar'
-                ? ($this->city->name_ar ?? null)
+                ? ($this->city->name_ar ?? $this->city->name_en ?? null)
                 : ($this->city->name_en ?? null);
+
+            $country = $this->city->relationLoaded('country')
+                ? $this->city->country
+                : $this->city->country()->first();
+
+            if ($country) {
+                $countryId = $country->id;
+                $countryName = $lang === 'ar'
+                    ? ($country->name_ar ?? $country->name_en ?? null)
+                    : ($country->name_en ?? null);
+            }
         }
 
         return [
@@ -54,16 +67,19 @@ class EventResource extends JsonResource
             'event_date'        => $this->event_date,
             'event_time'        => $this->event_time,
 
-            'address'           => $this->address,         // ← string "address"
-            'latitude'          => $this->latitude,
-            'longitude'         => $this->longitude,
+            'address'           => $this->address,
+            'latitude'          => $this->latitude !== null ? (float) $this->latitude : null,
+            'longitude'         => $this->longitude !== null ? (float) $this->longitude : null,
 
             'category_id'       => $this->category_id,
-            'category_name'     => $categoryName,          // ← not name_en
+            'category_name'     => $categoryName,
             'city_id'           => $this->city_id,
-            'city_name'         => $cityName,              // ← not name_en
+            'city_name'         => $cityName,
+            'country_id'        => $countryId,
+            'country_name'      => $countryName,
 
             'created_at'        => optional($this->created_at)->toISOString(),
             'updated_at'        => optional($this->updated_at)->toISOString(),
         ];
-    }}
+    }
+}

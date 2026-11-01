@@ -48,7 +48,7 @@ class EventController extends Controller
                 'title'       => $request->title_ar,
                 'description' => $request->description_ar,
             ],
-        ])->load(['category', 'city']);
+        ])->load(['category', 'city.country']);
 
         return response()->json([
             'status'  => true,
@@ -60,7 +60,7 @@ class EventController extends Controller
     public function index(Request $request)
     {
         $perPage = (int) ($request->query('per_page', 10));
-        $events  = Event::with(['category', 'city'])
+        $events  = Event::with(['category', 'city.country'])
             ->latest('id')
             ->paginate($perPage);
 
@@ -71,7 +71,7 @@ class EventController extends Controller
 
     public function show($id)
     {
-        $event = Event::with(['category', 'city'])->find($id);
+        $event = Event::with(['category', 'city.country'])->find($id);
         if (!$event) {
             return response()->json(['status' => false, 'message' => 'Event not found'], 404);
         }

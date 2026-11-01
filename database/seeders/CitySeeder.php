@@ -12,9 +12,21 @@ class CitySeeder extends Seeder
     {
         $libya = Country::where('name_en', 'Libya')->first();
         if ($libya) {
-            City::create(['country_id' => $libya->id, 'name_en' => 'Tripoli', 'name_ar' => 'طرابلس']);
-            City::create(['country_id' => $libya->id, 'name_en' => 'Benghazi', 'name_ar' => 'بنغازي']);
+            City::query()->updateOrCreate(
+                ['country_id' => $libya->id, 'name_en' => 'Tripoli'],
+                ['name_ar' => 'طرابلس']
+            );
+            City::query()->updateOrCreate(
+                ['country_id' => $libya->id, 'name_en' => 'Benghazi'],
+                ['name_ar' => 'بنغازي']
+            );
+            City::query()->updateOrCreate(
+                ['country_id' => $libya->id, 'name_en' => 'Misrata'],
+                ['name_ar' => 'مصراتة']
+            );
         }
+
+        $this->call(ExhibitionCountriesSeeder::class);
     }
 }
 

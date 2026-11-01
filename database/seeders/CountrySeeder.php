@@ -8,7 +8,9 @@ class CountrySeeder extends Seeder
 {
     public function run(): void
     {
-        $libya = Country::create(['name_en' => 'Libya', 'name_ar' => 'ليبيا']);
-        $egypt = Country::create(['name_en' => 'Egypt', 'name_ar' => 'مصر']);
+        Country::query()->updateOrCreate(['name_en' => 'Libya'], ['name_ar' => 'ليبيا']);
+        Country::query()->updateOrCreate(['name_en' => 'Egypt'], ['name_ar' => 'مصر']);
+        Country::query()->updateOrCreate(['name_en' => 'Morocco'], ['name_ar' => 'المغرب']);
+        Country::query()->updateOrCreate(['name_en' => 'Senegal'], ['name_ar' => 'السنغال']);
     }
 }

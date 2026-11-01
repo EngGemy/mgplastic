@@ -46,7 +46,7 @@
                 class="evt-loc__input"
                 x-model="query"
                 @keydown.enter.prevent="search()"
-                :placeholder="isAr ? 'ابحث: طرابلس، بنغازي، قاعة، فندق…' : 'Search: Tripoli, Benghazi, hall, hotel…'"
+                :placeholder="isAr ? 'ابحث: الجديدة المغرب، داكار، طرابلس…' : 'Search: El Jadida Morocco, Dakar, Tripoli…'"
                 autocomplete="off"
             />
             <button type="button" class="evt-loc__btn evt-loc__btn--primary" @click="search()" :disabled="searching">
