@@ -82,6 +82,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // OCR / Gemini vision — always written even when LOG_LEVEL=error.
+        'ocr' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/ocr.log'),
+            'level' => 'debug',
+            'days' => 14,
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

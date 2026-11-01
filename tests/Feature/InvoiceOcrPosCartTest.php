@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Product;
+use App\Models\User;
 use App\Services\Ai\GeminiClient;
 use App\Services\InvoiceOcrCartMatcher;
+use App\Support\ArabicTextNormalizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -48,16 +50,18 @@ class InvoiceOcrPosCartTest extends TestCase
         $this->assertNotEmpty($mapped['errors']);
     }
 
-    public function test_pos_page_ocr_upload_fills_cart(): void
+    public function test_pos_page_ocr_upload_opens_review_then_applies_on_approve(): void
     {
         config([
             'services.gemini.key' => 'fake-key',
             'services.gemini.model' => 'gemini-2.0-flash',
             'services.gemini.ocr_timeout' => 30,
             'services.gemini.daily_limit' => 300,
+            'services.gemini.ocr_thinking_budget' => null,
+            'queue.default' => 'sync',
         ]);
 
-        $admin = \App\Models\User::factory()->create(['role' => 'super_admin']);
+        $admin = User::factory()->create(['role' => 'super_admin']);
         $product = Product::factory()->create(['points_per_unit' => 2, 'pieces_per_box' => 0]);
         $product->translateOrNew('ar')->name = 'كوع بلاستيك';
         $product->save();
@@ -65,14 +69,17 @@ class InvoiceOcrPosCartTest extends TestCase
         Http::fake([
             'generativelanguage.googleapis.com/*' => Http::response([
                 'candidates' => [[
+                    'finishReason' => 'STOP',
                     'content' => [
                         'parts' => [[
                             'text' => json_encode([
                                 'vendor' => 'المصنع',
                                 'currency' => 'LYD',
                                 'total' => 20,
+                                'subtotal' => 20,
+                                'tax' => 0,
                                 'lines' => [
-                                    ['name' => 'كوع بلاستيك', 'qty' => 4, 'unit_price' => 5, 'line_total' => 20, 'confidence' => 0.95],
+                                    ['raw_text' => 'كوع بلاستيك', 'name' => 'كوع بلاستيك', 'qty' => 4, 'unit_price' => 5, 'line_total' => 20, 'confidence' => 0.95],
                                 ],
                                 'overall_confidence' => 0.9,
                                 'source_type' => 'printed',
@@ -80,16 +87,25 @@ class InvoiceOcrPosCartTest extends TestCase
                         ]],
                     ],
                 ]],
+                'usageMetadata' => ['totalTokenCount' => 50],
             ], 200),
         ]);
 
         $this->assertTrue(app(GeminiClient::class)->enabled());
+        $this->assertSame('كوع بلاستيك', ArabicTextNormalizer::normalize('كوع بلاستيك'));
 
         $file = UploadedFile::fake()->image('invoice.jpg', 400, 600);
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test(\App\Filament\Resources\InvoiceResource\Pages\CreateWholesaleInvoice::class)
-            ->set('invoiceOcrImage', $file)
+            ->set('invoiceOcrImage', $file);
+
+        $component->assertSet('ocrStep', 'review');
+        $this->assertIsArray($component->get('ocrDraft'));
+        $this->assertSame([], $component->get('cart'));
+
+        $component->call('approveAllGreenOcrLines')
+            ->call('applyApprovedOcrToCart')
             ->assertSet('cart.'.$product->id.'.quantity', 4)
             ->assertSet('cart.'.$product->id.'.product_id', $product->id);
     }

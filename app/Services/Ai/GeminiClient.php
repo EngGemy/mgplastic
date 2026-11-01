@@ -151,75 +151,49 @@ class GeminiClient
     /**
      * Extract structured invoice fields from an image (handwritten / thermal / printed).
      *
-     * @return array{ok:bool, draft:?array, error:?string, model:string, elapsed_ms:int}
+     * @param  list<string>  $catalogNames
+     * @return array{ok:bool, draft:?array, error:?string, model:string, elapsed_ms:int, finish_reason:?string, cached?:bool}
      */
-    public function extractInvoiceFromImage(string $absolutePath, string $mimeType = 'image/jpeg'): array
-    {
+    public function extractInvoiceFromImage(
+        string $absolutePath,
+        string $mimeType = 'image/jpeg',
+        array $catalogNames = [],
+    ): array {
         $started = microtime(true);
         $model = $this->model();
 
         if (! $this->enabled()) {
-            return [
-                'ok' => false,
-                'draft' => null,
-                'error' => 'Gemini غير مفعّل — أضف GEMINI_API_KEY ثم أعد تحميل الإعدادات.',
-                'model' => $model,
-                'elapsed_ms' => 0,
-            ];
+            return $this->ocrFailure('disabled', 'Gemini غير مفعّل — أضف GEMINI_API_KEY ثم أعد تحميل الإعدادات.', $model, 0);
         }
 
         if ($this->dailyBudgetRemaining() <= 0) {
-            return [
-                'ok' => false,
-                'draft' => null,
-                'error' => 'تم استهلاك حد طلبات الذكاء اليومي — حاول غداً.',
-                'model' => $model,
-                'elapsed_ms' => 0,
-            ];
+            return $this->ocrFailure('budget', 'تم استهلاك حد طلبات الذكاء اليومي — حاول غداً.', $model, 0);
         }
 
         if (! is_readable($absolutePath)) {
-            return [
-                'ok' => false,
-                'draft' => null,
-                'error' => 'تعذّر قراءة صورة الفاتورة من التخزين.',
-                'model' => $model,
-                'elapsed_ms' => 0,
-            ];
+            return $this->ocrFailure('unreadable', 'تعذّر قراءة صورة الفاتورة من التخزين.', $model, 0);
         }
 
         $binary = file_get_contents($absolutePath);
         if ($binary === false || $binary === '') {
-            return [
-                'ok' => false,
-                'draft' => null,
-                'error' => 'ملف الصورة فارغ أو غير قابل للقراءة.',
-                'model' => $model,
-                'elapsed_ms' => 0,
-            ];
+            return $this->ocrFailure('empty', 'ملف الصورة فارغ أو غير قابل للقراءة.', $model, 0);
         }
 
-        $prompt = <<<'PROMPT'
-أنت محرك OCR لفواتير عربية (ليبيا/مصر). الصورة قد تكون: خط يد، إيصال حراري، أو مطبوعة.
-استخرج الحقول بدقة دون اختراع بنود غير ظاهرة.
-أرجع JSON فقط بهذا الشكل (بدون markdown):
-{
-  "vendor": "string|null",
-  "number": "string|null",
-  "date": "YYYY-MM-DD|null",
-  "currency": "LYD|EGP|string|null",
-  "subtotal": number|null,
-  "tax": number|null,
-  "total": number|null,
-  "lines": [
-    {"name":"string","qty":number,"unit_price":number|null,"line_total":number|null,"confidence":0.0}
-  ],
-  "overall_confidence": 0.0,
-  "source_type": "handwritten|thermal|printed|unknown"
-}
-الأرقام بالعربية أو اللاتينية مقبولة — حوّلها لأرقام لاتينية في JSON.
-إن لم يتضح حقل فاجعله null. confidence من 0 إلى 1.
-PROMPT;
+        $prompt = $this->ocrPrompt($catalogNames);
+        $generationConfig = [
+            'temperature' => 0.1,
+            'maxOutputTokens' => max(1024, (int) config('services.gemini.ocr_max_output_tokens', 8192)),
+            'responseMimeType' => 'application/json',
+            'responseSchema' => $this->ocrResponseSchema(),
+        ];
+
+        $thinkingBudget = config('services.gemini.ocr_thinking_budget');
+        if ($thinkingBudget !== null && $thinkingBudget !== '') {
+            // Gemini 2.5+: thinkingBudget (0 = low/off). Omit on 2.0-flash via null env.
+            $generationConfig['thinkingConfig'] = [
+                'thinkingBudget' => (int) $thinkingBudget,
+            ];
+        }
 
         $payload = [
             'contents' => [
@@ -236,11 +210,7 @@ PROMPT;
                     ],
                 ],
             ],
-            'generationConfig' => [
-                'temperature' => 0.1,
-                'maxOutputTokens' => 2048,
-                'responseMimeType' => 'application/json',
-            ],
+            'generationConfig' => $generationConfig,
         ];
 
         $url = 'https://generativelanguage.googleapis.com/v1beta/models/'
@@ -256,45 +226,75 @@ PROMPT;
                 ->post($url, $payload);
 
             $elapsedMs = (int) round((microtime(true) - $started) * 1000);
+            $json = $response->json();
+            $finishReason = data_get($json, 'candidates.0.finishReason');
+            $usage = data_get($json, 'usageMetadata');
 
             if (! $response->successful()) {
-                Log::warning('[Gemini] OCR request failed', [
+                $mapped = $this->mapHttpFailure($response->status());
+                $this->ocrLog('warning', $mapped['code'], [
                     'status' => $response->status(),
                     'elapsed_ms' => $elapsedMs,
+                    'model' => $model,
+                    'finish_reason' => $finishReason,
                 ]);
 
-                return [
-                    'ok' => false,
-                    'draft' => null,
-                    'error' => 'تعذّر الاتصال بـ Gemini ('.$response->status().')',
-                    'model' => $model,
+                return $this->ocrFailure($mapped['code'], $mapped['message'], $model, $elapsedMs, $finishReason);
+            }
+
+            if ($finishReason === 'MAX_TOKENS') {
+                $this->ocrLog('warning', 'max_tokens', [
                     'elapsed_ms' => $elapsedMs,
-                ];
+                    'model' => $model,
+                    'finish_reason' => $finishReason,
+                    'usage' => $usage,
+                ]);
+
+                return $this->ocrFailure('max_tokens', 'انقطع الرد لطول الفاتورة — صغّر الصورة أو قلّل البنود الظاهرة ثم أعد المحاولة.', $model, $elapsedMs, $finishReason);
+            }
+
+            if ($finishReason === 'SAFETY') {
+                $this->ocrLog('warning', 'safety', [
+                    'elapsed_ms' => $elapsedMs,
+                    'model' => $model,
+                    'finish_reason' => $finishReason,
+                ]);
+
+                return $this->ocrFailure('safety', 'رفض النموذج قراءة الصورة لأسباب أمان — جرّب صورة أوضح بدون محتوى محجوب.', $model, $elapsedMs, $finishReason);
             }
 
             $this->hitDailyBudget();
 
-            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+            $text = data_get($json, 'candidates.0.content.parts.0.text');
             if (! is_string($text) || trim($text) === '') {
-                return [
-                    'ok' => false,
-                    'draft' => null,
-                    'error' => 'Gemini لم يُرجع بيانات فاتورة صالحة',
-                    'model' => $model,
+                $this->ocrLog('warning', 'empty_text', [
                     'elapsed_ms' => $elapsedMs,
-                ];
+                    'model' => $model,
+                    'finish_reason' => $finishReason,
+                    'usage' => $usage,
+                ]);
+
+                return $this->ocrFailure('empty_text', 'Gemini لم يُرجع بيانات فاتورة صالحة', $model, $elapsedMs, $finishReason);
             }
 
             $draft = $this->parseInvoiceDraftJson($text);
             if ($draft === null) {
-                return [
-                    'ok' => false,
-                    'draft' => null,
-                    'error' => 'تعذّر تفسير نتيجة قراءة الفاتورة',
-                    'model' => $model,
+                $this->ocrLog('warning', 'invalid_json', [
                     'elapsed_ms' => $elapsedMs,
-                ];
+                    'model' => $model,
+                    'finish_reason' => $finishReason,
+                ]);
+
+                return $this->ocrFailure('invalid_json', 'تعذّر تفسير نتيجة قراءة الفاتورة (JSON غير صالح)', $model, $elapsedMs, $finishReason);
             }
+
+            $this->ocrLog('info', 'ok', [
+                'elapsed_ms' => $elapsedMs,
+                'model' => $model,
+                'finish_reason' => $finishReason,
+                'usage' => $usage,
+                'lines' => count($draft['lines'] ?? []),
+            ]);
 
             return [
                 'ok' => true,
@@ -302,22 +302,205 @@ PROMPT;
                 'error' => null,
                 'model' => $model,
                 'elapsed_ms' => $elapsedMs,
+                'finish_reason' => is_string($finishReason) ? $finishReason : null,
             ];
-        } catch (\Throwable $e) {
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
             $elapsedMs = (int) round((microtime(true) - $started) * 1000);
-            Log::warning('[Gemini] OCR exception', [
-                'error' => $e->getMessage(),
+            $this->ocrLog('warning', 'timeout', [
                 'elapsed_ms' => $elapsedMs,
+                'model' => $model,
+                'error' => $e->getMessage(),
             ]);
 
+            return $this->ocrFailure('timeout', 'انتهت مهلة الاتصال بـ Gemini — أعد المحاولة.', $model, $elapsedMs);
+        } catch (\Throwable $e) {
+            $elapsedMs = (int) round((microtime(true) - $started) * 1000);
+            $lower = strtolower($e->getMessage());
+            if (str_contains($lower, 'timed out') || str_contains($lower, 'timeout') || str_contains($lower, 'curl error 28')) {
+                $this->ocrLog('warning', 'timeout', [
+                    'elapsed_ms' => $elapsedMs,
+                    'model' => $model,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return $this->ocrFailure('timeout', 'انتهت مهلة الاتصال بـ Gemini — أعد المحاولة.', $model, $elapsedMs);
+            }
+
+            $this->ocrLog('error', 'exception', [
+                'elapsed_ms' => $elapsedMs,
+                'model' => $model,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->ocrFailure('exception', 'خطأ أثناء قراءة الفاتورة', $model, $elapsedMs);
+        }
+    }
+
+    /**
+     * Narrow second-pass for a single low-confidence line (no full re-OCR).
+     *
+     * @return array{ok:bool, line:?array, error:?string, model:string, elapsed_ms:int}
+     */
+    public function refineInvoiceLine(string $absolutePath, string $mimeType, string $hintText): array
+    {
+        $started = microtime(true);
+        $model = $this->model();
+        if (! $this->enabled() || ! is_readable($absolutePath)) {
+            return ['ok' => false, 'line' => null, 'error' => 'غير جاهز لإعادة القراءة', 'model' => $model, 'elapsed_ms' => 0];
+        }
+
+        $binary = file_get_contents($absolutePath);
+        if ($binary === false) {
+            return ['ok' => false, 'line' => null, 'error' => 'تعذّر قراءة الصورة', 'model' => $model, 'elapsed_ms' => 0];
+        }
+
+        $prompt = 'من صورة الفاتورة، أعد فقط JSON لبند واحد مرتبط بهذا النص الظاهر: '
+            .json_encode($hintText, JSON_UNESCAPED_UNICODE)
+            .' بالشكل {"raw_text":"...","name":"...","qty":1,"unit_price":null,"line_total":null,"confidence":0.0}';
+
+        try {
+            $response = Http::withHeaders([
+                'x-goog-api-key' => config('services.gemini.key'),
+                'Content-Type' => 'application/json',
+            ])
+                ->timeout(max(10, (int) config('services.gemini.ocr_timeout', 60)))
+                ->post(
+                    'https://generativelanguage.googleapis.com/v1beta/models/'.rawurlencode($model).':generateContent',
+                    [
+                        'contents' => [[
+                            'role' => 'user',
+                            'parts' => [
+                                ['text' => $prompt],
+                                ['inline_data' => ['mime_type' => $mimeType, 'data' => base64_encode($binary)]],
+                            ],
+                        ]],
+                        'generationConfig' => [
+                            'temperature' => 0.1,
+                            'maxOutputTokens' => 512,
+                            'responseMimeType' => 'application/json',
+                        ],
+                    ]
+                );
+
+            $elapsedMs = (int) round((microtime(true) - $started) * 1000);
+            if (! $response->successful()) {
+                return ['ok' => false, 'line' => null, 'error' => $this->mapHttpFailure($response->status())['message'], 'model' => $model, 'elapsed_ms' => $elapsedMs];
+            }
+
+            $this->hitDailyBudget();
+            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+            $decoded = is_string($text) ? json_decode(trim($text), true) : null;
+            if (! is_array($decoded)) {
+                return ['ok' => false, 'line' => null, 'error' => 'تعذّر تفسير إعادة القراءة', 'model' => $model, 'elapsed_ms' => $elapsedMs];
+            }
+
             return [
-                'ok' => false,
-                'draft' => null,
-                'error' => 'خطأ أثناء قراءة الفاتورة: '.$e->getMessage(),
+                'ok' => true,
+                'line' => [
+                    'raw_text' => $this->nullableString($decoded['raw_text'] ?? $decoded['name'] ?? $hintText),
+                    'name' => $this->nullableString($decoded['name'] ?? $decoded['raw_text'] ?? $hintText) ?? $hintText,
+                    'qty' => $this->toFloat($decoded['qty'] ?? 1) ?? 1.0,
+                    'unit_price' => $this->toFloat($decoded['unit_price'] ?? null),
+                    'line_total' => $this->toFloat($decoded['line_total'] ?? null),
+                    'confidence' => max(0, min(1, (float) ($decoded['confidence'] ?? 0.5))),
+                ],
+                'error' => null,
                 'model' => $model,
                 'elapsed_ms' => $elapsedMs,
             ];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'line' => null, 'error' => 'فشل إعادة قراءة البند', 'model' => $model, 'elapsed_ms' => (int) round((microtime(true) - $started) * 1000)];
         }
+    }
+
+    /** @param  list<string>  $catalogNames */
+    protected function ocrPrompt(array $catalogNames): string
+    {
+        $base = <<<'PROMPT'
+أنت محرك OCR لفواتير عربية (ليبيا/مصر). الصورة قد تكون: خط يد، إيصال حراري، أو مطبوعة.
+استخرج الحقول بدقة دون اختراع بنود غير ظاهرة.
+لكل بند أرجع raw_text كما يظهر، وname منظّف، qty، unit_price، line_total، confidence من 0 إلى 1.
+الأرقام العربية حوّلها لاتينية. الحقول غير الواضحة = null.
+PROMPT;
+
+        if ($catalogNames !== []) {
+            $base .= "\nأسماء منتجات مرجعية من الكتالوج (اختَر الأقرب عند الإمكان):\n"
+                .implode(' | ', array_slice($catalogNames, 0, (int) config('services.gemini.ocr_catalog_prompt_limit', 80)));
+        }
+
+        return $base;
+    }
+
+    /** @return array<string, mixed> */
+    protected function ocrResponseSchema(): array
+    {
+        return [
+            'type' => 'OBJECT',
+            'properties' => [
+                'vendor' => ['type' => 'STRING', 'nullable' => true],
+                'number' => ['type' => 'STRING', 'nullable' => true],
+                'date' => ['type' => 'STRING', 'nullable' => true],
+                'currency' => ['type' => 'STRING', 'nullable' => true],
+                'subtotal' => ['type' => 'NUMBER', 'nullable' => true],
+                'tax' => ['type' => 'NUMBER', 'nullable' => true],
+                'total' => ['type' => 'NUMBER', 'nullable' => true],
+                'overall_confidence' => ['type' => 'NUMBER'],
+                'source_type' => ['type' => 'STRING'],
+                'lines' => [
+                    'type' => 'ARRAY',
+                    'items' => [
+                        'type' => 'OBJECT',
+                        'properties' => [
+                            'raw_text' => ['type' => 'STRING'],
+                            'name' => ['type' => 'STRING'],
+                            'qty' => ['type' => 'NUMBER'],
+                            'unit_price' => ['type' => 'NUMBER', 'nullable' => true],
+                            'line_total' => ['type' => 'NUMBER', 'nullable' => true],
+                            'confidence' => ['type' => 'NUMBER'],
+                        ],
+                        'required' => ['raw_text', 'name', 'qty', 'confidence'],
+                    ],
+                ],
+            ],
+            'required' => ['lines', 'overall_confidence', 'source_type'],
+        ];
+    }
+
+    /** @return array{code:string, message:string} */
+    protected function mapHttpFailure(int $status): array
+    {
+        return match (true) {
+            $status === 404 => ['code' => 'http_404', 'message' => 'نموذج Gemini غير موجود (404) — راجع GEMINI_MODEL في الإعدادات.'],
+            $status === 429 => ['code' => 'http_429', 'message' => 'تم تجاوز حد طلبات Gemini مؤقتاً (429) — انتظر ثم أعد المحاولة.'],
+            $status >= 500 => ['code' => 'http_5xx', 'message' => 'خدمة Gemini متوقفة مؤقتاً ('.$status.') — حاول لاحقاً.'],
+            $status === 401, $status === 403 => ['code' => 'http_auth', 'message' => 'مفتاح Gemini مرفوض — تحقق من GEMINI_API_KEY.'],
+            default => ['code' => 'http_'.$status, 'message' => 'تعذّر الاتصال بـ Gemini ('.$status.')'],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    protected function ocrLog(string $level, string $reason, array $context = []): void
+    {
+        // Never log image bytes, API keys, or full phone numbers.
+        Log::channel('ocr')->log($level, '[OCR] '.$reason, $context);
+    }
+
+    /**
+     * @return array{ok:bool, draft:null, error:string, model:string, elapsed_ms:int, finish_reason:?string}
+     */
+    protected function ocrFailure(string $code, string $message, string $model, int $elapsedMs, ?string $finishReason = null): array
+    {
+        return [
+            'ok' => false,
+            'draft' => null,
+            'error' => $message,
+            'code' => $code,
+            'model' => $model,
+            'elapsed_ms' => $elapsedMs,
+            'finish_reason' => $finishReason,
+        ];
     }
 
     /**
@@ -341,12 +524,14 @@ PROMPT;
             if (! is_array($line)) {
                 continue;
             }
-            $name = trim((string) ($line['name'] ?? ''));
-            if ($name === '') {
+            $raw = trim((string) ($line['raw_text'] ?? $line['name'] ?? ''));
+            $name = trim((string) ($line['name'] ?? $raw));
+            if ($raw === '' && $name === '') {
                 continue;
             }
             $lines[] = [
-                'name' => $name,
+                'raw_text' => $raw !== '' ? $raw : $name,
+                'name' => $name !== '' ? $name : $raw,
                 'qty' => $this->toFloat($line['qty'] ?? 1) ?? 1.0,
                 'unit_price' => $this->toFloat($line['unit_price'] ?? null),
                 'line_total' => $this->toFloat($line['line_total'] ?? null),
