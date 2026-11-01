@@ -2,6 +2,8 @@
 
 namespace App\Services\Ocr;
 
+use Illuminate\Support\Facades\Log;
+
 class InvoiceOcrValidator
 {
     /**
@@ -20,12 +22,18 @@ class InvoiceOcrValidator
         $sumLineTotals = 0.0;
         $hasLineTotals = false;
 
-        foreach ((array) ($draft['lines'] ?? []) as $line) {
+        foreach ((array) ($draft['lines'] ?? []) as $index => $line) {
             if (! is_array($line)) {
+                Log::channel('ocr')->warning('[OCR] line_dropped', [
+                    'stage' => 'validate',
+                    'index' => $index,
+                    'reason' => 'non_array_line',
+                ]);
+
                 continue;
             }
 
-            $flags = [];
+            $flags = array_values((array) ($line['needs_review'] ?? []));
             $qty = isset($line['qty']) ? (float) $line['qty'] : null;
             $unit = isset($line['unit_price']) && $line['unit_price'] !== null ? (float) $line['unit_price'] : null;
             $total = isset($line['line_total']) && $line['line_total'] !== null ? (float) $line['line_total'] : null;

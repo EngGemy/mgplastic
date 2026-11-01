@@ -6,6 +6,7 @@ use App\Models\OcrAlias;
 use App\Models\Product;
 use App\Support\ArabicTextNormalizer;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class InvoiceOcrCatalogMatcher
 {
@@ -22,8 +23,14 @@ class InvoiceOcrCatalogMatcher
         $suggest = (float) config('services.ocr.suggest_similarity', 0.6);
 
         $lines = [];
-        foreach ((array) ($draft['lines'] ?? []) as $line) {
+        foreach ((array) ($draft['lines'] ?? []) as $index => $line) {
             if (! is_array($line)) {
+                Log::channel('ocr')->warning('[OCR] line_dropped', [
+                    'stage' => 'catalog_match',
+                    'index' => $index,
+                    'reason' => 'non_array_line',
+                ]);
+
                 continue;
             }
 
@@ -68,6 +75,12 @@ class InvoiceOcrCatalogMatcher
             if ($chosenId && empty($line['name'])) {
                 $line['name'] = $candidates[0]['name'] ?? $line['raw_text'];
             }
+
+            $flags = array_values((array) ($line['needs_review'] ?? []));
+            if ($decision === 'manual') {
+                $flags[] = 'catalog_unmatched';
+            }
+            $line['needs_review'] = array_values(array_unique($flags));
 
             $lines[] = $line;
         }
