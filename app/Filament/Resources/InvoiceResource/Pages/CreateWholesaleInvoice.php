@@ -4,6 +4,7 @@ namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Concerns\SetsCartQuantity;
 use App\Filament\Resources\InvoiceResource;
+use App\Jobs\ProcessPosOcrJob;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -11,13 +12,16 @@ use App\Services\Ai\GeminiClient;
 use App\Services\CustomerWhatsAppNotifier;
 use App\Services\InvoiceCartSheetService;
 use App\Services\InvoiceNumberService;
-use App\Services\InvoiceOcrCartMatcher;
-use App\Services\InvoiceOcrService;
+use App\Services\Ocr\InvoiceOcrLearningService;
+use App\Services\Ocr\InvoiceOcrPipeline;
 use App\Services\WholesaleInvoiceService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Js;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
@@ -55,10 +59,23 @@ class CreateWholesaleInvoice extends Page
 
     public $invoiceSheet = null;
 
-    /** Photo of a paper invoice — OCR fills the cart. */
+    /** Photo of a paper invoice — OCR draft for review (not auto-saved to cart). */
     public $invoiceOcrImage = null;
 
     public bool $ocrReading = false;
+
+    public string $ocrStep = 'idle';
+
+    public ?string $ocrJobKey = null;
+
+    public ?string $ocrPreviewUrl = null;
+
+    public ?string $ocrImageSha = null;
+
+    public ?string $ocrError = null;
+
+    /** @var array<string, mixed>|null */
+    public ?array $ocrDraft = null;
 
     public static function getNavigationGroup(): ?string
     {
@@ -334,41 +351,216 @@ class CreateWholesaleInvoice extends Page
             'invoiceOcrImage' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
         ]);
 
+        $stored = $this->invoiceOcrImage->store('ocr-uploads/'.date('Y/m/d'), 'public');
+        $this->ocrPreviewUrl = Storage::disk('public')->url($stored);
+        $absolute = Storage::disk('public')->path($stored);
+        $this->invoiceOcrImage = null;
+        $this->ocrDraft = null;
+        $this->ocrError = null;
         $this->ocrReading = true;
+        $this->ocrStep = 'queued';
 
-        try {
-            $tmpPath = $this->invoiceOcrImage->getRealPath();
-            $mime = $this->invoiceOcrImage->getMimeType() ?: 'image/jpeg';
+        $useQueue = config('queue.default') !== 'sync';
 
-            $result = app(GeminiClient::class)->extractInvoiceFromImage($tmpPath, $mime);
-            if (! ($result['ok'] ?? false) || ! is_array($result['draft'] ?? null)) {
-                Notification::make()
-                    ->danger()
-                    ->title('تعذّرت قراءة صورة الفاتورة')
-                    ->body((string) ($result['error'] ?? 'حاول بصورة أوضح'))
-                    ->send();
+        if ($useQueue) {
+            $this->ocrJobKey = (string) Str::uuid();
+            Cache::put('ocr:pos:job:'.$this->ocrJobKey, [
+                'status' => 'queued',
+                'step' => 'queued',
+                'message' => 'في الانتظار…',
+            ], 600);
+            ProcessPosOcrJob::dispatch($this->ocrJobKey, $absolute);
+            $this->ocrStep = 'polling';
+            Notification::make()->info()->title('بدأت قراءة الصورة')->body('ستظهر المسودة للمراجعة دون حفظ تلقائي.')->send();
 
-                return;
+            return;
+        }
+
+        // Local/sync: run inline (may take up to OCR timeout).
+        $this->ocrStep = 'reading';
+        $result = app(InvoiceOcrPipeline::class)->run($absolute);
+        $this->applyOcrPipelineResult($result);
+    }
+
+    public function pollOcrJob(): void
+    {
+        if (! $this->ocrJobKey) {
+            return;
+        }
+
+        $payload = Cache::get('ocr:pos:job:'.$this->ocrJobKey);
+        if (! is_array($payload)) {
+            return;
+        }
+
+        $this->ocrStep = (string) ($payload['step'] ?? 'processing');
+        if (($payload['status'] ?? '') === 'ready' && is_array($payload['result'] ?? null)) {
+            $this->applyOcrPipelineResult($payload['result']);
+            $this->ocrJobKey = null;
+        } elseif (($payload['status'] ?? '') === 'failed') {
+            $this->ocrReading = false;
+            $this->ocrStep = 'failed';
+            $this->ocrError = (string) ($payload['message'] ?? 'فشلت القراءة');
+            $this->ocrJobKey = null;
+            Notification::make()->danger()->title('تعذّرت قراءة الصورة')->body($this->ocrError)->send();
+        }
+    }
+
+    /** @param  array<string, mixed>  $result */
+    protected function applyOcrPipelineResult(array $result): void
+    {
+        $this->ocrReading = false;
+        $this->ocrImageSha = $result['image_sha256'] ?? null;
+
+        if (! ($result['ok'] ?? false) || ! is_array($result['draft'] ?? null)) {
+            $this->ocrStep = 'failed';
+            $this->ocrError = (string) ($result['error'] ?? 'تعذّرت القراءة');
+            Notification::make()->danger()->title('تعذّرت قراءة صورة الفاتورة')->body($this->ocrError)->send();
+
+            return;
+        }
+
+        $this->ocrDraft = $result['draft'];
+        $this->ocrStep = 'review';
+        $this->ocrError = null;
+        $cached = ! empty($result['cached']) ? ' (من الذاكرة المؤقتة)' : '';
+        Notification::make()
+            ->success()
+            ->title('مسودة جاهزة للمراجعة'.$cached)
+            ->body('راجع البنود ثم اضغط اعتماد — لن تُحفظ في السلة تلقائياً.')
+            ->send();
+    }
+
+    public function selectOcrCandidate(int $lineIndex, int $productId): void
+    {
+        if (! is_array($this->ocrDraft) || ! isset($this->ocrDraft['lines'][$lineIndex])) {
+            return;
+        }
+
+        $product = Product::query()->with('translations')->find($productId);
+        if (! $product) {
+            return;
+        }
+
+        $this->ocrDraft['lines'][$lineIndex]['matched_product_id'] = $productId;
+        $this->ocrDraft['lines'][$lineIndex]['match_decision'] = 'manual';
+        $this->ocrDraft['lines'][$lineIndex]['name'] = localized_name($product, 'name', 'منتج #'.$productId);
+        $this->ocrDraft['lines'][$lineIndex]['needs_review'] = array_values(array_filter(
+            (array) ($this->ocrDraft['lines'][$lineIndex]['needs_review'] ?? []),
+            fn ($f) => $f !== 'low_confidence'
+        ));
+    }
+
+    public function approveAllGreenOcrLines(): void
+    {
+        if (! is_array($this->ocrDraft)) {
+            return;
+        }
+
+        foreach ($this->ocrDraft['lines'] ?? [] as $i => $line) {
+            $decision = $line['match_decision'] ?? '';
+            $sim = (float) ($line['match_similarity'] ?? 0);
+            $flags = (array) ($line['needs_review'] ?? []);
+            if (in_array($decision, ['auto', 'alias'], true) && $sim >= 0.9 && $flags === [] && ! empty($line['matched_product_id'])) {
+                $this->ocrDraft['lines'][$i]['approved'] = true;
+            }
+        }
+    }
+
+    public function toggleOcrLineApproved(int $lineIndex): void
+    {
+        if (! isset($this->ocrDraft['lines'][$lineIndex])) {
+            return;
+        }
+        $current = (bool) ($this->ocrDraft['lines'][$lineIndex]['approved'] ?? false);
+        $this->ocrDraft['lines'][$lineIndex]['approved'] = ! $current;
+    }
+
+    public function applyApprovedOcrToCart(): void
+    {
+        if (! is_array($this->ocrDraft)) {
+            Notification::make()->danger()->title('لا توجد مسودة')->send();
+
+            return;
+        }
+
+        $sheet = app(InvoiceCartSheetService::class);
+        $learning = app(InvoiceOcrLearningService::class);
+        $lines = [];
+        $errors = [];
+
+        foreach ((array) ($this->ocrDraft['lines'] ?? []) as $line) {
+            // Explicit approval only — never auto-push money/cart without user action.
+            if (empty($line['approved'])) {
+                continue;
             }
 
-            $draft = app(InvoiceOcrService::class)->normalizeDraft($result['draft']);
-            $mapped = app(InvoiceOcrCartMatcher::class)->draftToCart($draft);
-            $this->applyImportedCartLines(
-                $mapped['lines'],
-                $mapped['errors'],
-                'الصورة',
-                sourceType: (string) ($draft['source_type'] ?? 'unknown'),
-            );
-        } catch (\Throwable $e) {
-            Notification::make()
-                ->danger()
-                ->title('خطأ أثناء OCR')
-                ->body($e->getMessage())
-                ->send();
-        } finally {
-            $this->invoiceOcrImage = null;
-            $this->ocrReading = false;
+            $productId = (int) ($line['matched_product_id'] ?? 0);
+            $qty = (int) round((float) ($line['qty'] ?? 0));
+            if ($productId < 1 || $qty < 1) {
+                $errors[] = 'بند بدون منتج/كمية: '.($line['raw_text'] ?? '');
+
+                continue;
+            }
+
+            $product = Product::query()->with('translations')->find($productId);
+            if (! $product) {
+                $errors[] = 'منتج غير موجود #'.$productId;
+
+                continue;
+            }
+
+            $cartLine = $sheet->cartLine($product, $qty);
+            $id = (string) $productId;
+            if (isset($lines[$id])) {
+                if (! empty($cartLine['boxes'])) {
+                    $lines[$id]['boxes'] = (int) $lines[$id]['boxes'] + (int) $cartLine['boxes'];
+                    $lines[$id]['quantity'] = (int) $lines[$id]['boxes'] * (int) $lines[$id]['pieces_per_box'];
+                } else {
+                    $lines[$id]['quantity'] = (int) $lines[$id]['quantity'] + (int) $cartLine['quantity'];
+                }
+            } else {
+                $lines[$id] = $cartLine;
+            }
+
+            if ($this->ocrImageSha) {
+                $learning->rememberCorrection(
+                    $this->ocrImageSha,
+                    (string) ($line['raw_text'] ?? $line['name'] ?? ''),
+                    $productId,
+                    (float) $qty,
+                    auth()->user(),
+                );
+            }
         }
+
+        if ($lines === []) {
+            Notification::make()
+                ->warning()
+                ->title('لا بنود معتمدة')
+                ->body('علّم البنود أو استخدم «اعتماد كل الأخضر» ثم طبّق على السلة.'.($errors ? "\n".implode("\n", array_slice($errors, 0, 5)) : ''))
+                ->send();
+
+            return;
+        }
+
+        $this->cart = $lines;
+        $this->reviewing = false;
+        Notification::make()
+            ->success()
+            ->title('تم تطبيق '.count($lines).' منتج على السلة')
+            ->body('راجع الكميات قبل الإصدار. لم يُحفظ أي مبلغ مالياً من OCR دون هذا الاعتماد.')
+            ->send();
+    }
+
+    public function dismissOcrDraft(): void
+    {
+        $this->ocrDraft = null;
+        $this->ocrStep = 'idle';
+        $this->ocrError = null;
+        $this->ocrPreviewUrl = null;
+        $this->ocrImageSha = null;
+        $this->ocrReading = false;
     }
 
     /**

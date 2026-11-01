@@ -176,7 +176,24 @@ return [
         'model' => env('GEMINI_MODEL', 'gemini-2.0-flash'),
         'timeout' => (int) env('GEMINI_TIMEOUT', 8),
         'ocr_timeout' => (int) env('GEMINI_OCR_TIMEOUT', 60),
+        'ocr_max_output_tokens' => (int) env('GEMINI_OCR_MAX_OUTPUT_TOKENS', 8192),
+        // thinkingBudget for Gemini 2.5+ (0 = low/off). Null = omit (2.0-flash rejects it).
+        'ocr_thinking_budget' => env('GEMINI_OCR_THINKING_BUDGET'),
+        'ocr_catalog_prompt_limit' => (int) env('GEMINI_OCR_CATALOG_PROMPT_LIMIT', 80),
+        'ocr_cache_ttl' => (int) env('GEMINI_OCR_CACHE_TTL', 86400),
+        'ocr_queue_threshold_seconds' => (int) env('GEMINI_OCR_QUEUE_THRESHOLD', 15),
         'daily_limit' => (int) env('AI_DAILY_CALL_LIMIT', 300),
+    ],
+
+    'ocr' => [
+        'max_image_side' => (int) env('OCR_MAX_IMAGE_SIDE', 1600),
+        'jpeg_quality' => (int) env('OCR_JPEG_QUALITY', 80),
+        'max_pixels' => (int) env('OCR_MAX_PIXELS', 40_000_000),
+        'auto_accept_similarity' => (float) env('OCR_AUTO_ACCEPT_SIMILARITY', 0.9),
+        'suggest_similarity' => (float) env('OCR_SUGGEST_SIMILARITY', 0.6),
+        'qty_min' => (float) env('OCR_QTY_MIN', 0.001),
+        'qty_max' => (float) env('OCR_QTY_MAX', 100000),
+        'money_tolerance' => (float) env('OCR_MONEY_TOLERANCE', 0.05),
     ],
 
 ];

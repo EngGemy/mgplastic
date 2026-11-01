@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Support\ArabicTextNormalizer;
 use Illuminate\Support\Collection;
 
 class InvoiceOcrCartMatcher
@@ -155,12 +156,6 @@ class InvoiceOcrCartMatcher
 
     protected function normalizeName(string $name): string
     {
-        $name = mb_strtolower(trim($name));
-        $name = preg_replace('/\s+/u', ' ', $name) ?? $name;
-        $name = str_replace(['أ', 'إ', 'آ'], 'ا', $name);
-        $name = str_replace('ة', 'ه', $name);
-        $name = str_replace('ى', 'ي', $name);
-
-        return trim($name);
+        return ArabicTextNormalizer::normalize($name);
     }
 }

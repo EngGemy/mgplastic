@@ -118,12 +118,14 @@ class InvoiceOcrService
             if (! is_array($line)) {
                 continue;
             }
-            $name = trim((string) ($line['name'] ?? ''));
-            if ($name === '') {
+            $raw = trim((string) ($line['raw_text'] ?? $line['name'] ?? ''));
+            $name = trim((string) ($line['name'] ?? $raw));
+            if ($raw === '' && $name === '') {
                 continue;
             }
             $lines[] = [
-                'name' => $name,
+                'raw_text' => $raw !== '' ? $raw : $name,
+                'name' => $name !== '' ? $name : $raw,
                 'qty' => (float) ($line['qty'] ?? 1),
                 'unit_price' => isset($line['unit_price']) && $line['unit_price'] !== ''
                     ? (float) $line['unit_price']
@@ -132,6 +134,10 @@ class InvoiceOcrService
                     ? (float) $line['line_total']
                     : null,
                 'confidence' => max(0, min(1, (float) ($line['confidence'] ?? 0.5))),
+                'needs_review' => array_values((array) ($line['needs_review'] ?? [])),
+                'candidates' => array_values((array) ($line['candidates'] ?? [])),
+                'match_decision' => $line['match_decision'] ?? null,
+                'matched_product_id' => $line['matched_product_id'] ?? null,
             ];
         }
 

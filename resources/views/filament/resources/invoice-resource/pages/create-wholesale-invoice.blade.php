@@ -52,14 +52,93 @@
                     </label>
                 </div>
                 <p class="pos-invoice-no-hint" wire:loading.remove wire:target="invoiceOcrImage">
-                    ارفع صورة (خط يد / حراري / مطبوع) — تُملأ السلة تلقائياً بالمنتجات المطابقة للكتالوج ثم راجعها.
+                    ارفع صورة (خط يد / حراري / مطبوع) — تظهر مسودة للمراجعة أولاً، ولا تُضاف للسلة إلا بعد الاعتماد.
                 </p>
-                <p class="pos-invoice-no-hint" wire:loading wire:target="invoiceOcrImage">جاري قراءة الصورة واستخراج البنود...</p>
+                <p class="pos-invoice-no-hint" wire:loading wire:target="invoiceOcrImage">جاري رفع الصورة...</p>
                 @error('invoiceOcrImage')
                     <p class="pos-sheet-error">{{ $message }}</p>
                 @enderror
+                @if($ocrReading || in_array($ocrStep, ['queued', 'polling', 'reading', 'processing'], true))
+                    <p class="pos-invoice-no-hint">الحالة: {{ $ocrStep }} — جاري الاستخراج…</p>
+                    @if($ocrJobKey)
+                        <div wire:poll.2s="pollOcrJob"></div>
+                    @endif
+                @endif
+                @if($ocrError)
+                    <p class="pos-sheet-error">{{ $ocrError }}</p>
+                @endif
             </div>
         </div>
+
+        @if($ocrPreviewUrl || $ocrDraft)
+            <div class="pos-ocr-review" style="display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:1rem;margin:1rem 0;padding:1rem;border:1px solid #e5e7eb;border-radius:12px;background:#fff">
+                <div>
+                    <p class="pos-side-title">الصورة</p>
+                    @if($ocrPreviewUrl)
+                        <a href="{{ $ocrPreviewUrl }}" target="_blank" rel="noopener">
+                            <img src="{{ $ocrPreviewUrl }}" alt="فاتورة" style="width:100%;max-height:420px;object-fit:contain;border-radius:8px;border:1px solid #eee">
+                        </a>
+                        <p class="pos-invoice-no-hint">اضغط للتكبير في تبويب جديد</p>
+                    @endif
+                </div>
+                <div>
+                    <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.75rem">
+                        <p class="pos-side-title" style="margin:0">مسودة OCR — مراجعة قبل السلة</p>
+                        <button type="button" class="pos-sheet-btn" wire:click="approveAllGreenOcrLines">اعتماد كل الأخضر</button>
+                        <button type="button" class="pos-sheet-btn pos-sheet-btn--upload" wire:click="applyApprovedOcrToCart">تطبيق المعتمد على السلة</button>
+                        <button type="button" class="pos-sheet-btn" wire:click="dismissOcrDraft">إغلاق</button>
+                    </div>
+                    @if(is_array($ocrDraft))
+                        <div style="overflow:auto;max-height:420px">
+                            <table style="width:100%;border-collapse:collapse;font-size:.9rem">
+                                <thead>
+                                    <tr style="text-align:right;background:#f8fafc">
+                                        <th style="padding:.4rem">اعتماد</th>
+                                        <th style="padding:.4rem">النص</th>
+                                        <th style="padding:.4rem">كمية</th>
+                                        <th style="padding:.4rem">ثقة</th>
+                                        <th style="padding:.4rem">مطابقة / مرشحين</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach(($ocrDraft['lines'] ?? []) as $i => $line)
+                                        @php
+                                            $conf = (float) ($line['confidence'] ?? 0);
+                                            $color = $conf >= 0.9 ? '#166534' : ($conf >= 0.6 ? '#a16207' : '#b91c1c');
+                                            $bg = $conf >= 0.9 ? '#dcfce7' : ($conf >= 0.6 ? '#fef9c3' : '#fee2e2');
+                                            $flags = implode(', ', (array) ($line['needs_review'] ?? []));
+                                        @endphp
+                                        <tr style="border-top:1px solid #eee;background:{{ $bg }}">
+                                            <td style="padding:.4rem">
+                                                <input type="checkbox" @checked(!empty($line['approved'])) wire:click="toggleOcrLineApproved({{ $i }})">
+                                            </td>
+                                            <td style="padding:.4rem">
+                                                <div><strong>{{ $line['name'] ?? '—' }}</strong></div>
+                                                <div style="opacity:.75">{{ $line['raw_text'] ?? '' }}</div>
+                                                @if($flags !== '')
+                                                    <div style="color:#b91c1c;font-size:.8rem">مراجعة: {{ $flags }}</div>
+                                                @endif
+                                            </td>
+                                            <td style="padding:.4rem">{{ $line['qty'] ?? '—' }}</td>
+                                            <td style="padding:.4rem;color:{{ $color }};font-weight:700">{{ round($conf * 100) }}%</td>
+                                            <td style="padding:.4rem">
+                                                <div style="margin-bottom:.25rem">{{ $line['match_decision'] ?? 'manual' }} @if(!empty($line['matched_product_id']))(#{{ $line['matched_product_id'] }})@endif</div>
+                                                @foreach(($line['candidates'] ?? []) as $cand)
+                                                    <button type="button" class="pos-sheet-btn" style="margin:.15rem 0;display:inline-block"
+                                                        wire:click="selectOcrCandidate({{ $i }}, {{ (int) $cand['product_id'] }})">
+                                                        {{ $cand['name'] }} ({{ round(((float)$cand['similarity']) * 100) }}%)
+                                                    </button>
+                                                @endforeach
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        @endif
 
         <div class="pos-body">
 
