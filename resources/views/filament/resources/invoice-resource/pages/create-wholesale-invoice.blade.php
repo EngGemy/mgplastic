@@ -104,19 +104,28 @@
                                     @foreach(($ocrDraft['lines'] ?? []) as $i => $line)
                                         @php
                                             $conf = (float) ($line['confidence'] ?? 0);
+                                            $flagsArr = (array) ($line['needs_review'] ?? []);
+                                            $needsReview = $flagsArr !== [] || ($line['match_decision'] ?? '') === 'manual';
                                             $color = $conf >= 0.9 ? '#166534' : ($conf >= 0.6 ? '#a16207' : '#b91c1c');
-                                            $bg = $conf >= 0.9 ? '#dcfce7' : ($conf >= 0.6 ? '#fef9c3' : '#fee2e2');
-                                            $flags = implode(', ', (array) ($line['needs_review'] ?? []));
+                                            $bg = $needsReview
+                                                ? ($conf < 0.6 ? '#fee2e2' : '#ffedd5')
+                                                : ($conf >= 0.9 ? '#dcfce7' : '#fef9c3');
+                                            $flags = implode(', ', $flagsArr);
                                         @endphp
                                         <tr style="border-top:1px solid #eee;background:{{ $bg }}">
                                             <td style="padding:.4rem">
                                                 <input type="checkbox" @checked(!empty($line['approved'])) wire:click="toggleOcrLineApproved({{ $i }})">
                                             </td>
                                             <td style="padding:.4rem">
-                                                <div><strong>{{ $line['name'] ?? '—' }}</strong></div>
+                                                <div>
+                                                    @if(!empty($line['line_no']))
+                                                        <span style="opacity:.7">#{{ $line['line_no'] }}</span>
+                                                    @endif
+                                                    <strong>{{ $line['name'] ?? '—' }}</strong>
+                                                </div>
                                                 <div style="opacity:.75">{{ $line['raw_text'] ?? '' }}</div>
                                                 @if($flags !== '')
-                                                    <div style="color:#b91c1c;font-size:.8rem">مراجعة: {{ $flags }}</div>
+                                                    <div style="color:#c2410c;font-size:.8rem">مراجعة: {{ $flags }}</div>
                                                 @endif
                                             </td>
                                             <td style="padding:.4rem">{{ $line['qty'] ?? '—' }}</td>
