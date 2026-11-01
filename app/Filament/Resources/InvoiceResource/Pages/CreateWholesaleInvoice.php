@@ -7,9 +7,12 @@ use App\Filament\Resources\InvoiceResource;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
+use App\Services\Ai\GeminiClient;
 use App\Services\CustomerWhatsAppNotifier;
 use App\Services\InvoiceCartSheetService;
 use App\Services\InvoiceNumberService;
+use App\Services\InvoiceOcrCartMatcher;
+use App\Services\InvoiceOcrService;
 use App\Services\WholesaleInvoiceService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
@@ -23,7 +26,6 @@ class CreateWholesaleInvoice extends Page
     use SetsCartQuantity {
         setQuantity as applyCartQuantity;
     }
-
     use WithFileUploads;
 
     protected static string $resource = InvoiceResource::class;
@@ -52,6 +54,11 @@ class CreateWholesaleInvoice extends Page
     public bool $reviewing = false;
 
     public $invoiceSheet = null;
+
+    /** Photo of a paper invoice — OCR fills the cart. */
+    public $invoiceOcrImage = null;
+
+    public bool $ocrReading = false;
 
     public static function getNavigationGroup(): ?string
     {
@@ -303,12 +310,82 @@ class CreateWholesaleInvoice extends Page
         }
 
         $this->invoiceSheet = null;
+        $this->applyImportedCartLines($result['lines'], $result['errors'], 'الشيت');
+    }
 
-        if ($result['lines'] === []) {
+    public function updatedInvoiceOcrImage(): void
+    {
+        if (! $this->invoiceOcrImage instanceof TemporaryUploadedFile) {
+            return;
+        }
+
+        if (! app(GeminiClient::class)->enabled()) {
             Notification::make()
                 ->danger()
-                ->title('لم تُضف بنود')
-                ->body(implode("\n", array_slice($result['errors'], 0, 8)) ?: 'الشيت لا يحتوي كميات.')
+                ->title('Gemini غير مفعّل')
+                ->body('أضف GEMINI_API_KEY في إعدادات السيرفر ثم أعد تحميل الإعدادات.')
+                ->send();
+            $this->invoiceOcrImage = null;
+
+            return;
+        }
+
+        $this->validate([
+            'invoiceOcrImage' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+        ]);
+
+        $this->ocrReading = true;
+
+        try {
+            $tmpPath = $this->invoiceOcrImage->getRealPath();
+            $mime = $this->invoiceOcrImage->getMimeType() ?: 'image/jpeg';
+
+            $result = app(GeminiClient::class)->extractInvoiceFromImage($tmpPath, $mime);
+            if (! ($result['ok'] ?? false) || ! is_array($result['draft'] ?? null)) {
+                Notification::make()
+                    ->danger()
+                    ->title('تعذّرت قراءة صورة الفاتورة')
+                    ->body((string) ($result['error'] ?? 'حاول بصورة أوضح'))
+                    ->send();
+
+                return;
+            }
+
+            $draft = app(InvoiceOcrService::class)->normalizeDraft($result['draft']);
+            $mapped = app(InvoiceOcrCartMatcher::class)->draftToCart($draft);
+            $this->applyImportedCartLines(
+                $mapped['lines'],
+                $mapped['errors'],
+                'الصورة',
+                sourceType: (string) ($draft['source_type'] ?? 'unknown'),
+            );
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->danger()
+                ->title('خطأ أثناء OCR')
+                ->body($e->getMessage())
+                ->send();
+        } finally {
+            $this->invoiceOcrImage = null;
+            $this->ocrReading = false;
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $lines
+     * @param  list<string>  $errors
+     */
+    protected function applyImportedCartLines(
+        array $lines,
+        array $errors,
+        string $sourceLabel,
+        string $sourceType = '',
+    ): void {
+        if ($lines === []) {
+            Notification::make()
+                ->danger()
+                ->title('لم تُضف بنود من '.$sourceLabel)
+                ->body(implode("\n", array_slice($errors, 0, 8)) ?: 'لم يُتعرّف على منتجات من الكتالوج.')
                 ->send();
 
             return;
@@ -316,20 +393,21 @@ class CreateWholesaleInvoice extends Page
 
         $this->cart = [];
         $this->reviewing = false;
-        foreach ($result['lines'] as $line) {
+        foreach ($lines as $line) {
             $this->cart[(string) $line['product_id']] = $line;
         }
 
-        $loaded = count($result['lines']);
+        $loaded = count($lines);
+        $hint = $sourceType !== '' ? " (نوع المصدر: {$sourceType})" : '';
         $notice = Notification::make()
             ->success()
-            ->title("تم تحميل {$loaded} منتج من الشيت")
-            ->body('راجع الكميات ثم احفظ. الكمية في الشيت تعني عدد الصناديق إذا كان للمنتج صندوق، وإلا عدد القطع.');
+            ->title("تم تحميل {$loaded} منتج من {$sourceLabel}{$hint}")
+            ->body('راجع الكميات والأسماء في السلة ثم أكمل الإصدار. البنود غير المطابقة أضفها يدوياً.');
 
-        if ($result['errors'] !== []) {
+        if ($errors !== []) {
             $notice->warning()
-                ->title("تم تحميل {$loaded} منتج، وبعض الصفوف لم تُقبل")
-                ->body(implode("\n", array_slice($result['errors'], 0, 8)));
+                ->title("تم تحميل {$loaded} منتج، وبعض البنود لم تُطابق")
+                ->body(implode("\n", array_slice($errors, 0, 8)));
         }
 
         $notice->send();

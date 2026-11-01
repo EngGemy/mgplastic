@@ -43,6 +43,22 @@
                     <p class="pos-sheet-error">{{ $message }}</p>
                 @enderror
             </div>
+            <div class="pos-header-field pos-sheet-field">
+                <label class="pos-label">قراءة فاتورة من صورة (OCR)</label>
+                <div class="pos-sheet-actions">
+                    <label class="pos-sheet-btn pos-sheet-btn--upload">
+                        رفع صورة الفاتورة
+                        <input type="file" wire:model="invoiceOcrImage" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+                    </label>
+                </div>
+                <p class="pos-invoice-no-hint" wire:loading.remove wire:target="invoiceOcrImage">
+                    ارفع صورة (خط يد / حراري / مطبوع) — تُملأ السلة تلقائياً بالمنتجات المطابقة للكتالوج ثم راجعها.
+                </p>
+                <p class="pos-invoice-no-hint" wire:loading wire:target="invoiceOcrImage">جاري قراءة الصورة واستخراج البنود...</p>
+                @error('invoiceOcrImage')
+                    <p class="pos-sheet-error">{{ $message }}</p>
+                @enderror
+            </div>
         </div>
 
         <div class="pos-body">
