@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('events', function (Blueprint $table) {
             $table->id();
             $table->foreignId('category_id')->constrained('event_categories')->onDelete('cascade');
-            $table->foreignId('city_id')->constrained('cities')->onDelete('cascade');
+            // Nullable: exhibitions use free-text location_city / location_country.
+            $table->foreignId('city_id')->nullable()->constrained('cities')->nullOnDelete();
             $table->string('image')->nullable();
             $table->date('event_date');
             $table->time('event_time');

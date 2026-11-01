@@ -4,15 +4,11 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AdminOnlyResource;
 use App\Filament\Resources\EventResource\Pages;
-use App\Models\City;
-use App\Models\Country;
 use App\Models\Event;
 use App\Models\EventCategory;
 use Filament\Forms;
 use Filament\Forms\Components\ViewField;
 use Filament\Forms\Form;
-use Filament\Forms\Get;
-use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -64,7 +60,7 @@ class EventResource extends Resource
 
         return $form->schema([
             Forms\Components\Section::make($isAr ? 'تفاصيل الفعالية' : 'Event details')
-                ->description($isAr ? 'التصنيف، المدينة، الصورة والعنوان النصي' : 'Category, city, image and address')
+                ->description($isAr ? 'اكتب المدينة والدولة يدويًا — أي معرض في أي دولة' : 'Type city and country freely for any exhibition')
                 ->icon('heroicon-o-sparkles')
                 ->columns(2)
                 ->schema([
@@ -79,46 +75,24 @@ class EventResource extends Resource
                         ->preload()
                         ->required(),
 
-                    Forms\Components\Select::make('country_id')
-                        ->label($isAr ? 'الدولة' : 'Country')
-                        ->options(fn () => Country::query()
-                            ->orderBy('name_en')
-                            ->get()
-                            ->pluck($isAr ? 'name_ar' : 'name_en', 'id')
-                            ->toArray())
-                        ->searchable()
-                        ->preload()
-                        ->live()
-                        ->dehydrated(false)
-                        ->afterStateHydrated(function (Set $set, ?Event $record) {
-                            $set('country_id', $record?->city?->country_id);
-                        })
-                        ->afterStateUpdated(fn (Set $set) => $set('city_id', null))
-                        ->helperText($isAr
-                            ? 'للمعارض الدولية اختر المغرب أو السنغال ثم المدينة'
-                            : 'For international exhibitions pick Morocco or Senegal, then the city')
-                        ->required(),
-
-                    Forms\Components\Select::make('city_id')
+                    Forms\Components\TextInput::make('location_city')
                         ->label($isAr ? 'المدينة' : 'City')
-                        ->options(function (Get $get) use ($isAr) {
-                            $countryId = $get('country_id');
-                            $q = City::query()->orderBy('name_en');
-                            if ($countryId) {
-                                $q->where('country_id', $countryId);
-                            }
+                        ->placeholder($isAr ? 'مثال: الجديدة / داكار / مصراتة' : 'e.g. El Jadida / Dakar / Misrata')
+                        ->required()
+                        ->maxLength(120)
+                        ->helperText($isAr
+                            ? 'اكتب اسم المدينة يدويًا (أي دولة — المغرب، السنغال، ليبيا…)'
+                            : 'Type the city name freely (any country)'),
 
-                            return $q->get()
-                                ->mapWithKeys(function (City $city) use ($isAr) {
-                                    $name = $isAr ? ($city->name_ar ?: $city->name_en) : $city->name_en;
+                    Forms\Components\TextInput::make('location_country')
+                        ->label($isAr ? 'الدولة' : 'Country')
+                        ->placeholder($isAr ? 'مثال: المغرب / السنغال / ليبيا' : 'e.g. Morocco / Senegal / Libya')
+                        ->required()
+                        ->maxLength(120),
 
-                                    return [$city->id => $name];
-                                })
-                                ->toArray();
-                        })
-                        ->searchable()
-                        ->preload()
-                        ->required(),
+                    Forms\Components\Hidden::make('city_id')
+                        ->dehydrated()
+                        ->default(null),
 
                     Forms\Components\FileUpload::make('image')
                         ->label($isAr ? 'صورة الغلاف' : 'Cover image')
@@ -263,18 +237,16 @@ class EventResource extends Resource
                     )
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('city.name_en')
+                Tables\Columns\TextColumn::make('location_city')
                     ->label(__('City'))
-                    ->formatStateUsing(function ($state, Event $record) {
-                        $city = app()->getLocale() === 'ar'
-                            ? ($record->city?->name_ar ?? $state)
-                            : ($record->city?->name_en ?? $state);
-                        $country = app()->getLocale() === 'ar'
-                            ? ($record->city?->country?->name_ar ?? null)
-                            : ($record->city?->country?->name_en ?? null);
+                    ->formatStateUsing(function (Event $record) {
+                        $lang = app()->getLocale() === 'ar' ? 'ar' : 'en';
+                        $city = $record->displayCityName($lang) ?: '—';
+                        $country = $record->displayCountryName($lang);
 
                         return $country ? "{$city} — {$country}" : $city;
                     })
+                    ->searchable()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('address')
@@ -308,11 +280,6 @@ class EventResource extends Resource
                 Tables\Filters\SelectFilter::make('category_id')
                     ->label(__('Category'))
                     ->options(EventCategory::query()
-                        ->orderBy('name_en')
-                        ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')),
-                Tables\Filters\SelectFilter::make('city_id')
-                    ->label(__('City'))
-                    ->options(City::query()
                         ->orderBy('name_en')
                         ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')),
             ])

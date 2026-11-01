@@ -13,18 +13,20 @@ class EventController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'category_id'    => 'required|exists:event_categories,id',
-            'city_id'        => 'required|exists:cities,id',
-            'image'          => 'nullable|image|max:2048',
-            'event_date'     => 'required|date',
-            'event_time'     => 'required|date_format:H:i',
-            'address'        => 'required|string|max:255',   // ← added
-            'latitude'       => 'nullable|numeric|between:-90,90',
-            'longitude'      => 'nullable|numeric|between:-180,180',
-            'title_en'       => 'required|string|max:255',
-            'description_en' => 'nullable|string',
-            'title_ar'       => 'required|string|max:255',
-            'description_ar' => 'nullable|string',
+            'category_id'       => 'required|exists:event_categories,id',
+            'city_id'           => 'nullable|exists:cities,id',
+            'location_city'     => 'required|string|max:120',
+            'location_country'  => 'required|string|max:120',
+            'image'             => 'nullable|image|max:2048',
+            'event_date'        => 'required|date',
+            'event_time'        => 'required|date_format:H:i',
+            'address'           => 'required|string|max:255',
+            'latitude'          => 'nullable|numeric|between:-90,90',
+            'longitude'         => 'nullable|numeric|between:-180,180',
+            'title_en'          => 'required|string|max:255',
+            'description_en'    => 'nullable|string',
+            'title_ar'          => 'required|string|max:255',
+            'description_ar'    => 'nullable|string',
         ]);
 
         $imagePath = $request->hasFile('image')
@@ -32,14 +34,16 @@ class EventController extends Controller
             : null;
 
         $event = Event::create([
-            'category_id' => $request->category_id,
-            'city_id'     => $request->city_id,
-            'image'       => $imagePath,
-            'address'     => $request->address,   // ← added
-            'event_date'  => $request->event_date,
-            'event_time'  => $request->event_time,
-            'latitude'    => $request->latitude,
-            'longitude'   => $request->longitude,
+            'category_id'       => $request->category_id,
+            'city_id'           => $request->city_id,
+            'location_city'     => $request->location_city,
+            'location_country'  => $request->location_country,
+            'image'             => $imagePath,
+            'address'           => $request->address,
+            'event_date'        => $request->event_date,
+            'event_time'        => $request->event_time,
+            'latitude'          => $request->latitude,
+            'longitude'         => $request->longitude,
             'en' => [
                 'title'       => $request->title_en,
                 'description' => $request->description_en,

@@ -36,24 +36,12 @@ class EventResource extends JsonResource
                 : ($this->category->name_en ?? null);
         }
 
-        $cityName = null;
+        $cityName = $this->resource->displayCityName($lang);
+        $countryName = $this->resource->displayCountryName($lang);
         $countryId = null;
-        $countryName = null;
         if ($this->relationLoaded('city') && $this->city) {
-            $cityName = $lang === 'ar'
-                ? ($this->city->name_ar ?? $this->city->name_en ?? null)
-                : ($this->city->name_en ?? null);
-
-            $country = $this->city->relationLoaded('country')
-                ? $this->city->country
-                : $this->city->country()->first();
-
-            if ($country) {
-                $countryId = $country->id;
-                $countryName = $lang === 'ar'
-                    ? ($country->name_ar ?? $country->name_en ?? null)
-                    : ($country->name_en ?? null);
-            }
+            $countryId = $this->city->country_id
+                ?? ($this->city->relationLoaded('country') ? $this->city->country?->id : null);
         }
 
         return [
