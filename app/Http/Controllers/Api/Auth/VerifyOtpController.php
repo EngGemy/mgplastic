@@ -7,7 +7,9 @@ use App\Models\BiometricDevice;
 use App\Models\User;
 use App\Services\OtpTicketService;
 use App\Services\PhoneOtpService;
+use App\Services\WhatsAppNotifier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class VerifyOtpController extends Controller
@@ -54,23 +56,37 @@ class VerifyOtpController extends Controller
             ], 429);
         }
 
+        $otp = app(PhoneOtpService::class);
+
         try {
-            $meta = app(PhoneOtpService::class)->issue(
+            $meta = $otp->issue(
                 $user,
                 reason: 'send',
                 channel: (string) $request->input('channel'),
             );
         } catch (ValidationException $e) {
+            $smsAvailable = $otp->smsAvailableFor($user->phone);
+            Log::error('[OTP] send_otp failed', [
+                'branch' => 'VerifyOtpController::send.otp_send_failed',
+                'channel' => (string) $request->input('channel'),
+                'phone' => $this->phoneHint($user->phone),
+                'reason' => collect($e->errors())->flatten()->first(),
+                'http_status' => null,
+                'elapsed_ms' => null,
+                'breaker_state' => app(WhatsAppNotifier::class)->isBreakerOpen() ? 'open' : 'closed',
+                'sms_available' => $smsAvailable,
+            ]);
+
             return response()->json([
                 'status' => false,
                 'message' => collect($e->errors())->flatten()->first() ?: 'تعذّر إرسال رمز التحقق',
                 'code' => 'otp_send_failed',
+                'sms_available' => $smsAvailable,
             ], 422);
         }
 
         $channel = $meta['channel'];
-
-        return response()->json([
+        $payload = [
             'status' => true,
             'message' => $channel === 'whatsapp'
                 ? 'تم إرسال رمز التحقق عبر واتساب'
@@ -81,7 +97,13 @@ class VerifyOtpController extends Controller
             'channel' => $channel,
             'otp_expires_at' => $meta['otp_expires_at'],
             'phone_hint' => $this->phoneHint($user->phone),
-        ]);
+        ];
+
+        if (($meta['delivery'] ?? null) === 'pending') {
+            $payload['delivery'] = 'pending';
+        }
+
+        return response()->json($payload);
     }
 
     public function verify(Request $request)
