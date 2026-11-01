@@ -2,14 +2,13 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class Invoice extends Model
 {
@@ -22,21 +21,28 @@ class Invoice extends Model
         'parent_invoice_id',
         'counterparty_user_id',
         'source_distribution_id',
-        'plumber_id','vendor_store_id','wholesale_distributor_id',
-        'subtotal_cents','tax_cents','total_cents',
-        'currency','number','attachment_path',
-        'status','approved_at','reviewed_by','issued_by','rejection_reason',
-        'profit_percent','points_awarded',
+        'plumber_id', 'vendor_store_id', 'wholesale_distributor_id',
+        'subtotal_cents', 'tax_cents', 'total_cents',
+        'currency', 'number', 'attachment_path',
+        'ocr_status', 'ocr_draft', 'ocr_error', 'ocr_confirmed_at',
+        'status', 'approved_at', 'reviewed_by', 'issued_by', 'rejection_reason',
+        'profit_percent', 'points_awarded',
     ];
 
     protected $casts = [
-        'approved_at'      => 'datetime',
+        'approved_at' => 'datetime',
+        'ocr_confirmed_at' => 'datetime',
+        'ocr_draft' => 'array',
         'rejection_reason' => 'array',
-        'profit_percent'   => 'decimal:2',
+        'profit_percent' => 'decimal:2',
     ];
 
     // علاقات
-    public function plumber(){ return $this->belongsTo(User::class, 'plumber_id'); }
+    public function plumber()
+    {
+        return $this->belongsTo(User::class, 'plumber_id');
+    }
+
     public function wholesaleDistributor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'wholesale_distributor_id');
@@ -71,12 +77,21 @@ class Invoice extends Model
     {
         return $this->isOutgoing() ? 'صادر' : 'وارد';
     }
+
     public function issuer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'issued_by');
     }
-    public function vendorStore(){ return $this->belongsTo(PlumberStore::class, 'vendor_store_id'); }
-    public function reviewer(){ return $this->belongsTo(User::class, 'reviewed_by'); }
+
+    public function vendorStore()
+    {
+        return $this->belongsTo(PlumberStore::class, 'vendor_store_id');
+    }
+
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
 
     public function items(): HasMany
     {
@@ -222,14 +237,25 @@ class Invoice extends Model
     }
 
     // سكوبات
-    public function scopePending($q){ return $q->where('status','pending_review'); }
-    public function scopeApproved($q){ return $q->where('status','approved'); }
-    public function scopeRejected($q){ return $q->where('status','rejected'); }
+    public function scopePending($q)
+    {
+        return $q->where('status', 'pending_review');
+    }
+
+    public function scopeApproved($q)
+    {
+        return $q->where('status', 'approved');
+    }
+
+    public function scopeRejected($q)
+    {
+        return $q->where('status', 'rejected');
+    }
 
     // فورمات مُساعد: إجمالي بالدينار
     protected function totalDinars(): Attribute
     {
-        return Attribute::get(fn() => (int) floor($this->total_cents / 100));
+        return Attribute::get(fn () => (int) floor($this->total_cents / 100));
     }
 
     // يمنع السباك من تعديل الإجماليات (السباك يرفع فقط)
@@ -237,10 +263,11 @@ class Invoice extends Model
     {
         // يسمح فقط بحقول الرفع: المرفق + vendor_store_id + رقم مرجعي إن أردت
         $allowed = [
-            'vendor_store_id','attachment_path','number',
+            'vendor_store_id', 'attachment_path', 'number',
             // اختيارياً: subtotal_cents/tax_cents لو تحب تمنعها احذفهم
         ];
         $this->fill(collect($data)->only($allowed)->all());
+
         return $this;
     }
 

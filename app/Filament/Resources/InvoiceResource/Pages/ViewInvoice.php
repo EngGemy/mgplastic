@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Concerns\HasInvoiceDocumentActions;
+use App\Filament\Concerns\HasInvoiceOcrActions;
 use App\Filament\Resources\InvoiceDistributionResource;
 use App\Filament\Resources\InvoiceResource;
 use App\Models\InvoiceDistribution;
@@ -19,6 +20,7 @@ use Filament\Resources\Pages\ViewRecord;
 class ViewInvoice extends ViewRecord
 {
     use HasInvoiceDocumentActions;
+    use HasInvoiceOcrActions;
 
     protected static string $resource = InvoiceResource::class;
 
@@ -77,6 +79,8 @@ class ViewInvoice extends ViewRecord
             && (int) $this->record->wholesale_distributor_id === (int) $user->id;
 
         return [
+            ...$this->invoiceOcrHeaderActions(),
+
             Actions\Action::make('confirm_receipt')
                 ->label('تأكيد استلام الفاتورة')
                 ->icon('heroicon-o-inbox-arrow-down')

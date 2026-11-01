@@ -3,19 +3,18 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\ScopesByNetworkRole;
+use App\Filament\Resources\InvoiceResource\Pages;
 use App\Filament\Resources\InvoiceResource\RelationManagers\ItemsRelationManager;
 use App\Filament\Resources\InvoiceResource\RelationManagers\ReturnsRelationManager;
-use App\Filament\Resources\InvoiceResource\Pages;
-use App\Filament\Resources\InvoiceDistributionResource;
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
-use App\Models\User;
 use App\Models\SystemLabel;
-use App\Support\AdminPermissions;
-use App\Support\StorePermissions;
+use App\Models\User;
 use App\Services\CustomerWhatsAppNotifier;
 use App\Services\InvoiceAdjustmentService;
 use App\Services\InvoiceReuseService;
+use App\Support\AdminPermissions;
+use App\Support\StorePermissions;
 use Filament\Forms;
 use Filament\Infolists;
 use Filament\Notifications\Notification;
@@ -31,6 +30,7 @@ class InvoiceResource extends Resource
     protected static ?string $model = Invoice::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
+
     protected static ?int $navigationSort = 10;
 
     public static function getNavigationGroup(): ?string
@@ -485,7 +485,7 @@ class InvoiceResource extends Resource
                         ->disk('public')
                         ->hidden(fn ($record) => ! in_array(
                             strtolower(pathinfo((string) $record->attachment_path, PATHINFO_EXTENSION)),
-                            ['jpg','jpeg','png','webp','gif']
+                            ['jpg', 'jpeg', 'png', 'webp', 'gif']
                         ))
                         ->height('280')
                         ->url(fn ($record) => $record->attachment_path ? Storage::disk('public')->url($record->attachment_path) : null, true)
@@ -495,7 +495,7 @@ class InvoiceResource extends Resource
                         ->label('رابط الملف')
                         ->visible(fn ($record) => filled($record->attachment_path) && ! in_array(
                             strtolower(pathinfo((string) $record->attachment_path, PATHINFO_EXTENSION)),
-                            ['jpg','jpeg','png','webp','gif']
+                            ['jpg', 'jpeg', 'png', 'webp', 'gif']
                         ))
                         ->formatStateUsing(fn ($state, $record) => Storage::disk('public')->url($record->attachment_path))
                         ->url(fn ($state) => $state, true)
@@ -506,11 +506,81 @@ class InvoiceResource extends Resource
                 ->icon('heroicon-o-paper-clip')
                 ->collapsed(),
 
+            Infolists\Components\Section::make('قراءة الفاتورة (OCR)')
+                ->icon('heroicon-o-eye')
+                ->schema([
+                    Infolists\Components\Grid::make(4)->schema([
+                        Infolists\Components\TextEntry::make('ocr_status')
+                            ->label('الحالة')
+                            ->badge()
+                            ->formatStateUsing(fn (?string $state) => match ($state) {
+                                'processing' => 'جاري القراءة',
+                                'ready' => 'مسودة جاهزة',
+                                'failed' => 'فشل',
+                                default => 'لم تُقرأ',
+                            })
+                            ->color(fn (?string $state) => match ($state) {
+                                'processing' => 'warning',
+                                'ready' => 'success',
+                                'failed' => 'danger',
+                                default => 'gray',
+                            }),
+                        Infolists\Components\TextEntry::make('ocr_source')
+                            ->label('نوع المصدر')
+                            ->state(fn ($record) => match ($record->ocr_draft['source_type'] ?? null) {
+                                'handwritten' => 'خط يد',
+                                'thermal' => 'حراري',
+                                'printed' => 'مطبوع',
+                                default => '—',
+                            }),
+                        Infolists\Components\TextEntry::make('ocr_confidence')
+                            ->label('الثقة')
+                            ->state(function ($record) {
+                                $c = $record->ocr_draft['overall_confidence'] ?? null;
+
+                                return $c === null ? '—' : round(((float) $c) * 100).'%';
+                            }),
+                        Infolists\Components\TextEntry::make('ocr_confirmed_label')
+                            ->label('تاريخ التأكيد')
+                            ->state(fn ($record) => $record->ocr_confirmed_at
+                                ? $record->ocr_confirmed_at->format('Y/m/d H:i')
+                                : '—'),
+                    ]),
+                    Infolists\Components\TextEntry::make('ocr_error')
+                        ->label('خطأ القراءة')
+                        ->color('danger')
+                        ->visible(fn ($record) => $record->ocr_status === 'failed' && filled($record->ocr_error))
+                        ->columnSpanFull(),
+                    Infolists\Components\TextEntry::make('ocr_vendor')
+                        ->label('التاجر (مسودة)')
+                        ->state(fn ($record) => $record->ocr_draft['vendor'] ?? '—')
+                        ->visible(fn ($record) => filled($record->ocr_draft)),
+                    Infolists\Components\RepeatableEntry::make('ocr_lines')
+                        ->label('بنود المسودة')
+                        ->state(fn ($record) => $record->ocr_draft['lines'] ?? [])
+                        ->schema([
+                            Infolists\Components\TextEntry::make('name')->label('الصنف')->weight('bold'),
+                            Infolists\Components\TextEntry::make('qty')->label('كمية'),
+                            Infolists\Components\TextEntry::make('unit_price')->label('سعر'),
+                            Infolists\Components\TextEntry::make('line_total')->label('إجمالي'),
+                            Infolists\Components\TextEntry::make('confidence')
+                                ->label('ثقة')
+                                ->formatStateUsing(fn ($state) => $state === null ? '—' : round(((float) $state) * 100).'%'),
+                        ])
+                        ->columns(5)
+                        ->visible(fn ($record) => filled($record->ocr_draft['lines'] ?? null)),
+                ])
+                ->collapsed(fn ($record) => ! in_array($record->ocr_status, ['ready', 'failed', 'processing'], true)),
+
             Infolists\Components\Section::make('مراجعة إيصال السباك')
                 ->schema([
                     Infolists\Components\Grid::make(3)->schema([
-                        Infolists\Components\TextEntry::make('reviewer.name')->label('راجعها')->default('—'),
-                        Infolists\Components\TextEntry::make('approved_at')->label('تاريخ الاعتماد')->dateTime('Y/m/d H:i')->default('—'),
+                        Infolists\Components\TextEntry::make('reviewer.name')->label('راجعها')->placeholder('—'),
+                        Infolists\Components\TextEntry::make('approved_at_label')
+                            ->label('تاريخ الاعتماد')
+                            ->state(fn ($record) => $record->approved_at
+                                ? $record->approved_at->format('Y/m/d H:i')
+                                : '—'),
                         Infolists\Components\TextEntry::make('profit_percent')
                             ->label('نسبة الربح')
                             ->formatStateUsing(fn ($state) => isset($state)
@@ -539,7 +609,7 @@ class InvoiceResource extends Resource
             'pos-create' => Pages\CreateWholesaleInvoice::route('/pos-create'),
             'pos-retail' => Pages\CreateRetailPos::route('/pos-retail'),
             'pos-plumber' => Pages\CreatePlumberPos::route('/pos-plumber'),
-            'view'  => Pages\ViewInvoice::route('/{record}'),
+            'view' => Pages\ViewInvoice::route('/{record}'),
         ];
     }
 
