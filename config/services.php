@@ -177,9 +177,9 @@ return [
         'timeout' => (int) env('GEMINI_TIMEOUT', 8),
         'ocr_timeout' => (int) env('GEMINI_OCR_TIMEOUT', 60),
         'ocr_max_output_tokens' => (int) env('GEMINI_OCR_MAX_OUTPUT_TOKENS', 8192),
-        // thinkingBudget for Gemini 2.5+ (0 = low/off). Null = omit (2.0-flash rejects it).
+        // thinkingBudget for Gemini 2.5 / 3.x (0 = low/off). Empty = auto (on for 2.5/3.x, off for 2.0-flash).
         'ocr_thinking_budget' => env('GEMINI_OCR_THINKING_BUDGET'),
-        'ocr_catalog_prompt_limit' => (int) env('GEMINI_OCR_CATALOG_PROMPT_LIMIT', 80),
+        'ocr_catalog_prompt_limit' => (int) env('GEMINI_OCR_CATALOG_PROMPT_LIMIT', 40),
         'ocr_cache_ttl' => (int) env('GEMINI_OCR_CACHE_TTL', 86400),
         'ocr_queue_threshold_seconds' => (int) env('GEMINI_OCR_QUEUE_THRESHOLD', 15),
         'daily_limit' => (int) env('AI_DAILY_CALL_LIMIT', 300),

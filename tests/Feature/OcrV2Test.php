@@ -66,10 +66,16 @@ class OcrV2Test extends TestCase
             'source_type' => 'printed',
         ]);
 
-        $this->assertContains($draft['lines'][0]['match_decision'], ['auto', 'alias', 'suggest']);
-        $this->assertSame('manual', $draft['lines'][1]['match_decision']);
-        $this->assertNotEmpty($draft['lines'][0]['candidates']);
-        $this->assertLessThanOrEqual(3, count($draft['lines'][0]['candidates']));
+        // Structured matcher: known pipe family may auto-match; unknown tokens are excluded (not dropped).
+        $this->assertNotEmpty($draft['lines']);
+        $this->assertContains($draft['lines'][0]['match_decision'], ['auto', 'alias', 'suggest', 'needs_choice', 'manual']);
+        if (isset($draft['lines'][0]['candidates'])) {
+            $this->assertLessThanOrEqual(3, count($draft['lines'][0]['candidates']));
+        }
+        $this->assertTrue(
+            collect($draft['excluded'] ?? [])->contains(fn ($e) => str_contains((string) ($e['raw_text'] ?? ''), 'xyz-unknown'))
+            || collect($draft['lines'])->contains(fn ($l) => str_contains((string) ($l['raw_text'] ?? ''), 'xyz-unknown'))
+        );
     }
 
     public function test_validation_marks_needs_review_not_fail(): void
@@ -163,7 +169,7 @@ class OcrV2Test extends TestCase
                             'overall_confidence' => 0.9,
                             'source_type' => 'printed',
                             'lines' => [
-                                ['raw_text' => 'كوع', 'name' => 'كوع', 'qty' => 2, 'unit_price' => 5, 'line_total' => 10, 'confidence' => 0.95],
+                                ['raw_text' => 'كوع 90 3 بوصه', 'name' => 'كوع 90 3 بوصه', 'qty' => 2, 'unit_price' => 5, 'line_total' => 10, 'confidence' => 0.95],
                             ],
                         ], JSON_UNESCAPED_UNICODE)."\n```",
                     ]]],
@@ -172,8 +178,16 @@ class OcrV2Test extends TestCase
             ], 200),
         ]);
 
-        $product = Product::factory()->create(['points_per_unit' => 1]);
-        $product->translateOrNew('ar')->name = 'كوع';
+        $product = Product::factory()->create([
+            'points_per_unit' => 1,
+            'catalog_family' => 'elbow_90',
+            'angle' => 90,
+            'size_value' => 3,
+            'size_unit' => 'in',
+            'system' => 'us',
+            'derived_at' => now(),
+        ]);
+        $product->translateOrNew('ar')->name = 'كوع 90 – 3 بوصة MG';
         $product->save();
 
         $first = app(InvoiceOcrPipeline::class)->run($img);

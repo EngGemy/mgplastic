@@ -187,11 +187,10 @@ class GeminiClient
             'responseSchema' => $this->ocrResponseSchema(),
         ];
 
-        $thinkingBudget = config('services.gemini.ocr_thinking_budget');
-        if ($thinkingBudget !== null && $thinkingBudget !== '') {
-            // Gemini 2.5+: thinkingBudget (0 = low/off). Omit on 2.0-flash via null env.
+        $includeThinking = $this->shouldSendThinkingConfig($model);
+        if ($includeThinking) {
             $generationConfig['thinkingConfig'] = [
-                'thinkingBudget' => (int) $thinkingBudget,
+                'thinkingBudget' => (int) (config('services.gemini.ocr_thinking_budget') ?? 0),
             ];
         }
 
@@ -218,12 +217,7 @@ class GeminiClient
             .':generateContent';
 
         try {
-            $response = Http::withHeaders([
-                'x-goog-api-key' => config('services.gemini.key'),
-                'Content-Type' => 'application/json',
-            ])
-                ->timeout(max(15, (int) config('services.gemini.ocr_timeout', 60)))
-                ->post($url, $payload);
+            $response = $this->postOcr($url, $payload, $includeThinking);
 
             $elapsedMs = (int) round((microtime(true) - $started) * 1000);
             $json = $response->json();
@@ -293,7 +287,9 @@ class GeminiClient
                 'model' => $model,
                 'finish_reason' => $finishReason,
                 'usage' => $usage,
-                'lines' => count($draft['lines'] ?? []),
+                'raw_line_count' => $draft['raw_line_count'] ?? null,
+                'returned_line_count' => $draft['returned_line_count'] ?? count($draft['lines'] ?? []),
+                'dropped_reasons' => $draft['dropped_reasons'] ?? [],
             ]);
 
             return [
@@ -394,15 +390,20 @@ class GeminiClient
                 return ['ok' => false, 'line' => null, 'error' => 'تعذّر تفسير إعادة القراءة', 'model' => $model, 'elapsed_ms' => $elapsedMs];
             }
 
+            // Reject full-draft payloads accidentally returned by the model/fake.
+            if (isset($decoded['lines']) && is_array($decoded['lines'])) {
+                return ['ok' => false, 'line' => null, 'error' => 'إعادة القراءة أعادت مسودة كاملة بدل بند', 'model' => $model, 'elapsed_ms' => $elapsedMs];
+            }
+
             return [
                 'ok' => true,
                 'line' => [
                     'raw_text' => $this->nullableString($decoded['raw_text'] ?? $decoded['name'] ?? $hintText),
                     'name' => $this->nullableString($decoded['name'] ?? $decoded['raw_text'] ?? $hintText) ?? $hintText,
-                    'qty' => $this->toFloat($decoded['qty'] ?? 1) ?? 1.0,
+                    'qty' => $this->toFloat($decoded['qty'] ?? null),
                     'unit_price' => $this->toFloat($decoded['unit_price'] ?? null),
                     'line_total' => $this->toFloat($decoded['line_total'] ?? null),
-                    'confidence' => max(0, min(1, (float) ($decoded['confidence'] ?? 0.5))),
+                    'confidence' => $this->normalizeConfidence($decoded['confidence'] ?? null),
                 ],
                 'error' => null,
                 'model' => $model,
@@ -413,18 +414,81 @@ class GeminiClient
         }
     }
 
+    /**
+     * Completeness pass: ask only for lines when the first pass under-transcribed a numbered list.
+     *
+     * @return array{ok:bool, lines:list<array<string,mixed>>, error:?string}
+     */
+    public function extractLinesOnly(string $absolutePath, string $mimeType = 'image/jpeg'): array
+    {
+        if (! $this->enabled() || ! is_readable($absolutePath)) {
+            return ['ok' => false, 'lines' => [], 'error' => 'غير جاهز'];
+        }
+        $binary = file_get_contents($absolutePath);
+        if ($binary === false || $binary === '') {
+            return ['ok' => false, 'lines' => [], 'error' => 'صورة فارغة'];
+        }
+
+        $prompt = 'This is a handwritten Arabic numbered list. Transcribe EVERY visible line top to bottom, '
+            .'one entry per number, do not skip, merge or stop early. '
+            .'Return JSON {"lines":[{"raw_text":"...","name":"...","qty":number|null,"confidence":0.0}]}. '
+            .'Quantity-only lines are valid (unit_price/line_total may be omitted). '
+            .'Do not invent products. Convert Arabic-Indic digits to Latin in qty.';
+
+        try {
+            $response = Http::withHeaders([
+                'x-goog-api-key' => config('services.gemini.key'),
+                'Content-Type' => 'application/json',
+            ])
+                ->timeout(max(10, (int) config('services.gemini.ocr_timeout', 60)))
+                ->post(
+                    'https://generativelanguage.googleapis.com/v1beta/models/'.rawurlencode($this->model()).':generateContent',
+                    [
+                        'contents' => [[
+                            'role' => 'user',
+                            'parts' => [
+                                ['text' => $prompt],
+                                ['inline_data' => ['mime_type' => $mimeType, 'data' => base64_encode($binary)]],
+                            ],
+                        ]],
+                        'generationConfig' => [
+                            'temperature' => 0.1,
+                            'maxOutputTokens' => max(1024, (int) config('services.gemini.ocr_max_output_tokens', 8192)),
+                            'responseMimeType' => 'application/json',
+                        ],
+                    ]
+                );
+
+            if (! $response->successful()) {
+                return ['ok' => false, 'lines' => [], 'error' => $this->mapHttpFailure($response->status())['message']];
+            }
+
+            $this->hitDailyBudget();
+            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+            $draft = is_string($text) ? $this->parseInvoiceDraftJson($text) : null;
+            if ($draft === null) {
+                return ['ok' => false, 'lines' => [], 'error' => 'تعذّر تفسير تمريرة الاكتمال'];
+            }
+
+            return ['ok' => true, 'lines' => $draft['lines'] ?? [], 'error' => null];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'lines' => [], 'error' => 'فشل تمريرة الاكتمال'];
+        }
+    }
+
     /** @param  list<string>  $catalogNames */
     protected function ocrPrompt(array $catalogNames): string
     {
         $base = <<<'PROMPT'
-أنت محرك OCR لفواتير عربية (ليبيا/مصر). الصورة قد تكون: خط يد، إيصال حراري، أو مطبوعة.
-استخرج الحقول بدقة دون اختراع بنود غير ظاهرة.
-لكل بند أرجع raw_text كما يظهر، وname منظّف، qty، unit_price، line_total، confidence من 0 إلى 1.
-الأرقام العربية حوّلها لاتينية. الحقول غير الواضحة = null.
+This is a handwritten / thermal / printed Arabic invoice or numbered list (Libya/Egypt).
+Transcribe EVERY visible line top to bottom, one entry per number/row — do not skip, merge, or stop early.
+Quantity-only lists are valid: unit_price and line_total may be null/omitted.
+For each line return raw_text (as written), name (cleaned, without leading list index), qty, optional unit_price/line_total, confidence 0..1, optional brand (null if unmarked; never invent MG).
+Convert Arabic-Indic digits to Latin in qty. Unknown fields = null. Do not invent lines.
 PROMPT;
 
         if ($catalogNames !== []) {
-            $base .= "\nأسماء منتجات مرجعية من الكتالوج (اختَر الأقرب عند الإمكان):\n"
+            $base .= "\n\nOptional catalog hints (do NOT drop lines that are absent from this list):\n"
                 .implode(' | ', array_slice($catalogNames, 0, (int) config('services.gemini.ocr_catalog_prompt_limit', 80)));
         }
 
@@ -444,7 +508,7 @@ PROMPT;
                 'subtotal' => ['type' => 'NUMBER', 'nullable' => true],
                 'tax' => ['type' => 'NUMBER', 'nullable' => true],
                 'total' => ['type' => 'NUMBER', 'nullable' => true],
-                'overall_confidence' => ['type' => 'NUMBER'],
+                'overall_confidence' => ['type' => 'NUMBER', 'nullable' => true],
                 'source_type' => ['type' => 'STRING'],
                 'lines' => [
                     'type' => 'ARRAY',
@@ -452,18 +516,66 @@ PROMPT;
                         'type' => 'OBJECT',
                         'properties' => [
                             'raw_text' => ['type' => 'STRING'],
-                            'name' => ['type' => 'STRING'],
-                            'qty' => ['type' => 'NUMBER'],
+                            'name' => ['type' => 'STRING', 'nullable' => true],
+                            'qty' => ['type' => 'NUMBER', 'nullable' => true],
                             'unit_price' => ['type' => 'NUMBER', 'nullable' => true],
                             'line_total' => ['type' => 'NUMBER', 'nullable' => true],
-                            'confidence' => ['type' => 'NUMBER'],
+                            'confidence' => ['type' => 'NUMBER', 'nullable' => true],
+                            'brand' => ['type' => 'STRING', 'nullable' => true],
                         ],
-                        'required' => ['raw_text', 'name', 'qty', 'confidence'],
+                        // Quantity-only lists: do not require prices or confidence.
+                        'required' => ['raw_text'],
                     ],
                 ],
             ],
-            'required' => ['lines', 'overall_confidence', 'source_type'],
+            'required' => ['lines', 'source_type'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function postOcr(string $url, array $payload, bool $sentThinking): \Illuminate\Http\Client\Response
+    {
+        $response = Http::withHeaders([
+            'x-goog-api-key' => config('services.gemini.key'),
+            'Content-Type' => 'application/json',
+        ])
+            ->timeout(max(15, (int) config('services.gemini.ocr_timeout', 60)))
+            ->post($url, $payload);
+
+        // If thinkingConfig is rejected, retry once without it.
+        if ($sentThinking && in_array($response->status(), [400, 404], true)) {
+            $this->ocrLog('warning', 'thinking_config_rejected', [
+                'status' => $response->status(),
+                'model' => $this->model(),
+            ]);
+            unset($payload['generationConfig']['thinkingConfig']);
+
+            return Http::withHeaders([
+                'x-goog-api-key' => config('services.gemini.key'),
+                'Content-Type' => 'application/json',
+            ])
+                ->timeout(max(15, (int) config('services.gemini.ocr_timeout', 60)))
+                ->post($url, $payload);
+        }
+
+        return $response;
+    }
+
+    protected function shouldSendThinkingConfig(string $model): bool
+    {
+        $budget = config('services.gemini.ocr_thinking_budget');
+        if ($budget === null || $budget === '') {
+            // Default low thinking for 2.5 / 3.x to cut latency; omit for classic 2.0-flash.
+            if (preg_match('/gemini-3|gemini-2\.5/i', $model)) {
+                return true;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     /** @return array{code:string, message:string} */
@@ -519,29 +631,69 @@ PROMPT;
             return null;
         }
 
+        $rawInputLines = (array) ($decoded['lines'] ?? []);
+        $rawLineCount = count($rawInputLines);
         $lines = [];
-        foreach ((array) ($decoded['lines'] ?? []) as $line) {
+        $droppedReasons = [];
+
+        foreach ($rawInputLines as $index => $line) {
             if (! is_array($line)) {
+                $reason = 'non_array_line';
+                $droppedReasons[] = ['index' => $index, 'reason' => $reason];
+                $this->ocrLog('warning', 'line_dropped', ['index' => $index, 'reason' => $reason]);
+
                 continue;
             }
+
             $raw = trim((string) ($line['raw_text'] ?? $line['name'] ?? ''));
             $name = trim((string) ($line['name'] ?? $raw));
-            if ($raw === '' && $name === '') {
+            $qty = $this->toFloat($line['qty'] ?? null);
+
+            if ($raw === '' && $name === '' && $qty === null) {
+                $reason = 'empty_text_and_qty';
+                $droppedReasons[] = ['index' => $index, 'reason' => $reason];
+                $this->ocrLog('warning', 'line_dropped', ['index' => $index, 'reason' => $reason]);
+
                 continue;
             }
+
+            $display = $name !== '' ? $name : $raw;
+            [$lineNo, $cleanedName] = $this->stripLeadingListNumber($display);
+            $cleanedName = $this->latinizeDigitsInText($cleanedName);
+
+            $needsReview = [];
+            if ($qty === null) {
+                $needsReview[] = 'qty_missing';
+            }
+            if (($line['unit_price'] ?? null) === null && ($line['line_total'] ?? null) === null) {
+                $needsReview[] = 'price_missing';
+            }
+
             $lines[] = [
-                'raw_text' => $raw !== '' ? $raw : $name,
-                'name' => $name !== '' ? $name : $raw,
-                'qty' => $this->toFloat($line['qty'] ?? 1) ?? 1.0,
+                'raw_text' => $raw !== '' ? $raw : $display,
+                'name' => $cleanedName !== '' ? $cleanedName : ($raw !== '' ? $raw : 'بند'),
+                'line_no' => $lineNo,
+                'qty' => $qty ?? 1.0,
                 'unit_price' => $this->toFloat($line['unit_price'] ?? null),
                 'line_total' => $this->toFloat($line['line_total'] ?? null),
-                'confidence' => max(0, min(1, (float) ($line['confidence'] ?? 0.5))),
+                'confidence' => $this->normalizeConfidence($line['confidence'] ?? null),
+                'brand' => $this->nullableString($line['brand'] ?? null),
+                'needs_review' => $needsReview,
             ];
         }
 
         $source = (string) ($decoded['source_type'] ?? 'unknown');
         if (! in_array($source, ['handwritten', 'thermal', 'printed', 'unknown'], true)) {
             $source = 'unknown';
+        }
+
+        $returned = count($lines);
+        if ($returned < $rawLineCount) {
+            $this->ocrLog('error', 'line_count_mismatch', [
+                'raw_line_count' => $rawLineCount,
+                'returned_line_count' => $returned,
+                'dropped_reasons' => $droppedReasons,
+            ]);
         }
 
         return [
@@ -553,9 +705,48 @@ PROMPT;
             'tax' => $this->toFloat($decoded['tax'] ?? null),
             'total' => $this->toFloat($decoded['total'] ?? null),
             'lines' => $lines,
-            'overall_confidence' => max(0, min(1, (float) ($decoded['overall_confidence'] ?? 0.5))),
+            'overall_confidence' => $this->normalizeConfidence($decoded['overall_confidence'] ?? null),
             'source_type' => $source,
+            'raw_line_count' => $rawLineCount,
+            'returned_line_count' => $returned,
+            'dropped_reasons' => $droppedReasons,
         ];
+    }
+
+    protected function normalizeConfidence(mixed $value): float
+    {
+        // Missing confidence must NOT force a destructive second-pass (was wiping qty).
+        if ($value === null || $value === '') {
+            return 0.7;
+        }
+
+        return max(0, min(1, (float) $value));
+    }
+
+    /**
+     * @return array{0:?int, 1:string}
+     */
+    protected function stripLeadingListNumber(string $text): array
+    {
+        $text = trim($text);
+        // Arabic-Indic or Latin list index at start: "٢ وصله" / "2-" / "2."
+        if (preg_match('/^([0-9٠-٩۰-۹]{1,3})[\).\-\s:]+(.+)$/u', $text, $m)) {
+            $latin = $this->latinizeDigitsInText($m[1]);
+
+            return [(int) $latin, trim($m[2])];
+        }
+
+        return [null, $text];
+    }
+
+    protected function latinizeDigitsInText(string $text): string
+    {
+        return strtr($text, [
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+        ]);
     }
 
     protected function nullableString(mixed $value): ?string
@@ -576,7 +767,9 @@ PROMPT;
         if (is_numeric($value)) {
             return round((float) $value, 3);
         }
-        $normalized = str_replace(['٬', ',', ' '], ['', '.', ''], (string) $value);
+        $normalized = $this->latinizeDigitsInText((string) $value);
+        $normalized = str_replace(['٬', ',', ' '], ['', '.', ''], $normalized);
+        // Arabic decimal comma already handled; keep digits/dot/minus only.
         $normalized = preg_replace('/[^\d.\-]/', '', $normalized) ?? '';
         if ($normalized === '' || ! is_numeric($normalized)) {
             return null;

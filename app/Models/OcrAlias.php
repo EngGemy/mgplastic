@@ -9,7 +9,9 @@ class OcrAlias extends Model
 {
     protected $fillable = [
         'normalized_text',
+        'system_hint',
         'product_id',
+        'customer_user_id',
         'hits',
         'last_used_at',
     ];
@@ -22,5 +24,10 @@ class OcrAlias extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'customer_user_id');
     }
 }

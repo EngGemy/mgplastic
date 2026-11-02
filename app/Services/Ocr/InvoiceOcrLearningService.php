@@ -15,6 +15,9 @@ class InvoiceOcrLearningService
         ?int $productId,
         ?float $qty,
         ?User $user = null,
+        ?string $systemHint = null,
+        ?int $customerUserId = null,
+        bool $rememberForCustomer = false,
     ): void {
         $normalized = ArabicTextNormalizer::normalize($rawText);
         if ($normalized === '' || ! $productId) {
@@ -29,7 +32,14 @@ class InvoiceOcrLearningService
             'user_id' => $user?->id,
         ]);
 
-        $alias = OcrAlias::query()->firstOrNew(['normalized_text' => $normalized]);
+        $hint = $systemHint ?? '';
+        $customerId = $rememberForCustomer ? $customerUserId : null;
+
+        $alias = OcrAlias::query()->firstOrNew([
+            'normalized_text' => $normalized,
+            'system_hint' => $hint,
+            'customer_user_id' => $customerId,
+        ]);
         $alias->product_id = $productId;
         $alias->hits = (int) $alias->hits + 1;
         $alias->last_used_at = now();

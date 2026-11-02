@@ -53,6 +53,14 @@ class Product extends Model
         'point_value_percent',
         'point_value_fixed',
         'reference_unit_price_cents',
+        'catalog_family',
+        'angle',
+        'size_value',
+        'size_unit',
+        'size2_value',
+        'system',
+        'variant',
+        'derived_at',
     ];
 
     protected $casts = [
@@ -69,6 +77,11 @@ class Product extends Model
         'point_value_percent' => 'decimal:4',
         'point_value_fixed' => 'decimal:4',
         'reference_unit_price_cents' => 'integer',
+        'angle' => 'float',
+        'size_value' => 'float',
+        'size2_value' => 'float',
+        'variant' => 'array',
+        'derived_at' => 'datetime',
     ];
 
     // --- Relations ---

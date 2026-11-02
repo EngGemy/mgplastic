@@ -71,71 +71,145 @@
         </div>
 
         @if($ocrPreviewUrl || $ocrDraft)
-            <div class="pos-ocr-review" style="display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:1rem;margin:1rem 0;padding:1rem;border:1px solid #e5e7eb;border-radius:12px;background:#fff">
+            @php
+                $mc = (array) ($ocrDraft['match_counts'] ?? []);
+                $readyN = (int) ($mc['matched'] ?? 0);
+                $choiceN = (int) ($mc['needs_choice'] ?? 0);
+                $exclN = count($ocrDraft['excluded'] ?? []);
+                $rawN = (int) ($ocrDraft['raw_line_count'] ?? count($ocrDraft['lines'] ?? []) + $exclN);
+                $approvedN = $this->ocrApprovedCount;
+            @endphp
+            <div class="pos-ocr-review" dir="rtl"
+                 x-data
+                 @keydown.window="
+                    const k = $event.key;
+                    if (['a','A','e','E','1','2','3','Enter'].includes(k)) {
+                      $wire.ocrKeyboard(k === 'Enter' ? 'enter' : k);
+                    }
+                 "
+                 style="display:grid;grid-template-columns:minmax(200px,280px) 1fr;gap:1rem;margin:1rem 0;padding:1rem;border:1px solid #111;background:#fff;color:#111">
                 <div>
                     <p class="pos-side-title">الصورة</p>
                     @if($ocrPreviewUrl)
                         <a href="{{ $ocrPreviewUrl }}" target="_blank" rel="noopener">
-                            <img src="{{ $ocrPreviewUrl }}" alt="فاتورة" style="width:100%;max-height:420px;object-fit:contain;border-radius:8px;border:1px solid #eee">
+                            <img src="{{ $ocrPreviewUrl }}" alt="فاتورة" style="width:100%;max-height:420px;object-fit:contain;border:1px solid #111">
                         </a>
-                        <p class="pos-invoice-no-hint">اضغط للتكبير في تبويب جديد</p>
                     @endif
+                    <p class="pos-invoice-no-hint" style="margin-top:.5rem">اختصارات: A أمريكي · E أوروبي · 1-3 مرشح · Enter اعتماد</p>
                 </div>
                 <div>
-                    <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.75rem">
-                        <p class="pos-side-title" style="margin:0">مسودة OCR — مراجعة قبل السلة</p>
-                        <button type="button" class="pos-sheet-btn" wire:click="approveAllGreenOcrLines">اعتماد كل الأخضر</button>
-                        <button type="button" class="pos-sheet-btn pos-sheet-btn--upload" wire:click="applyApprovedOcrToCart">تطبيق المعتمد على السلة</button>
-                        <button type="button" class="pos-sheet-btn" wire:click="dismissOcrDraft">إغلاق</button>
+                    <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+                        <div>
+                            <p class="pos-side-title" style="margin:0">مراجعة OCR</p>
+                            <p class="pos-invoice-no-hint" style="margin:0">
+                                مقروء {{ $rawN }} · جاهز {{ $readyN }} · يحتاج اختيار {{ $choiceN }} · مستبعد {{ $exclN }}
+                            </p>
+                        </div>
+                        <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+                            <span style="font-size:.85rem">الافتراضي:</span>
+                            <button type="button" class="pos-sheet-btn" style="{{ $ocrSystemDefault==='ask' ? 'background:#111;color:#fff' : '' }}" wire:click="setOcrSystemDefault('ask')">اسأل</button>
+                            <button type="button" class="pos-sheet-btn" style="{{ $ocrSystemDefault==='us' ? 'background:#111;color:#fff' : '' }}" wire:click="setOcrSystemDefault('us')">أمريكي</button>
+                            <button type="button" class="pos-sheet-btn" style="{{ $ocrSystemDefault==='eu' ? 'background:#111;color:#fff' : '' }}" wire:click="setOcrSystemDefault('eu')">أوروبي</button>
+                            <label style="font-size:.85rem;display:flex;gap:.25rem;align-items:center">
+                                <input type="checkbox" wire:model.live="ocrRememberForCustomer"> تذكّر للعميل
+                            </label>
+                        </div>
                     </div>
+
                     @if(is_array($ocrDraft))
-                        <div style="overflow:auto;max-height:420px">
-                            <table style="width:100%;border-collapse:collapse;font-size:.9rem">
-                                <thead>
-                                    <tr style="text-align:right;background:#f8fafc">
-                                        <th style="padding:.4rem">اعتماد</th>
-                                        <th style="padding:.4rem">النص</th>
-                                        <th style="padding:.4rem">كمية</th>
-                                        <th style="padding:.4rem">ثقة</th>
-                                        <th style="padding:.4rem">مطابقة / مرشحين</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach(($ocrDraft['lines'] ?? []) as $i => $line)
-                                        @php
-                                            $conf = (float) ($line['confidence'] ?? 0);
-                                            $color = $conf >= 0.9 ? '#166534' : ($conf >= 0.6 ? '#a16207' : '#b91c1c');
-                                            $bg = $conf >= 0.9 ? '#dcfce7' : ($conf >= 0.6 ? '#fef9c3' : '#fee2e2');
-                                            $flags = implode(', ', (array) ($line['needs_review'] ?? []));
-                                        @endphp
-                                        <tr style="border-top:1px solid #eee;background:{{ $bg }}">
-                                            <td style="padding:.4rem">
+                        <div style="overflow:auto;max-height:480px;display:flex;flex-direction:column;gap:.6rem">
+                            @foreach(($ocrDraft['lines'] ?? []) as $i => $line)
+                                @php
+                                    $slots = (array) ($line['slots'] ?? []);
+                                    $status = $line['match_status'] ?? $line['match_decision'] ?? '';
+                                    $needs = in_array($status, ['needs_choice', 'mg_family_unknown_variant'], true) || in_array('needs_choice', (array)($line['needs_review'] ?? []), true);
+                                    $cands = (array) ($line['candidates'] ?? []);
+                                    $usCand = collect($cands)->firstWhere('system', 'us');
+                                    $euCand = collect($cands)->firstWhere('system', 'eu');
+                                    $systemsPresent = collect($cands)->pluck('system')->filter()->unique()->values();
+                                    $focused = $ocrFocusLine === $i;
+                                @endphp
+                                <div style="border:1px solid #111;padding:.75rem;background:{{ $focused ? '#f5f5f5' : '#fff' }}">
+                                    <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+                                        <div>
+                                            <div style="font-size:1rem">«{{ $line['raw_text'] ?? '' }}»</div>
+                                            <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.35rem;font-size:.8rem">
+                                                <span style="border:1px solid #111;padding:.1rem .35rem">النوع {{ $slots['family'] ?? '?' }} {{ ($slots['family'] ?? null) ? '✓' : '?' }}</span>
+                                                <span style="border:1px solid #111;padding:.1rem .35rem">المقاس {{ $slots['size_value'] ?? '?' }}{{ ($slots['size_unit'] ?? '') === 'mm' ? 'مم' : '"' }} {{ ($slots['size_value'] ?? null) ? '✓' : '?' }}</span>
+                                                <span style="border:1px solid #111;padding:.1rem .35rem">النظام {{ $slots['system'] === 'us' ? 'أمريكي' : ($slots['system'] === 'eu' ? 'أوروبي' : '?') }} {{ ($slots['system'] ?? null) ? '✓' : '?' }}</span>
+                                            </div>
+                                            @if(!empty($line['match_reason']))
+                                                <div style="font-size:.8rem;margin-top:.25rem;opacity:.75">{{ $line['match_reason'] }}</div>
+                                            @endif
+                                        </div>
+                                        <div style="display:flex;align-items:center;gap:.35rem">
+                                            <button type="button" class="pos-sheet-btn" wire:click="adjustOcrQty({{ $i }}, -1)">−</button>
+                                            <strong>{{ $line['qty'] ?? 1 }}</strong>
+                                            <button type="button" class="pos-sheet-btn" wire:click="adjustOcrQty({{ $i }}, 1)">+</button>
+                                            <label style="margin-inline-start:.5rem;display:flex;gap:.25rem;align-items:center">
                                                 <input type="checkbox" @checked(!empty($line['approved'])) wire:click="toggleOcrLineApproved({{ $i }})">
-                                            </td>
-                                            <td style="padding:.4rem">
-                                                <div><strong>{{ $line['name'] ?? '—' }}</strong></div>
-                                                <div style="opacity:.75">{{ $line['raw_text'] ?? '' }}</div>
-                                                @if($flags !== '')
-                                                    <div style="color:#b91c1c;font-size:.8rem">مراجعة: {{ $flags }}</div>
-                                                @endif
-                                            </td>
-                                            <td style="padding:.4rem">{{ $line['qty'] ?? '—' }}</td>
-                                            <td style="padding:.4rem;color:{{ $color }};font-weight:700">{{ round($conf * 100) }}%</td>
-                                            <td style="padding:.4rem">
-                                                <div style="margin-bottom:.25rem">{{ $line['match_decision'] ?? 'manual' }} @if(!empty($line['matched_product_id']))(#{{ $line['matched_product_id'] }})@endif</div>
-                                                @foreach(($line['candidates'] ?? []) as $cand)
-                                                    <button type="button" class="pos-sheet-btn" style="margin:.15rem 0;display:inline-block"
-                                                        wire:click="selectOcrCandidate({{ $i }}, {{ (int) $cand['product_id'] }})">
-                                                        {{ $cand['name'] }} ({{ round(((float)$cand['similarity']) * 100) }}%)
-                                                    </button>
-                                                @endforeach
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
+                                                اعتماد
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    @if($needs && $usCand && $euCand)
+                                        <div style="display:flex;gap:0;margin-top:.5rem;border:1px solid #111;width:fit-content">
+                                            <button type="button" class="pos-sheet-btn" style="border:0;border-left:1px solid #111;border-radius:0;{{ ($line['matched_product_id'] ?? null)==($usCand['product_id'] ?? null) ? 'background:#111;color:#fff' : '' }}"
+                                                wire:click="chooseOcrSystem({{ $i }}, 'us')">أمريكي #{{ $usCand['product_id'] }}</button>
+                                            <button type="button" class="pos-sheet-btn" style="border:0;border-radius:0;{{ ($line['matched_product_id'] ?? null)==($euCand['product_id'] ?? null) ? 'background:#111;color:#fff' : '' }}"
+                                                wire:click="chooseOcrSystem({{ $i }}, 'eu')">أوروبي #{{ $euCand['product_id'] }}</button>
+                                        </div>
+                                    @elseif($needs && $systemsPresent->count() === 1)
+                                        <div style="margin-top:.5rem;font-size:.85rem">
+                                            {{ $systemsPresent->first() === 'us' ? 'أمريكي فقط لهذا المقاس' : 'أوروبي فقط لهذا المقاس' }}
+                                        </div>
+                                    @endif
+
+                                    @if(!empty($line['matched_product_id']))
+                                        <div style="display:flex;gap:.75rem;margin-top:.5rem;align-items:center">
+                                            @if(!empty($line['main_image']))
+                                                <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($line['main_image']) }}" alt="" style="width:48px;height:48px;object-fit:cover;border:1px solid #111">
+                                            @endif
+                                            <div>
+                                                <strong>{{ $line['name'] ?? '' }}</strong>
+                                                <div style="font-size:.85rem">
+                                                    وحدة/صندوق: {{ $line['pieces_per_box'] ?? '—' }}
+                                                    · نقاط/وحدة: {{ $line['points_per_unit'] ?? '—' }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endif
+
+                                    @if($cands !== [])
+                                        <div style="margin-top:.4rem;display:flex;flex-wrap:wrap;gap:.35rem">
+                                            @foreach($cands as $ci => $cand)
+                                                <button type="button" class="pos-sheet-btn"
+                                                    wire:click="selectOcrCandidate({{ $i }}, {{ (int) $cand['product_id'] }})">
+                                                    {{ $ci+1 }}) {{ $cand['name'] }}
+                                                    @if(!empty($cand['system'])) ({{ $cand['system'] === 'us' ? 'أمريكي' : 'أوروبي' }}) @endif
+                                                </button>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                </div>
+                            @endforeach
+
+                            @foreach(($ocrDraft['excluded'] ?? []) as $ei => $ex)
+                                <div style="border:1px solid #999;padding:.75rem;color:#666;text-decoration:line-through;background:#fafafa">
+                                    <div>«{{ $ex['raw_text'] ?? '' }}» × {{ $ex['qty'] ?? '?' }}</div>
+                                    <div style="text-decoration:none;font-size:.85rem;margin-top:.25rem">مستبعد: {{ $ex['reason'] ?? 'not_mg' }}</div>
+                                    <button type="button" class="pos-sheet-btn" style="text-decoration:none;margin-top:.35rem" wire:click="restoreExcludedOcrLine({{ $ei }})">إضافة يدوياً</button>
+                                </div>
+                            @endforeach
                         </div>
                     @endif
+
+                    <div style="display:flex;gap:.5rem;margin-top:.75rem;flex-wrap:wrap">
+                        <button type="button" class="pos-sheet-btn" wire:click="approveAllGreenOcrLines">اعتماد الجاهز</button>
+                        <button type="button" class="pos-sheet-btn pos-sheet-btn--upload" wire:click="applyApprovedOcrToCart">اعتمد {{ $approvedN }} وأضِف للسلة</button>
+                        <button type="button" class="pos-sheet-btn" wire:click="dismissOcrDraft">إغلاق</button>
+                    </div>
                 </div>
             </div>
         @endif
