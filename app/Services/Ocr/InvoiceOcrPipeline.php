@@ -89,36 +89,55 @@ class InvoiceOcrPipeline
         $draft = $this->maybeCompletenessPass($result['draft'], $prepared['path'], $prepared['mime'], $rawLineCount);
         $afterComplete = count($draft['lines'] ?? []);
 
-        $draft = $this->matcher->enrich($draft);
-        $afterMatch = count($draft['lines'] ?? []);
+        $systemDefault = isset($draft['system_default']) && in_array($draft['system_default'], ['us', 'eu'], true)
+            ? $draft['system_default']
+            : null;
+        $customerId = isset($draft['customer_user_id']) ? (int) $draft['customer_user_id'] : null;
+
+        $draft = $this->matcher->enrich($draft, $systemDefault, $customerId);
+        $afterMatch = count($draft['lines'] ?? []) + count($draft['excluded'] ?? []);
         $draft = $this->validator->annotate($draft);
         $draft = $this->secondPassLowConfidence($draft, $prepared['path'], $prepared['mime']);
-        $draft = $this->matcher->enrich($draft);
+        $draft = $this->matcher->enrich($draft, $systemDefault, $customerId);
         $draft = $this->validator->annotate($draft);
         $draft['image_sha256'] = $prepared['sha256'];
 
         $returned = count($draft['lines'] ?? []);
+        $excludedCount = count($draft['excluded'] ?? []);
         $draft['raw_line_count'] = $rawLineCount;
         $draft['returned_line_count'] = $returned;
+        // Always recount after the final enrich (a second enrich on remaining lines must not zero-out exclusions).
+        $accounted = $returned + $excludedCount;
+        $draft['accounted_for'] = $accounted;
+        if (isset($draft['match_counts']) && is_array($draft['match_counts'])) {
+            $draft['match_counts']['excluded'] = $excludedCount;
+        }
 
+        $matchCounts = (array) ($draft['match_counts'] ?? []);
         Log::channel('ocr')->info('[OCR] pipeline_counts', [
             'raw_line_count' => $rawLineCount,
             'after_parse' => $afterParse,
             'after_complete' => $afterComplete,
             'after_match' => $afterMatch,
+            'matched' => $matchCounts['matched'] ?? null,
+            'needs_choice' => $matchCounts['needs_choice'] ?? null,
+            'excluded' => $matchCounts['excluded'] ?? $excludedCount,
             'returned' => $returned,
+            'accounted_for' => $accounted,
             'finish_reason' => $result['finish_reason'] ?? null,
         ]);
 
-        if ($returned < $rawLineCount) {
+        if ($accounted < $rawLineCount) {
             Log::channel('ocr')->error('[OCR] line_loss', [
                 'raw_line_count' => $rawLineCount,
                 'returned_line_count' => $returned,
+                'excluded' => $excludedCount,
+                'accounted_for' => $accounted,
             ]);
         }
 
         $finish = (string) ($result['finish_reason'] ?? '');
-        $complete = $returned >= $rawLineCount && $finish === 'STOP' && $returned > 0;
+        $complete = $accounted >= $rawLineCount && $finish === 'STOP' && $accounted > 0;
         if ($complete) {
             Cache::put($cacheKey, [
                 'ok' => true,

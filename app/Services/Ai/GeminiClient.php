@@ -483,7 +483,7 @@ class GeminiClient
 This is a handwritten / thermal / printed Arabic invoice or numbered list (Libya/Egypt).
 Transcribe EVERY visible line top to bottom, one entry per number/row — do not skip, merge, or stop early.
 Quantity-only lists are valid: unit_price and line_total may be null/omitted.
-For each line return raw_text (as written), name (cleaned, without leading list index), qty, optional unit_price/line_total, confidence 0..1.
+For each line return raw_text (as written), name (cleaned, without leading list index), qty, optional unit_price/line_total, confidence 0..1, optional brand (null if unmarked; never invent MG).
 Convert Arabic-Indic digits to Latin in qty. Unknown fields = null. Do not invent lines.
 PROMPT;
 
@@ -521,6 +521,7 @@ PROMPT;
                             'unit_price' => ['type' => 'NUMBER', 'nullable' => true],
                             'line_total' => ['type' => 'NUMBER', 'nullable' => true],
                             'confidence' => ['type' => 'NUMBER', 'nullable' => true],
+                            'brand' => ['type' => 'STRING', 'nullable' => true],
                         ],
                         // Quantity-only lists: do not require prices or confidence.
                         'required' => ['raw_text'],
@@ -676,6 +677,7 @@ PROMPT;
                 'unit_price' => $this->toFloat($line['unit_price'] ?? null),
                 'line_total' => $this->toFloat($line['line_total'] ?? null),
                 'confidence' => $this->normalizeConfidence($line['confidence'] ?? null),
+                'brand' => $this->nullableString($line['brand'] ?? null),
                 'needs_review' => $needsReview,
             ];
         }
