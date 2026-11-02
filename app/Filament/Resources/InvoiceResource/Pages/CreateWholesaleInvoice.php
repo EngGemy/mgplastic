@@ -12,6 +12,7 @@ use App\Services\Ai\GeminiClient;
 use App\Services\CustomerWhatsAppNotifier;
 use App\Services\InvoiceCartSheetService;
 use App\Services\InvoiceNumberService;
+use App\Services\Ocr\InvoiceOcrCatalogMatcher;
 use App\Services\Ocr\InvoiceOcrLearningService;
 use App\Services\Ocr\InvoiceOcrPipeline;
 use App\Services\WholesaleInvoiceService;
@@ -76,6 +77,13 @@ class CreateWholesaleInvoice extends Page
 
     /** @var array<string, mixed>|null */
     public ?array $ocrDraft = null;
+
+    /** ask|us|eu — invoice-level default for ambiguous sizes */
+    public string $ocrSystemDefault = 'ask';
+
+    public int $ocrFocusLine = 0;
+
+    public bool $ocrRememberForCustomer = false;
 
     public static function getNavigationGroup(): ?string
     {
@@ -420,7 +428,11 @@ class CreateWholesaleInvoice extends Page
             return;
         }
 
-        $this->ocrDraft = $result['draft'];
+        $draft = $result['draft'];
+        $draft['system_default'] = in_array($this->ocrSystemDefault, ['us', 'eu'], true) ? $this->ocrSystemDefault : null;
+        $draft['customer_user_id'] = $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null;
+        $this->ocrDraft = $draft;
+        $this->ocrFocusLine = 0;
         $this->ocrStep = 'review';
         $this->ocrError = null;
         $cached = ! empty($result['cached']) ? ' (من الذاكرة المؤقتة)' : '';
@@ -429,6 +441,41 @@ class CreateWholesaleInvoice extends Page
             ->title('مسودة جاهزة للمراجعة'.$cached)
             ->body('راجع البنود ثم اضغط اعتماد — لن تُحفظ في السلة تلقائياً.')
             ->send();
+    }
+
+    public function setOcrSystemDefault(string $value): void
+    {
+        if (! in_array($value, ['ask', 'us', 'eu'], true)) {
+            return;
+        }
+        $this->ocrSystemDefault = $value;
+        if (! is_array($this->ocrDraft)) {
+            return;
+        }
+
+        // Re-run matcher only (no Gemini) with new default.
+        $draft = $this->ocrDraft;
+        $draft['system_default'] = $value === 'ask' ? null : $value;
+        $draft['customer_user_id'] = $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null;
+        // Restore excluded back into lines for re-classification when default changes.
+        $restored = (array) ($draft['lines'] ?? []);
+        foreach ((array) ($draft['excluded'] ?? []) as $ex) {
+            if (is_array($ex)) {
+                $restored[] = [
+                    'raw_text' => $ex['raw_text'] ?? '',
+                    'name' => $ex['name'] ?? ($ex['raw_text'] ?? ''),
+                    'qty' => $ex['qty'] ?? 1,
+                    'brand' => null,
+                ];
+            }
+        }
+        $draft['lines'] = $restored;
+        $draft['excluded'] = [];
+        $this->ocrDraft = app(InvoiceOcrCatalogMatcher::class)->enrich(
+            $draft,
+            $value === 'ask' ? null : $value,
+            $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
+        );
     }
 
     public function selectOcrCandidate(int $lineIndex, int $productId): void
@@ -444,11 +491,43 @@ class CreateWholesaleInvoice extends Page
 
         $this->ocrDraft['lines'][$lineIndex]['matched_product_id'] = $productId;
         $this->ocrDraft['lines'][$lineIndex]['match_decision'] = 'manual';
+        $this->ocrDraft['lines'][$lineIndex]['match_status'] = 'matched';
         $this->ocrDraft['lines'][$lineIndex]['name'] = localized_name($product, 'name', 'منتج #'.$productId);
+        $this->ocrDraft['lines'][$lineIndex]['pieces_per_box'] = $product->pieces_per_box;
+        $this->ocrDraft['lines'][$lineIndex]['points_per_unit'] = $product->points_per_unit;
+        $this->ocrDraft['lines'][$lineIndex]['main_image'] = $product->main_image;
         $this->ocrDraft['lines'][$lineIndex]['needs_review'] = array_values(array_filter(
             (array) ($this->ocrDraft['lines'][$lineIndex]['needs_review'] ?? []),
-            fn ($f) => $f !== 'low_confidence'
+            fn ($f) => ! in_array($f, ['low_confidence', 'needs_choice', 'catalog_unmatched', 'mg_family_unknown_variant'], true)
         ));
+        $this->ocrFocusLine = $lineIndex;
+    }
+
+    public function chooseOcrSystem(int $lineIndex, string $system): void
+    {
+        if (! in_array($system, ['us', 'eu'], true) || ! isset($this->ocrDraft['lines'][$lineIndex])) {
+            return;
+        }
+        $candidates = (array) ($this->ocrDraft['lines'][$lineIndex]['candidates'] ?? []);
+        foreach ($candidates as $c) {
+            if (($c['system'] ?? null) === $system && ! empty($c['product_id'])) {
+                $this->selectOcrCandidate($lineIndex, (int) $c['product_id']);
+                $this->ocrDraft['lines'][$lineIndex]['slots']['system'] = $system;
+                $this->ocrDraft['lines'][$lineIndex]['slots']['system_source'] = 'text';
+                $this->ocrDraft['lines'][$lineIndex]['match_reason'] = 'من الكتابة';
+
+                return;
+            }
+        }
+    }
+
+    public function adjustOcrQty(int $lineIndex, int $delta): void
+    {
+        if (! isset($this->ocrDraft['lines'][$lineIndex])) {
+            return;
+        }
+        $qty = (float) ($this->ocrDraft['lines'][$lineIndex]['qty'] ?? 1);
+        $this->ocrDraft['lines'][$lineIndex]['qty'] = max(1, $qty + $delta);
     }
 
     public function approveAllGreenOcrLines(): void
@@ -459,9 +538,8 @@ class CreateWholesaleInvoice extends Page
 
         foreach ($this->ocrDraft['lines'] ?? [] as $i => $line) {
             $decision = $line['match_decision'] ?? '';
-            $sim = (float) ($line['match_similarity'] ?? 0);
             $flags = (array) ($line['needs_review'] ?? []);
-            if (in_array($decision, ['auto', 'alias'], true) && $sim >= 0.9 && $flags === [] && ! empty($line['matched_product_id'])) {
+            if (in_array($decision, ['auto', 'alias'], true) && $flags === [] && ! empty($line['matched_product_id'])) {
                 $this->ocrDraft['lines'][$i]['approved'] = true;
             }
         }
@@ -474,6 +552,49 @@ class CreateWholesaleInvoice extends Page
         }
         $current = (bool) ($this->ocrDraft['lines'][$lineIndex]['approved'] ?? false);
         $this->ocrDraft['lines'][$lineIndex]['approved'] = ! $current;
+        if (! $current) {
+            $this->ocrFocusLine = $lineIndex + 1;
+        }
+    }
+
+    public function ocrKeyboard(string $key): void
+    {
+        $i = $this->ocrFocusLine;
+        $key = strtolower($key);
+        if ($key === 'a') {
+            $this->chooseOcrSystem($i, 'us');
+        } elseif ($key === 'e') {
+            $this->chooseOcrSystem($i, 'eu');
+        } elseif (in_array($key, ['1', '2', '3'], true)) {
+            $c = $this->ocrDraft['lines'][$i]['candidates'][((int) $key) - 1] ?? null;
+            if ($c && ! empty($c['product_id'])) {
+                $this->selectOcrCandidate($i, (int) $c['product_id']);
+            }
+        } elseif ($key === 'enter') {
+            if (! empty($this->ocrDraft['lines'][$i]['matched_product_id'])) {
+                $this->ocrDraft['lines'][$i]['approved'] = true;
+                $this->ocrFocusLine = $i + 1;
+            }
+        }
+    }
+
+    public function restoreExcludedOcrLine(int $excludedIndex): void
+    {
+        if (! isset($this->ocrDraft['excluded'][$excludedIndex])) {
+            return;
+        }
+        $ex = $this->ocrDraft['excluded'][$excludedIndex];
+        unset($this->ocrDraft['excluded'][$excludedIndex]);
+        $this->ocrDraft['excluded'] = array_values($this->ocrDraft['excluded']);
+        $this->ocrDraft['lines'][] = [
+            'raw_text' => $ex['raw_text'] ?? '',
+            'name' => $ex['name'] ?? '',
+            'qty' => $ex['qty'] ?? 1,
+            'match_decision' => 'manual',
+            'match_status' => 'manual_add',
+            'needs_review' => ['manual_add'],
+            'candidates' => [],
+        ];
     }
 
     public function applyApprovedOcrToCart(): void
@@ -488,6 +609,7 @@ class CreateWholesaleInvoice extends Page
         $learning = app(InvoiceOcrLearningService::class);
         $lines = [];
         $errors = [];
+        $approvedCount = 0;
 
         foreach ((array) ($this->ocrDraft['lines'] ?? []) as $line) {
             // Explicit approval only — never auto-push money/cart without user action.
@@ -510,6 +632,7 @@ class CreateWholesaleInvoice extends Page
                 continue;
             }
 
+            $approvedCount++;
             $cartLine = $sheet->cartLine($product, $qty);
             $id = (string) $productId;
             if (isset($lines[$id])) {
@@ -530,6 +653,9 @@ class CreateWholesaleInvoice extends Page
                     $productId,
                     (float) $qty,
                     auth()->user(),
+                    (string) ($line['slots']['system'] ?? $product->system ?? ''),
+                    $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
+                    $this->ocrRememberForCustomer,
                 );
             }
         }
@@ -548,7 +674,7 @@ class CreateWholesaleInvoice extends Page
         $this->reviewing = false;
         Notification::make()
             ->success()
-            ->title('تم تطبيق '.count($lines).' منتج على السلة')
+            ->title('تم تطبيق '.$approvedCount.' منتج على السلة')
             ->body('راجع الكميات قبل الإصدار. لم يُحفظ أي مبلغ مالياً من OCR دون هذا الاعتماد.')
             ->send();
     }
@@ -561,6 +687,22 @@ class CreateWholesaleInvoice extends Page
         $this->ocrPreviewUrl = null;
         $this->ocrImageSha = null;
         $this->ocrReading = false;
+        $this->ocrFocusLine = 0;
+    }
+
+    public function getOcrApprovedCountProperty(): int
+    {
+        if (! is_array($this->ocrDraft)) {
+            return 0;
+        }
+        $n = 0;
+        foreach ((array) ($this->ocrDraft['lines'] ?? []) as $line) {
+            if (! empty($line['approved']) && ! empty($line['matched_product_id'])) {
+                $n++;
+            }
+        }
+
+        return $n;
     }
 
     /**
