@@ -496,10 +496,41 @@ class CreateWholesaleInvoice extends Page
         $this->ocrDraft['lines'][$lineIndex]['pieces_per_box'] = $product->pieces_per_box;
         $this->ocrDraft['lines'][$lineIndex]['points_per_unit'] = $product->points_per_unit;
         $this->ocrDraft['lines'][$lineIndex]['main_image'] = $product->main_image;
+        $this->ocrDraft['lines'][$lineIndex]['approved'] = false;
         $this->ocrDraft['lines'][$lineIndex]['needs_review'] = array_values(array_filter(
             (array) ($this->ocrDraft['lines'][$lineIndex]['needs_review'] ?? []),
             fn ($f) => ! in_array($f, ['low_confidence', 'needs_choice', 'catalog_unmatched', 'mg_family_unknown_variant'], true)
         ));
+        $this->ocrFocusLine = $lineIndex;
+    }
+
+    /** Pick product (optional) + mark approved in one clear action. */
+    public function confirmOcrLine(int $lineIndex, ?int $productId = null): void
+    {
+        if (! isset($this->ocrDraft['lines'][$lineIndex])) {
+            return;
+        }
+
+        if ($productId) {
+            $this->selectOcrCandidate($lineIndex, $productId);
+        }
+
+        if (empty($this->ocrDraft['lines'][$lineIndex]['matched_product_id'])) {
+            Notification::make()->warning()->title('اختَر منتجاً أولاً')->send();
+
+            return;
+        }
+
+        $this->ocrDraft['lines'][$lineIndex]['approved'] = true;
+        $this->ocrFocusLine = $lineIndex + 1;
+    }
+
+    public function unconfirmOcrLine(int $lineIndex): void
+    {
+        if (! isset($this->ocrDraft['lines'][$lineIndex])) {
+            return;
+        }
+        $this->ocrDraft['lines'][$lineIndex]['approved'] = false;
         $this->ocrFocusLine = $lineIndex;
     }
 
@@ -568,13 +599,10 @@ class CreateWholesaleInvoice extends Page
         } elseif (in_array($key, ['1', '2', '3'], true)) {
             $c = $this->ocrDraft['lines'][$i]['candidates'][((int) $key) - 1] ?? null;
             if ($c && ! empty($c['product_id'])) {
-                $this->selectOcrCandidate($i, (int) $c['product_id']);
+                $this->confirmOcrLine($i, (int) $c['product_id']);
             }
         } elseif ($key === 'enter') {
-            if (! empty($this->ocrDraft['lines'][$i]['matched_product_id'])) {
-                $this->ocrDraft['lines'][$i]['approved'] = true;
-                $this->ocrFocusLine = $i + 1;
-            }
+            $this->confirmOcrLine($i);
         }
     }
 
