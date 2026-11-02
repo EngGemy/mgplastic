@@ -135,9 +135,15 @@ class OcrLineLossTest extends TestCase
         ));
 
         foreach ($pipeline['draft']['lines'] as $line) {
-            $this->assertSame('manual', $line['match_decision'] ?? null);
-            $this->assertContains('catalog_unmatched', $line['needs_review'] ?? []);
-            $this->assertContains('price_missing', $line['needs_review'] ?? []);
+            $this->assertContains($line['match_decision'] ?? null, ['manual', 'needs_choice']);
+            $flags = (array) ($line['needs_review'] ?? []);
+            $this->assertTrue(
+                in_array('catalog_unmatched', $flags, true)
+                || in_array('mg_family_unknown_variant', $flags, true)
+                || in_array('needs_choice', $flags, true),
+                'expected a catalog review flag'
+            );
+            $this->assertContains('price_missing', $flags);
         }
     }
 

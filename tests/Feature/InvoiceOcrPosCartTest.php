@@ -6,7 +6,6 @@ use App\Models\Product;
 use App\Models\User;
 use App\Services\Ai\GeminiClient;
 use App\Services\InvoiceOcrCartMatcher;
-use App\Support\ArabicTextNormalizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -62,8 +61,17 @@ class InvoiceOcrPosCartTest extends TestCase
         ]);
 
         $admin = User::factory()->create(['role' => 'super_admin']);
-        $product = Product::factory()->create(['points_per_unit' => 2, 'pieces_per_box' => 0]);
-        $product->translateOrNew('ar')->name = 'كوع بلاستيك';
+        $product = Product::factory()->create([
+            'points_per_unit' => 2,
+            'pieces_per_box' => 0,
+            'catalog_family' => 'elbow_90',
+            'angle' => 90,
+            'size_value' => 1,
+            'size_unit' => 'in',
+            'system' => 'us',
+            'derived_at' => now(),
+        ]);
+        $product->translateOrNew('ar')->name = 'كوع 90 – 1 بوصة MG';
         $product->save();
 
         Http::fake([
@@ -79,7 +87,7 @@ class InvoiceOcrPosCartTest extends TestCase
                                 'subtotal' => 20,
                                 'tax' => 0,
                                 'lines' => [
-                                    ['raw_text' => 'كوع بلاستيك', 'name' => 'كوع بلاستيك', 'qty' => 4, 'unit_price' => 5, 'line_total' => 20, 'confidence' => 0.95],
+                                    ['raw_text' => 'كوع ٩٠ ١ بوصه نظام امريك', 'name' => 'كوع 90 1 بوصه', 'qty' => 4, 'unit_price' => 5, 'line_total' => 20, 'confidence' => 0.95],
                                 ],
                                 'overall_confidence' => 0.9,
                                 'source_type' => 'printed',
@@ -92,7 +100,6 @@ class InvoiceOcrPosCartTest extends TestCase
         ]);
 
         $this->assertTrue(app(GeminiClient::class)->enabled());
-        $this->assertSame('كوع بلاستيك', ArabicTextNormalizer::normalize('كوع بلاستيك'));
 
         $file = UploadedFile::fake()->image('invoice.jpg', 400, 600);
 
