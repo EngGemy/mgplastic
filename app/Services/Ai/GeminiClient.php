@@ -510,11 +510,12 @@ class GeminiClient
             return ['ok' => false, 'lines' => [], 'error' => 'صورة فارغة'];
         }
 
-        $prompt = 'This is a handwritten Arabic numbered list. Transcribe EVERY visible line top to bottom, '
-            .'one entry per number, do not skip, merge or stop early. '
-            .'Return JSON {"lines":[{"raw_text":"...","name":"...","qty":number|null,"confidence":0.0}]}. '
+        $prompt = 'This is a handwritten Arabic shopping list or invoice (numbered OR unnumbered). '
+            .'Transcribe EVERY visible product row top to bottom — do not skip, merge, or stop after the first row. '
+            .'Unnumbered lists: each row is one line; the number at the end of the row is usually qty. '
+            .'Return JSON {"estimated_visible_rows":N,"lines":[{"raw_text":"...","name":"...","qty":number|null,"confidence":0.0}]}. '
             .'Quantity-only lines are valid (unit_price/line_total may be omitted). '
-            .'Do not invent products. Convert Arabic-Indic digits to Latin in qty.';
+            .'Keep dialect words (طوبو, واي, مخفض, مثلث). Do not invent products. Convert Arabic-Indic digits to Latin in qty.';
 
         try {
             $response = Http::withHeaders([
@@ -561,12 +562,14 @@ class GeminiClient
     protected function ocrPrompt(array $catalogNames): string
     {
         $base = <<<'PROMPT'
-This is a handwritten / thermal / printed Arabic invoice or numbered list (Libya/Egypt).
-Transcribe EVERY visible line top to bottom, one entry per number/row — do not skip, merge, or stop early.
+This is a handwritten / thermal / printed Arabic invoice or shopping list (Libya/Egypt).
+Transcribe EVERY visible product row top to bottom — numbered OR unnumbered. Do not skip, merge, or stop after the first row.
+Unnumbered lists are common: each handwritten row is one line; the trailing number on that row is usually qty (not a list index).
 Quantity-only lists are valid: unit_price and line_total may be null/omitted.
 For each line return raw_text (as written), name (cleaned, without leading list index), qty, optional unit_price/line_total, confidence 0..1, optional brand (null if unmarked; never invent MG).
+Also set estimated_visible_rows to how many distinct product rows you can see on the paper (integer), even if you return fewer lines.
 Convert Arabic-Indic digits to Latin in qty. Unknown fields = null. Do not invent lines.
-Transcribe exactly what you see; keep dialect spelling. If a word looks like one of the reading-hints vocabulary words, prefer that spelling. Do NOT invent full catalog product names.
+Transcribe exactly what you see; keep dialect spelling (طوبو/طبه/ماسورة, واي, مخفض, مثلث). If a word looks like one of the reading-hints vocabulary words, prefer that spelling. Do NOT invent full catalog product names.
 When a word is uncertain, add up to 2 alternate readings in alternatives (single words or short phrases only).
 PROMPT;
 
@@ -603,6 +606,7 @@ PROMPT;
                 'tax' => ['type' => 'NUMBER', 'nullable' => true],
                 'total' => ['type' => 'NUMBER', 'nullable' => true],
                 'overall_confidence' => ['type' => 'NUMBER', 'nullable' => true],
+                'estimated_visible_rows' => ['type' => 'INTEGER', 'nullable' => true],
                 'source_type' => ['type' => 'STRING'],
                 'lines' => [
                     'type' => 'ARRAY',
@@ -826,6 +830,10 @@ PROMPT;
             ]);
         }
 
+        $estimated = isset($decoded['estimated_visible_rows'])
+            ? (int) $decoded['estimated_visible_rows']
+            : 0;
+
         return [
             'vendor' => $this->nullableString($decoded['vendor'] ?? null),
             'number' => $this->nullableString($decoded['number'] ?? null),
@@ -837,7 +845,8 @@ PROMPT;
             'lines' => $lines,
             'overall_confidence' => $this->normalizeConfidence($decoded['overall_confidence'] ?? null),
             'source_type' => $source,
-            'raw_line_count' => $rawLineCount,
+            'estimated_visible_rows' => $estimated > 0 ? $estimated : max($rawLineCount, $returned),
+            'raw_line_count' => max($rawLineCount, $estimated),
             'returned_line_count' => $returned,
             'dropped_reasons' => $droppedReasons,
         ];

@@ -235,4 +235,70 @@ class OcrLineLossTest extends TestCase
         $this->assertContains('price_missing', $pipeline['draft']['lines'][0]['needs_review']);
         $this->assertSame(3, (int) round((float) $pipeline['draft']['lines'][0]['qty']));
     }
+
+    /**
+     * NIĞTAŞ notepad regression: unnumbered shopping list — Gemini often returns only row 1.
+     * Completeness pass must still recover the remaining rows (not require leading 1. 2. 3.).
+     */
+    public function test_unnumbered_list_underread_triggers_completeness_for_all_rows(): void
+    {
+        $firstOnly = [
+            'candidates' => [[
+                'finishReason' => 'STOP',
+                'content' => ['parts' => [[
+                    'text' => json_encode([
+                        'source_type' => 'handwritten',
+                        'estimated_visible_rows' => 4,
+                        'lines' => [[
+                            'raw_text' => 'مثلث واي 4 بوصه 6',
+                            'name' => 'مثلث واي 4 بوصه',
+                            'qty' => 6,
+                            'confidence' => 0.8,
+                        ]],
+                    ], JSON_UNESCAPED_UNICODE),
+                ]]],
+            ]],
+        ];
+
+        $allFour = [
+            'candidates' => [[
+                'finishReason' => 'STOP',
+                'content' => ['parts' => [[
+                    'text' => json_encode([
+                        'source_type' => 'handwritten',
+                        'estimated_visible_rows' => 4,
+                        'lines' => [
+                            ['raw_text' => 'مثلث واي 4 بوصه 6', 'name' => 'مثلث واي 4 بوصه', 'qty' => 6, 'confidence' => 0.8],
+                            ['raw_text' => 'واي Mg 3 بوصه 10', 'name' => 'واي Mg 3 بوصه', 'qty' => 10, 'confidence' => 0.8],
+                            ['raw_text' => 'مخفض 4-2 Mg 6', 'name' => 'مخفض 4-2 Mg', 'qty' => 6, 'confidence' => 0.8],
+                            ['raw_text' => 'طوبو 4 بوصه 6', 'name' => 'طوبو 4 بوصه', 'qty' => 6, 'confidence' => 0.8],
+                        ],
+                    ], JSON_UNESCAPED_UNICODE),
+                ]]],
+            ]],
+        ];
+
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::sequence()
+                ->push($firstOnly)
+                ->push($allFour)
+                ->push($allFour),
+        ]);
+
+        $path = $this->tinyJpegPath();
+        $pipeline = app(InvoiceOcrPipeline::class)->run($path);
+        $this->assertTrue($pipeline['ok'], $pipeline['error'] ?? 'pipeline failed');
+
+        $lines = $pipeline['draft']['lines'] ?? [];
+        $excluded = $pipeline['draft']['excluded'] ?? [];
+        $this->assertGreaterThanOrEqual(4, count($lines) + count($excluded));
+        $this->assertGreaterThanOrEqual(4, (int) ($pipeline['draft']['raw_line_count'] ?? 0));
+
+        $raws = collect($lines)->merge($excluded)->pluck('raw_text')->implode(' ');
+        $this->assertStringContainsString('واي', $raws);
+        $this->assertTrue(
+            str_contains($raws, 'مخفض') || str_contains($raws, 'طوبو') || str_contains($raws, 'ماسورة'),
+            'expected later notepad rows in draft, got: '.$raws
+        );
+    }
 }

@@ -195,28 +195,16 @@ class InvoiceOcrPipeline
     protected function maybeCompletenessPass(array $draft, string $path, string $mime, int $rawLineCount): array
     {
         $lines = (array) ($draft['lines'] ?? []);
-        if (count($lines) >= 3) {
-            return $draft;
-        }
+        $estimated = (int) ($draft['estimated_visible_rows'] ?? 0);
 
-        $looksNumbered = false;
-        foreach ($lines as $line) {
-            $raw = (string) ($line['raw_text'] ?? $line['name'] ?? '');
-            if (preg_match('/^[0-9٠-٩۰-۹]{1,3}[\).\-\s]/u', $raw) || ! empty($line['line_no'])) {
-                $looksNumbered = true;
-                break;
-            }
-        }
+        // Short first passes often under-read unnumbered shopping lists (qty at end of each row).
+        // Always run one lines-only pass when we have fewer than 3 lines, or the model itself
+        // estimated more visible rows than it returned. Do NOT require leading list numbers.
+        $needsPass = count($lines) < 3
+            || ($estimated > 0 && $estimated > count($lines))
+            || ($rawLineCount > count($lines));
 
-        // Under-transcription of a short/empty first pass — try one lines-only pass.
-        if (! $looksNumbered && $rawLineCount >= 3) {
-            $looksNumbered = true;
-        }
-        if (count($lines) === 0) {
-            $looksNumbered = true;
-        }
-
-        if (! $looksNumbered && count($lines) >= 1) {
+        if (! $needsPass) {
             return $draft;
         }
 
@@ -225,18 +213,59 @@ class InvoiceOcrPipeline
             return $draft;
         }
 
-        $merged = $this->mergeLinesByPosition($lines, $extra['lines']);
+        // When first pass under-read (≤1 row), prefer the longer lines-only pass as base.
+        $merged = count($lines) <= 1 && count($extra['lines']) > count($lines)
+            ? $this->preferLongerPass($lines, $extra['lines'])
+            : $this->mergeLinesByPosition($lines, $extra['lines']);
+
         $draft['lines'] = $merged;
-        $draft['raw_line_count'] = max($rawLineCount, count($extra['lines']), count($merged));
+        $draft['raw_line_count'] = max($rawLineCount, $estimated, count($extra['lines']), count($merged));
         $draft['returned_line_count'] = count($merged);
 
         Log::channel('ocr')->info('[OCR] completeness_pass', [
             'first_count' => count($lines),
             'second_count' => count($extra['lines']),
             'merged' => count($merged),
+            'estimated_visible_rows' => $estimated,
         ]);
 
         return $draft;
+    }
+
+    /**
+     * When first pass returned ≤1 line, take second-pass rows and keep first-pass qty/text on row 0 if better.
+     *
+     * @param  list<array<string,mixed>>  $first
+     * @param  list<array<string,mixed>>  $second
+     * @return list<array<string,mixed>>
+     */
+    protected function preferLongerPass(array $first, array $second): array
+    {
+        if ($second === []) {
+            return $first;
+        }
+        if ($first === []) {
+            return $second;
+        }
+
+        $out = $second;
+        $a = $first[0];
+        $b = $out[0];
+        if (is_array($a) && is_array($b)) {
+            $merged = $b;
+            if (trim((string) ($a['raw_text'] ?? '')) !== '') {
+                $merged['raw_text'] = $a['raw_text'];
+            }
+            if (trim((string) ($a['name'] ?? '')) !== '') {
+                $merged['name'] = $a['name'];
+            }
+            if (isset($a['qty']) && (float) $a['qty'] > 0) {
+                $merged['qty'] = $a['qty'];
+            }
+            $out[0] = $merged;
+        }
+
+        return $out;
     }
 
     /**
