@@ -15,7 +15,77 @@ class GeminiClient
 
     public function model(): string
     {
-        return (string) config('services.gemini.model', 'gemini-2.0-flash');
+        return (string) (
+            config('ocr_resilience.primary_model')
+            ?: config('services.gemini.model', 'gemini-2.0-flash')
+        );
+    }
+
+    /**
+     * Models that support generateContent (cached 24h). Never hardcode a fallback name.
+     *
+     * @return list<string>
+     */
+    public function listGenerateContentModelIds(): array
+    {
+        if (! $this->enabled()) {
+            return [];
+        }
+
+        return Cache::remember('gemini:generate_content_models', now()->addDay(), function () {
+            try {
+                $response = Http::withHeaders([
+                    'x-goog-api-key' => config('services.gemini.key'),
+                ])
+                    ->timeout(15)
+                    ->get('https://generativelanguage.googleapis.com/v1beta/models');
+
+                if (! $response->successful()) {
+                    $this->ocrLog('warning', 'list_models_failed', ['status' => $response->status()]);
+
+                    return [];
+                }
+
+                $ids = [];
+                foreach ((array) data_get($response->json(), 'models', []) as $model) {
+                    $name = (string) ($model['name'] ?? '');
+                    $methods = (array) ($model['supportedGenerationMethods'] ?? []);
+                    if ($name === '' || ! in_array('generateContent', $methods, true)) {
+                        continue;
+                    }
+                    $ids[] = str_starts_with($name, 'models/') ? substr($name, 7) : $name;
+                }
+
+                return array_values(array_unique($ids));
+            } catch (\Throwable $e) {
+                $this->ocrLog('warning', 'list_models_exception', ['error' => $e->getMessage()]);
+
+                return [];
+            }
+        });
+    }
+
+    /**
+     * Prefer configured fallback if available to the key; else first other generateContent model; else primary.
+     */
+    public function resolveOcrFallbackModel(?string $excludeModel = null): string
+    {
+        $primary = $this->model();
+        $exclude = $excludeModel ?: $primary;
+        $configured = trim((string) (config('ocr_resilience.fallback_model') ?? ''));
+        $available = $this->listGenerateContentModelIds();
+
+        if ($configured !== '' && ($available === [] || in_array($configured, $available, true))) {
+            return $configured;
+        }
+
+        foreach ($available as $id) {
+            if ($id !== $exclude) {
+                return $id;
+            }
+        }
+
+        return $primary;
     }
 
     public function dailyBudgetRemaining(): int
@@ -158,9 +228,10 @@ class GeminiClient
         string $absolutePath,
         string $mimeType = 'image/jpeg',
         array $catalogNames = [],
+        ?string $modelOverride = null,
     ): array {
         $started = microtime(true);
-        $model = $this->model();
+        $model = filled($modelOverride) ? (string) $modelOverride : $this->model();
 
         if (! $this->enabled()) {
             return $this->ocrFailure('disabled', 'Gemini غير مفعّل — أضف GEMINI_API_KEY ثم أعد تحميل الإعدادات.', $model, 0);
@@ -226,14 +297,24 @@ class GeminiClient
 
             if (! $response->successful()) {
                 $mapped = $this->mapHttpFailure($response->status());
+                $retryAfter = $this->parseRetryAfterSeconds($response->header('Retry-After'));
                 $this->ocrLog('warning', $mapped['code'], [
                     'status' => $response->status(),
                     'elapsed_ms' => $elapsedMs,
                     'model' => $model,
                     'finish_reason' => $finishReason,
+                    'retry_after' => $retryAfter,
                 ]);
 
-                return $this->ocrFailure($mapped['code'], $mapped['message'], $model, $elapsedMs, $finishReason);
+                return $this->ocrFailure(
+                    $mapped['code'],
+                    $mapped['message'],
+                    $model,
+                    $elapsedMs,
+                    $finishReason,
+                    $response->status(),
+                    $retryAfter,
+                );
             }
 
             if ($finishReason === 'MAX_TOKENS') {
@@ -618,10 +699,17 @@ PROMPT;
     }
 
     /**
-     * @return array{ok:bool, draft:null, error:string, model:string, elapsed_ms:int, finish_reason:?string}
+     * @return array{ok:bool, draft:null, error:string, code:string, model:string, elapsed_ms:int, finish_reason:?string, http_status:?int, retry_after:?int}
      */
-    protected function ocrFailure(string $code, string $message, string $model, int $elapsedMs, ?string $finishReason = null): array
-    {
+    protected function ocrFailure(
+        string $code,
+        string $message,
+        string $model,
+        int $elapsedMs,
+        ?string $finishReason = null,
+        ?int $httpStatus = null,
+        ?int $retryAfter = null,
+    ): array {
         return [
             'ok' => false,
             'draft' => null,
@@ -630,7 +718,22 @@ PROMPT;
             'model' => $model,
             'elapsed_ms' => $elapsedMs,
             'finish_reason' => $finishReason,
+            'http_status' => $httpStatus,
+            'retry_after' => $retryAfter,
         ];
+    }
+
+    protected function parseRetryAfterSeconds(?string $header): ?int
+    {
+        if ($header === null || trim($header) === '') {
+            return null;
+        }
+        if (ctype_digit(trim($header))) {
+            return max(0, (int) $header);
+        }
+        $ts = strtotime($header);
+
+        return $ts === false ? null : max(0, $ts - time());
     }
 
     /**

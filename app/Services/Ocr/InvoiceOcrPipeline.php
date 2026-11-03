@@ -18,9 +18,9 @@ class InvoiceOcrPipeline
     ) {}
 
     /**
-     * @return array{ok:bool, draft:?array, error:?string, model:?string, elapsed_ms:int, image_sha256:?string, preview_path:?string, cached:bool}
+     * @return array{ok:bool, draft:?array, error:?string, code:?string, model:?string, elapsed_ms:int, image_sha256:?string, preview_path:?string, cached:bool, http_status:?int, retry_after:?int, width:?int, height:?int}
      */
-    public function run(string $absolutePath): array
+    public function run(string $absolutePath, ?string $modelOverride = null, bool $skipCache = false): array
     {
         $started = microtime(true);
 
@@ -28,35 +28,48 @@ class InvoiceOcrPipeline
             $prepared = $this->preprocessor->prepare($absolutePath);
         } catch (\Throwable $e) {
             Log::channel('ocr')->warning('[OCR] preprocess_failed', ['error' => $e->getMessage()]);
+            $code = str_contains(strtolower($e->getMessage()), 'أكبر') ? 'oversize' : 'preprocess';
 
             return [
                 'ok' => false,
                 'draft' => null,
                 'error' => $e->getMessage(),
+                'code' => $code,
                 'model' => null,
                 'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
                 'image_sha256' => null,
                 'preview_path' => null,
                 'cached' => false,
+                'http_status' => null,
+                'retry_after' => null,
+                'width' => null,
+                'height' => null,
             ];
         }
 
         $cacheKey = self::CACHE_PREFIX.$prepared['sha256'];
         $ttl = max(60, (int) config('services.gemini.ocr_cache_ttl', 86400));
-        $cached = Cache::get($cacheKey);
-        if (is_array($cached) && ($cached['ok'] ?? false) && is_array($cached['draft'] ?? null)) {
-            Log::channel('ocr')->info('[OCR] cache_hit', ['sha256' => substr($prepared['sha256'], 0, 12)]);
+        if (! $skipCache) {
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached) && ($cached['ok'] ?? false) && is_array($cached['draft'] ?? null)) {
+                Log::channel('ocr')->info('[OCR] cache_hit', ['sha256' => substr($prepared['sha256'], 0, 12)]);
 
-            return [
-                'ok' => true,
-                'draft' => $cached['draft'],
-                'error' => null,
-                'model' => $cached['model'] ?? null,
-                'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
-                'image_sha256' => $prepared['sha256'],
-                'preview_path' => $prepared['path'],
-                'cached' => true,
-            ];
+                return [
+                    'ok' => true,
+                    'draft' => $cached['draft'],
+                    'error' => null,
+                    'code' => null,
+                    'model' => $cached['model'] ?? null,
+                    'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
+                    'image_sha256' => $prepared['sha256'],
+                    'preview_path' => $prepared['path'],
+                    'cached' => true,
+                    'http_status' => null,
+                    'retry_after' => null,
+                    'width' => $prepared['width'] ?? null,
+                    'height' => $prepared['height'] ?? null,
+                ];
+            }
         }
 
         $catalogLimit = (int) config('services.gemini.ocr_catalog_prompt_limit', 80);
@@ -68,6 +81,7 @@ class InvoiceOcrPipeline
             $prepared['path'],
             $prepared['mime'],
             $catalog,
+            $modelOverride,
         );
 
         if (! ($result['ok'] ?? false) || ! is_array($result['draft'] ?? null)) {
@@ -75,11 +89,16 @@ class InvoiceOcrPipeline
                 'ok' => false,
                 'draft' => null,
                 'error' => (string) ($result['error'] ?? 'تعذّرت القراءة'),
+                'code' => $result['code'] ?? 'failed',
                 'model' => $result['model'] ?? null,
                 'elapsed_ms' => (int) ($result['elapsed_ms'] ?? round((microtime(true) - $started) * 1000)),
                 'image_sha256' => $prepared['sha256'],
                 'preview_path' => $prepared['path'],
                 'cached' => false,
+                'http_status' => $result['http_status'] ?? null,
+                'retry_after' => $result['retry_after'] ?? null,
+                'width' => $prepared['width'] ?? null,
+                'height' => $prepared['height'] ?? null,
             ];
         }
 
@@ -156,11 +175,16 @@ class InvoiceOcrPipeline
             'ok' => true,
             'draft' => $draft,
             'error' => null,
+            'code' => null,
             'model' => $result['model'] ?? null,
             'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
             'image_sha256' => $prepared['sha256'],
             'preview_path' => $prepared['path'],
             'cached' => false,
+            'http_status' => 200,
+            'retry_after' => null,
+            'width' => $prepared['width'] ?? null,
+            'height' => $prepared['height'] ?? null,
         ];
     }
 
