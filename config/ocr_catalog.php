@@ -86,6 +86,24 @@ return [
         'electric' => ['كهربائي', 'كهرباء'],
     ],
 
+    /*
+    | Explicit non-MG brand tokens found on a product line → exclude as not_mg.
+    | Page letterheads that appear as their own OCR lines are handled by plumbing_signal.
+    */
+    'non_mg_brand_tokens' => [
+        'nigtaş', 'nigtas', 'نيقطاش', 'نيغتاش',
+        'geberit', 'جيبريت',
+        'wavin', 'وافين',
+        'uponor',
+    ],
+
+    /*
+    | Known non-plumbing / non-MG words → exclude (قهوة…).
+    */
+    'known_non_mg_words' => [
+        'قهوه', 'قهوة', 'شاي', 'سكر', 'ماء معدني', 'كولا', 'بيبسي',
+    ],
+
     'known_data_issues' => [
         ['id' => 260, 'note' => 'قهوة test product'],
         ['id' => 37, 'note' => '3 inch under category 21 duplicates id 259 (category 17)'],

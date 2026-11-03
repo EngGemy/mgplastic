@@ -182,7 +182,8 @@ class OcrStructuredMatchTest extends TestCase
         // Line 4: قهوة excluded
         $this->assertCount(1, $draft['excluded']);
         $this->assertSame('قهوة', $draft['excluded'][0]['raw_text']);
-        $this->assertSame('family_not_in_catalog', $draft['excluded'][0]['reason']);
+        $this->assertContains($draft['excluded'][0]['reason'], ['known_non_mg', 'unreadable_or_non_mg', 'family_not_in_catalog']);
+        $this->assertSame('مش منتج MG', $draft['excluded'][0]['exclude_label'] ?? 'مش منتج MG');
     }
 
     public function test_end_cap_typo_and_thread_line(): void

@@ -187,6 +187,43 @@
                                         </div>
                                     @endif
 
+                                    @php
+                                        $understanding = (array) ($line['understanding'] ?? []);
+                                        $famCands = (array) ($line['family_candidates'] ?? []);
+                                    @endphp
+                                    @if(!empty($understanding['raw']) && !empty($understanding['means']) && empty($line['understanding_confirmed']))
+                                        <div class="ocr-sys" style="flex-wrap:wrap;gap:8px;align-items:center">
+                                            <span class="ocr-card__badge">فهمتها: {{ $understanding['raw'] }} = {{ $understanding['means'] }}</span>
+                                            <button type="button" class="ocr-sys__btn is-on" wire:click="confirmOcrUnderstanding({{ $i }})">تأكيد</button>
+                                            <button type="button" class="ocr-sys__btn" wire:click="$set('ocrFocusLine', {{ $i }})">تصحيح</button>
+                                        </div>
+                                    @endif
+
+                                    @if(count($famCands) > 1 && empty($matchedId))
+                                        <div class="ocr-sys" style="flex-wrap:wrap;gap:8px">
+                                            <span>أي معنى؟</span>
+                                            @foreach($famCands as $fc)
+                                                <button type="button" class="ocr-sys__btn"
+                                                    wire:click="chooseOcrLexiconFamily({{ $i }}, '{{ $fc['family'] ?? '' }}')">
+                                                    {{ $fc['catalog_name'] ?? ($fc['family'] ?? '') }}
+                                                </button>
+                                            @endforeach
+                                        </div>
+                                    @endif
+
+                                    @php $familyChips = (array) ($line['family_chips'] ?? []); @endphp
+                                    @if(($line['match_status'] ?? '') === 'unknown_word' && $familyChips !== [] && empty($matchedId))
+                                        <div class="ocr-sys" style="flex-wrap:wrap;gap:8px">
+                                            <span>كلمة غير معروفة — اختَر العائلة:</span>
+                                            @foreach($familyChips as $chip)
+                                                <button type="button" class="ocr-sys__btn"
+                                                    wire:click="chooseOcrLexiconFamily({{ $i }}, '{{ $chip['key'] ?? '' }}')">
+                                                    {{ $chip['label'] ?? ($chip['key'] ?? '') }}
+                                                </button>
+                                            @endforeach
+                                        </div>
+                                    @endif
+
                                     <p class="ocr-card__ask">أي منتج تقصد؟</p>
                                     <div class="ocr-picks" role="radiogroup">
                                         @forelse($cands as $ci => $cand)
@@ -266,15 +303,19 @@
 
                         @if($exclN > 0)
                             <button type="button" class="ocr-excluded-toggle" @click="showExcluded = !showExcluded">
-                                <span>مستبعد من السلة ({{ $exclN }}) — مش منتجات MG أو مش مقروء</span>
+                                <span>مستبعد من السلة ({{ $exclN }})</span>
                                 <span x-text="showExcluded ? 'إخفاء' : 'عرض'"></span>
                             </button>
                             <div x-show="showExcluded" x-cloak class="ocr-excluded">
                                 @foreach($excludedAll as $ei => $ex)
+                                    @php
+                                        $exLabel = $ex['exclude_label']
+                                            ?? (in_array($ex['reason'] ?? '', ['non_mg_brand', 'known_non_mg'], true) ? 'مش منتج MG' : 'مش مقروء');
+                                    @endphp
                                     <div class="ocr-excluded__row">
                                         <div>
                                             <s>«{{ $ex['raw_text'] ?? '' }}»</s>
-                                            <small>× {{ $ex['qty'] ?? '?' }} — لن يُضاف تلقائياً</small>
+                                            <small>× {{ $ex['qty'] ?? '?' }} — {{ $exLabel }}</small>
                                         </div>
                                         <button type="button" class="ocr-btn ocr-btn--ghost" wire:click="restoreExcludedOcrLine({{ $ei }})">إرجاع للمراجعة</button>
                                     </div>

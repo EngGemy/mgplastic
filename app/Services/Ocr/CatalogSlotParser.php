@@ -2,13 +2,23 @@
 
 namespace App\Services\Ocr;
 
+use App\Services\Ocr\Lexicon\OcrLexicon;
 use App\Support\ArabicTextNormalizer;
 
 class CatalogSlotParser
 {
+    public function __construct(
+        protected OcrLexicon $lexicon,
+        protected SizeDialectParser $sizeDialect,
+    ) {}
+
     /**
      * @return array{
      *   family:?string,
+     *   lexicon_family:?string,
+     *   family_candidates:list<array<string,mixed>>,
+     *   understanding:?array{raw:string, means:string, source:string},
+     *   lexicon_auto_ok:bool,
      *   angle:?float,
      *   size_value:?float,
      *   size_unit:?string,
@@ -26,6 +36,9 @@ class CatalogSlotParser
     public function parse(string $raw, ?string $brandHint = null): array
     {
         $notes = [];
+        // Detect MG on the raw line before normalizer strips the brand token.
+        $mgOnRawLine = (bool) preg_match('/(?<!\p{L})mg(?!\p{L})/iu', $raw)
+            || str_contains(mb_strtolower($raw), 'ام جي');
         $normalized = ArabicTextNormalizer::normalize($raw);
         $lineNo = null;
 
@@ -36,11 +49,40 @@ class CatalogSlotParser
 
         $system = $this->detectSystem($normalized, $systemSource);
         $variant = $this->detectVariants($normalized);
-        $family = $this->detectFamily($normalized, $variant);
+
+        $lex = $this->lexicon->matchFamily($normalized);
+        $notes = array_merge($notes, $lex['notes'] ?? []);
+        $family = $lex['family'] ?? null;
+        $lexiconFamily = $lex['lexicon_family'] ?? null;
+        $familyCandidates = $lex['family_candidates'] ?? [];
+        $understanding = $lex['understanding'] ?? null;
+        $lexiconAutoOk = (bool) ($lex['auto_ok'] ?? false);
+
+        // Legacy ocr_catalog covers thread/centra/expansion phrases — prefer when more specific.
+        // Do not let legacy override an explicit lexicon ambiguity (مثلثات → tee|y_tee).
+        $legacy = $this->detectFamilyLegacy($normalized, $variant);
+        $lexiconAmbiguous = in_array('ambiguous_family', $notes, true) && count($familyCandidates) > 1;
+        if (! $lexiconAmbiguous) {
+            $family = $this->preferMoreSpecificFamily($family, $legacy);
+            if ($family !== null && $family === $legacy && $legacy !== ($lex['family'] ?? null)) {
+                $lexiconFamily = null;
+                $understanding = null;
+                $lexiconAutoOk = true; // catalog synonym path
+                $familyCandidates = [];
+                $notes = array_values(array_filter($notes, fn ($n) => ! in_array($n, ['unconfirmed_term', 'ambiguous_family', 'fuzzy_family'], true)));
+            }
+        }
+
         $variant = $this->stripFamilyImpliedVariants($family, $variant);
 
         [$angle, $size, $size2, $unit, $angleNotes] = $this->detectNumbers($normalized, $family);
         $notes = array_merge($notes, $angleNotes);
+
+        // Re-map elbow angle → catalog family after numbers known.
+        if (($lexiconFamily === 'elbow' || $family === 'elbow_90' || $family === 'elbow_45') && $angle !== null) {
+            $family = $this->lexicon->catalogFamilyFor('elbow', $angle);
+            $lexiconFamily = 'elbow';
+        }
 
         if ($size !== null && $size >= 50) {
             $unit = 'mm';
@@ -70,12 +112,34 @@ class CatalogSlotParser
             }
         }
 
+        // Ambiguous multi-family from lexicon → not parse_ok for auto cart.
+        if (in_array('ambiguous_family', $notes, true) && count($familyCandidates) > 1) {
+            $parseOk = false;
+            $family = null;
+        }
+
         $brand = $brandHint !== null && trim($brandHint) !== ''
             ? ArabicTextNormalizer::normalize($brandHint)
             : null;
 
+        // Per-line brand only (ignore page letterheads fed as separate lines elsewhere).
+        $lineBrand = $this->detectLineBrand($normalized);
+        if ($mgOnRawLine) {
+            $brand = 'mg';
+        } elseif ($brand === null && $lineBrand !== null) {
+            $brand = $lineBrand;
+        } elseif ($brand !== null && $this->isMgBrandToken($brand)) {
+            $brand = 'mg';
+        }
+
+        $plumbingSignal = $this->hasPlumbingSignal($normalized, $family, $size, $unit, $familyCandidates);
+
         return [
             'family' => $family,
+            'lexicon_family' => $lexiconFamily,
+            'family_candidates' => $familyCandidates,
+            'understanding' => $understanding,
+            'lexicon_auto_ok' => $lexiconAutoOk,
             'angle' => $angle,
             'size_value' => $size,
             'size_unit' => $unit,
@@ -86,9 +150,89 @@ class CatalogSlotParser
             'line_no' => $lineNo,
             'normalized' => $normalized,
             'brand_hint' => $brand,
+            'mg_brand' => $mgOnRawLine || ($brand !== null && $this->isMgBrandToken($brand)),
+            'plumbing_signal' => $plumbingSignal,
             'parse_ok' => $parseOk,
             'parse_notes' => $notes,
         ];
+    }
+
+    protected function isMgBrandToken(string $token): bool
+    {
+        $b = ArabicTextNormalizer::normalize($token);
+
+        return $b === 'mg'
+            || $b === 'ام جي'
+            || str_contains($b, 'mg plastic')
+            || str_contains($b, 'ام جي بلاست');
+    }
+
+    /**
+     * Positive/negative brand tokens written on the same product line.
+     */
+    protected function detectLineBrand(string $normalized): ?string
+    {
+        if (preg_match('/(?<!\p{L})mg(?!\p{L})/iu', $normalized)) {
+            return 'mg';
+        }
+        if (str_contains($normalized, 'ام جي')) {
+            return 'mg';
+        }
+
+        foreach ((array) config('ocr_catalog.non_mg_brand_tokens', []) as $token) {
+            $t = ArabicTextNormalizer::normalize((string) $token);
+            if ($t !== '' && str_contains($normalized, $t)) {
+                return $t;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string,mixed>>  $familyCandidates
+     */
+    protected function hasPlumbingSignal(
+        string $normalized,
+        ?string $family,
+        ?float $size,
+        ?string $unit,
+        array $familyCandidates,
+    ): bool {
+        if ($family !== null || $familyCandidates !== []) {
+            return true;
+        }
+        if ($unit !== null) {
+            return true;
+        }
+        if ($size !== null && $this->sizeExistsInCatalog($size, $unit)) {
+            return true;
+        }
+        // Explicit unit words even if unit slot missed.
+        foreach (['بوصه', 'بوصة', 'انش', 'inch', 'مم', 'mm'] as $u) {
+            if (str_contains($normalized, ArabicTextNormalizer::normalize($u))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function sizeExistsInCatalog(float $size, ?string $unit): bool
+    {
+        $inches = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0];
+        $mm = [50, 63, 75, 90, 110, 160, 200];
+        if ($unit === 'mm' || $size >= 50) {
+            return in_array((int) $size, $mm, true);
+        }
+
+        foreach ($inches as $in) {
+            if (abs($in - $size) < 0.01) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -207,10 +351,41 @@ class CatalogSlotParser
         return $out;
     }
 
-    /** @param  array<string, mixed>  $variant */
-    protected function detectFamily(string $normalized, array $variant): ?string
+    protected function preferMoreSpecificFamily(?string $lexiconFamily, ?string $legacy): ?string
     {
-        // Prefer longer / more specific synonym phrases first.
+        if ($legacy === null) {
+            return $lexiconFamily;
+        }
+        if ($lexiconFamily === null) {
+            return $legacy;
+        }
+        if ($lexiconFamily === $legacy) {
+            return $legacy;
+        }
+
+        $children = [
+            'coupling' => ['male_thread_coupling', 'female_thread_coupling', 'expansion_coupling', 'repair_coupling', 'short_coupling', 'drain_assembly'],
+            'elbow_90' => ['door_elbow', 'female_thread_elbow', 'centra_elbow', 'centra_door_elbow'],
+            'elbow_45' => ['door_elbow', 'female_thread_elbow', 'centra_elbow', 'centra_door_elbow'],
+            'tee' => ['door_tee', 'centra_tee', 'centra_door_tee'],
+            'wye' => [],
+            'end_cap' => [],
+            'pipe' => [],
+        ];
+
+        foreach ($children as $parent => $specifics) {
+            if ($lexiconFamily === $parent && in_array($legacy, $specifics, true)) {
+                return $legacy;
+            }
+        }
+
+        return $lexiconFamily;
+    }
+
+    /** @param  array<string, mixed>  $variant */
+    protected function detectFamilyLegacy(string $normalized, array $variant): ?string
+    {
+        // Prefer longer / more specific synonym phrases first (legacy catalog map).
         $families = (array) config('ocr_catalog.families', []);
         $best = null;
         $bestLen = 0;
@@ -223,12 +398,10 @@ class CatalogSlotParser
                 }
                 if ($this->fuzzyContains($normalized, $s)) {
                     $len = mb_strlen($s);
-                    // Special-case: bare "كوع" should not beat "كوع باب" / thread elbows.
                     if ($family === 'elbow_90' && $s === 'كوع') {
                         if (! empty($variant['door']) || ! empty($variant['centra']) || ! empty($variant['female_thread'])) {
                             continue;
                         }
-                        // Require that an angle or size digit follows somewhere.
                         if (! preg_match('/كوع\s*[0-9]/u', $normalized) && ! preg_match('/\b[0-9]/u', $normalized)) {
                             continue;
                         }
@@ -257,26 +430,34 @@ class CatalogSlotParser
     protected function detectNumbers(string $normalized, ?string $family): array
     {
         $notes = [];
-        $unit = null;
-        if (preg_match('/بوص/u', $normalized)) {
-            $unit = 'in';
-        }
-        if (preg_match('/\bmm\b|ملم|مليم/u', $normalized)) {
-            $unit = 'mm';
-        }
 
         // Reducer: من X الى Y
         if (preg_match('/من\s*([0-9]+(?:\.[0-9]+)?)\s*(?:الى|الي|إلى)\s*([0-9]+(?:\.[0-9]+)?)/u', $normalized, $m)) {
+            $unit = $this->sizeDialect->detectUnit($normalized);
+
             return [null, (float) $m[1], (float) $m[2], $unit, $notes];
         }
 
-        $nums = $this->extractNumbers($normalized);
+        [$dialectSize, $dialectSize2, $unit, $dialectNotes] = $this->sizeDialect->parse($normalized);
+        $notes = array_merge($notes, $dialectNotes);
 
-        if ($family === 'elbow_90' || $family === 'elbow_45' || $family === 'door_elbow' || str_starts_with((string) $family, 'centra_')) {
+        $nums = $this->extractNumbers($normalized);
+        // Prefer dialect-adjusted primary size when ونص/وربع / number-words applied.
+        if ($dialectSize !== null && $nums === []) {
+            $nums = [$dialectSize];
+            if ($dialectSize2 !== null) {
+                $nums[] = $dialectSize2;
+            }
+        } elseif ($dialectSize !== null && $nums !== [] && abs($nums[0] - $dialectSize) > 0.01) {
+            $nums[0] = $dialectSize;
+        }
+
+        if ($family === 'elbow_90' || $family === 'elbow_45' || $family === 'door_elbow' || str_starts_with((string) $family, 'centra_') || $family === null && $this->looksLikeElbow($normalized)) {
+            // Treat as elbow number layout when lexicon mapped elbow or text has elbow cues.
+            $elbowFamily = $family ?? 'elbow_90';
             if (count($nums) >= 2) {
                 $angle = $nums[0];
                 $size = $nums[1];
-                // If first number is not 45/90, treat first as size when second looks like size too — rare.
                 if (! in_array((int) $angle, [45, 90], true) && in_array((int) $nums[1], [45, 90], true)) {
                     $angle = $nums[1];
                     $size = $nums[0];
@@ -292,19 +473,49 @@ class CatalogSlotParser
                     return [$n, null, null, $unit, $notes];
                 }
 
-                return [$family === 'elbow_45' ? 45.0 : 90.0, $n, null, $unit, $notes];
+                return [$elbowFamily === 'elbow_45' ? 45.0 : 90.0, $n, null, $unit, $notes];
             }
+        }
+
+        // English "elbow 90 1 inch" — family may already be elbow_90 from lexicon.
+        if (in_array($family, ['elbow_90', 'elbow_45', 'door_elbow'], true) === false
+            && preg_match('/\belbow\b/i', $normalized)
+            && count($nums) >= 2) {
+            return [$nums[0], $nums[1], null, $unit, $notes];
         }
 
         if (count($nums) >= 2 && ($family === 'reducer' || $family === 'adapter_114_110')) {
             return [null, $nums[0], $nums[1], $unit, $notes];
         }
 
+        // Non-reducer: first number is size; later numbers are usually qty (handled outside slots).
         if (count($nums) >= 1) {
-            return [null, $nums[0], $nums[1] ?? null, $unit, $notes];
+            return [null, $nums[0], null, $unit, $notes];
         }
 
         return [null, null, null, $unit, $notes];
+    }
+
+    protected function sizeDialectHasModifier(string $normalized): bool
+    {
+        foreach (array_merge(
+            (array) config('ocr_lexicon.size_words.half_add', []),
+            (array) config('ocr_lexicon.size_words.quarter_add', []),
+        ) as $w) {
+            $t = ArabicTextNormalizer::normalize((string) $w);
+            if ($t !== '' && str_contains($normalized, $t)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function looksLikeElbow(string $normalized): bool
+    {
+        return str_contains($normalized, 'كوع')
+            || str_contains($normalized, 'اكواع')
+            || (bool) preg_match('/\belbow\b/i', $normalized);
     }
 
     /** @return list<float> */

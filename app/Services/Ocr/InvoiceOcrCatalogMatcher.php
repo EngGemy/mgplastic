@@ -73,7 +73,46 @@ class InvoiceOcrCatalogMatcher
 
             $raw = trim((string) ($line['raw_text'] ?? $line['name'] ?? ''));
             $brandHint = isset($line['brand']) ? (string) $line['brand'] : null;
-            $slots = $this->parser->parse($raw !== '' ? $raw : (string) ($line['name'] ?? ''), $brandHint);
+            $primaryText = $raw !== '' ? $raw : (string) ($line['name'] ?? '');
+            $slots = $this->parser->parse($primaryText, $brandHint);
+            $resolvedVia = 'primary';
+
+            // User forced a lexicon family (ambiguous مثلثات → tee|y_tee choice).
+            $forcedLex = isset($line['force_lexicon_family']) ? (string) $line['force_lexicon_family'] : '';
+            if ($forcedLex !== '') {
+                $slots['lexicon_family'] = $forcedLex;
+                $slots['family'] = app(\App\Services\Ocr\Lexicon\OcrLexicon::class)->catalogFamilyFor($forcedLex, $slots['angle'] ?? null);
+                $slots['lexicon_auto_ok'] = true;
+                $slots['family_candidates'] = [];
+                $slots['understanding'] = [
+                    'raw' => $primaryText,
+                    'means' => app(\App\Services\Ocr\Lexicon\OcrLexicon::class)->catalogNameFor($forcedLex),
+                    'source' => 'user_choice',
+                ];
+                $resolvedVia = 'user_family';
+            }
+
+            // Try Gemini alternate readings when primary has no family.
+            if (($slots['family'] ?? null) === null && empty($slots['family_candidates']) && $forcedLex === '') {
+                foreach (array_slice((array) ($line['alternatives'] ?? []), 0, 2) as $alt) {
+                    $altText = trim((string) $alt);
+                    if ($altText === '') {
+                        continue;
+                    }
+                    $altSlots = $this->parser->parse($altText, $brandHint);
+                    if (($altSlots['family'] ?? null) !== null || ! empty($altSlots['family_candidates'])) {
+                        $slots = $altSlots;
+                        $resolvedVia = 'alternative';
+                        Log::channel('ocr')->info('[OCR] alternative_resolved', [
+                            'index' => $index,
+                            'alternative' => mb_substr($altText, 0, 80),
+                            'family' => $slots['family'] ?? null,
+                        ]);
+                        break;
+                    }
+                }
+            }
+            $line['resolved_via'] = $resolvedVia;
             $counts['parsed']++;
 
             // Invoice-level default fills ambiguous system only.
@@ -107,20 +146,67 @@ class InvoiceOcrCatalogMatcher
                 continue;
             }
 
-            // Non-MG brand hint (explicit).
-            if ($this->isExplicitNonMgBrand($slots['brand_hint'] ?? null)) {
-                $excluded[] = $this->excludeRow($line, 'non_mg_brand', $slots);
+            // Carry lexicon understanding chip + alternate family choices.
+            if (! empty($slots['understanding'])) {
+                $line['understanding'] = $slots['understanding'];
+            }
+            if (! empty($slots['family_candidates'])) {
+                $line['family_candidates'] = $slots['family_candidates'];
+            }
+
+            // Explicit non-MG brand on THIS line only (MG is a positive signal).
+            if ($this->isExplicitNonMgBrand($slots['brand_hint'] ?? null) && empty($slots['mg_brand'])) {
+                $excluded[] = $this->excludeRow($line, 'non_mg_brand', $slots, 'مش منتج MG');
                 $counts['excluded']++;
                 Log::channel('ocr')->info('[OCR] excluded', ['reason' => 'non_mg_brand', 'index' => $index]);
 
                 continue;
             }
 
-            // Unknown family → not MG catalog family.
-            if ($slots['family'] === null) {
-                $excluded[] = $this->excludeRow($line, 'family_not_in_catalog', $slots);
+            // Known non-MG / non-plumbing word list (قهوة…).
+            if ($this->matchesKnownNonMgWord((string) ($slots['normalized'] ?? ''))) {
+                $excluded[] = $this->excludeRow($line, 'known_non_mg', $slots, 'مش منتج MG');
                 $counts['excluded']++;
-                Log::channel('ocr')->info('[OCR] excluded', ['reason' => 'family_not_in_catalog', 'index' => $index]);
+                Log::channel('ocr')->info('[OCR] excluded', ['reason' => 'known_non_mg', 'index' => $index]);
+
+                continue;
+            }
+
+            // Ambiguous lexicon families (مثلثات → tee|y_tee): keep line, ask user.
+            if ($slots['family'] === null && ! empty($slots['family_candidates'])) {
+                $line['match_decision'] = 'needs_choice';
+                $line['match_status'] = 'needs_choice';
+                $line['matched_product_id'] = null;
+                $line['candidates'] = [];
+                $line['match_reason'] = 'عائلة غير مؤكدة — اختَر المعنى';
+                $flags = array_values((array) ($line['needs_review'] ?? []));
+                $flags[] = 'needs_choice';
+                $flags[] = 'ambiguous_family';
+                $line['needs_review'] = array_values(array_unique($flags));
+                $counts['needs_choice']++;
+                $lines[] = $line;
+
+                continue;
+            }
+
+            // Unknown family: plumbing signal → needs_review (never exclude).
+            if ($slots['family'] === null) {
+                if (! empty($slots['plumbing_signal'])) {
+                    $line = $this->unknownWordNeedsReview($line, $slots, $products);
+                    $counts['needs_choice']++;
+                    $lines[] = $line;
+                    Log::channel('ocr')->info('[OCR] unknown_word_review', [
+                        'index' => $index,
+                        'size' => $slots['size_value'] ?? null,
+                    ]);
+
+                    continue;
+                }
+
+                // No family and no plumbing signal (letterhead / garbage) → exclude.
+                $excluded[] = $this->excludeRow($line, 'unreadable_or_non_mg', $slots, 'مش مقروء');
+                $counts['excluded']++;
+                Log::channel('ocr')->info('[OCR] excluded', ['reason' => 'unreadable_or_non_mg', 'index' => $index]);
 
                 continue;
             }
@@ -128,8 +214,12 @@ class InvoiceOcrCatalogMatcher
             $candidates = $this->retrieveCandidates($slots, $products);
             $status = $candidates['status'];
             $list = $candidates['candidates'];
+            $lexiconAutoOk = (bool) ($slots['lexicon_auto_ok'] ?? true);
+            if (! empty($line['understanding_confirmed']) || $forcedLex !== '') {
+                $lexiconAutoOk = true;
+            }
 
-            if ($status === 'matched' && count($list) === 1) {
+            if ($status === 'matched' && count($list) === 1 && $lexiconAutoOk) {
                 $product = $products->firstWhere('id', $list[0]['product_id']);
                 if ($product) {
                     $reason = $this->matchReason($slots);
@@ -139,6 +229,25 @@ class InvoiceOcrCatalogMatcher
 
                     continue;
                 }
+            }
+
+            // Unconfirmed dialect/English hit: suggest candidates, never auto-accept.
+            if (! $lexiconAutoOk && $list !== []) {
+                $line['match_decision'] = 'needs_choice';
+                $line['match_status'] = 'needs_choice';
+                $line['matched_product_id'] = null;
+                $line['candidates'] = $list;
+                $line['match_reason'] = ! empty($slots['understanding'])
+                    ? sprintf('فهمتها: %s = %s — أكّد أو صحّح', $slots['understanding']['raw'], $slots['understanding']['means'])
+                    : 'مصطلح غير مؤكد — راجع الاقتراح';
+                $flags = array_values((array) ($line['needs_review'] ?? []));
+                $flags[] = 'needs_choice';
+                $flags[] = 'unconfirmed_term';
+                $line['needs_review'] = array_values(array_unique($flags));
+                $counts['needs_choice']++;
+                $lines[] = $line;
+
+                continue;
             }
 
             if ($status === 'needs_choice' || ($list !== [] && $status !== 'matched')) {
@@ -243,6 +352,17 @@ class InvoiceOcrCatalogMatcher
             }
             if ($flags['size2']) {
                 $rank += 5;
+            }
+
+            // Plain pipe first when OCR has no variant word (طوبو 4 بوصة → #108 before كاتم/ذهبي).
+            $ocrVariant = (array) ($slots['variant'] ?? []);
+            $productVariant = (array) ($product->variant ?? []);
+            if ($family === 'pipe' && $ocrVariant === []) {
+                if ($productVariant === [] || $this->isPlainPipeVariant($productVariant)) {
+                    $rank += 25;
+                } else {
+                    $rank -= 8;
+                }
             }
 
             // Fuzzy name tie-breaker only.
@@ -391,12 +511,140 @@ class InvoiceOcrCatalogMatcher
             return false;
         }
         $b = ArabicTextNormalizer::normalize($brand);
-        if ($b === 'mg' || str_contains($b, 'mg plastic') || $b === 'ام جي') {
+        if ($b === 'mg' || str_contains($b, 'mg plastic') || $b === 'ام جي' || str_contains($b, 'ام جي بلاست')) {
             return false;
         }
 
-        // Any other brand token → non-MG.
+        foreach ((array) config('ocr_catalog.non_mg_brand_tokens', []) as $token) {
+            $t = ArabicTextNormalizer::normalize((string) $token);
+            if ($t !== '' && ($b === $t || str_contains($b, $t))) {
+                return true;
+            }
+        }
+
+        // Unknown brand tokens from Gemini line.brand are treated as non-MG only when
+        // the token looks like a Latin brand (letterhead), not a size/family word.
+        if (preg_match('/^[a-z0-9][a-z0-9 ._-]{1,40}$/u', $b) && ! in_array($b, ['mg', 'in', 'mm', 'pipe', 'tee', 'elbow'], true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    protected function matchesKnownNonMgWord(string $normalized): bool
+    {
+        $normalized = trim($normalized);
+        if ($normalized === '') {
+            return false;
+        }
+        foreach ((array) config('ocr_catalog.known_non_mg_words', []) as $word) {
+            $w = ArabicTextNormalizer::normalize((string) $word);
+            if ($w === '') {
+                continue;
+            }
+            if ($normalized === $w || preg_match('/(?:^|\s)'.preg_quote($w, '/').'(?:\s|$)/u', $normalized)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param  array<string,mixed>  $variant */
+    protected function isPlainPipeVariant(array $variant): bool
+    {
+        foreach (['layers_silent', 'gold', 'gray', 'orange', 'white', 'ac', 'electric'] as $key) {
+            if (! empty($variant[$key])) {
+                return false;
+            }
+        }
+
         return true;
+    }
+
+    /**
+     * Unknown token + plumbing signal: keep in review with family chips + fuzzy suggestions.
+     *
+     * @param  array<string,mixed>  $line
+     * @param  array<string,mixed>  $slots
+     * @param  Collection<int, Product>  $products
+     * @return array<string,mixed>
+     */
+    protected function unknownWordNeedsReview(array $line, array $slots, Collection $products): array
+    {
+        $line['match_decision'] = 'needs_choice';
+        $line['match_status'] = 'unknown_word';
+        $line['matched_product_id'] = null;
+        $line['match_reason'] = 'كلمة غير معروفة';
+        $line['exclude_label'] = null;
+        $line['family_chips'] = $this->familyChips();
+        $line['candidates'] = $this->fuzzySuggestionsForUnknown($slots, $products);
+        $flags = array_values((array) ($line['needs_review'] ?? []));
+        $flags[] = 'needs_choice';
+        $flags[] = 'unknown_word';
+        $line['needs_review'] = array_values(array_unique($flags));
+
+        return $line;
+    }
+
+    /** @return list<array{key:string,label:string}> */
+    protected function familyChips(): array
+    {
+        return [
+            ['key' => 'pipe', 'label' => 'ماسورة'],
+            ['key' => 'elbow', 'label' => 'كوع'],
+            ['key' => 'tee', 'label' => 'مثلث'],
+            ['key' => 'y_tee', 'label' => 'مثلث واي'],
+            ['key' => 'coupling', 'label' => 'وصلة'],
+            ['key' => 'reducer', 'label' => 'مخفض'],
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $slots
+     * @param  Collection<int, Product>  $products
+     * @return list<array<string,mixed>>
+     */
+    protected function fuzzySuggestionsForUnknown(array $slots, Collection $products): array
+    {
+        $size = $slots['size_value'] ?? null;
+        $unit = $slots['size_unit'] ?? null;
+        $pool = $products;
+        if ($size !== null) {
+            $pool = $products->filter(function (Product $p) use ($size, $unit) {
+                if (! $this->sizeEquals($p->size_value, $size)) {
+                    return false;
+                }
+                if ($unit !== null && $p->size_unit !== null && $p->size_unit !== $unit) {
+                    return false;
+                }
+
+                return true;
+            });
+        }
+
+        $scored = [];
+        $norm = (string) ($slots['normalized'] ?? '');
+        foreach ($pool->take(80) as $product) {
+            $label = ArabicTextNormalizer::normalize((string) ($product->translate('ar')?->name ?? ''));
+            similar_text($norm, $label, $pct);
+            $scored[] = [
+                'product_id' => (int) $product->id,
+                'name' => localized_name($product, 'name', 'منتج #'.$product->id),
+                'system' => $product->system,
+                'size_value' => $product->size_value,
+                'size_unit' => $product->size_unit,
+                'pieces_per_box' => $product->pieces_per_box,
+                'points_per_unit' => $product->points_per_unit,
+                'main_image' => $product->main_image,
+                'flags' => ['fuzzy' => true],
+                'rank' => $pct,
+                'similarity' => round($pct / 100, 4),
+            ];
+        }
+        usort($scored, fn ($a, $b) => $b['rank'] <=> $a['rank']);
+
+        return array_slice($scored, 0, 5);
     }
 
     /**
@@ -404,13 +652,20 @@ class InvoiceOcrCatalogMatcher
      * @param  array<string,mixed>  $slots
      * @return array<string,mixed>
      */
-    protected function excludeRow(array $line, string $reason, array $slots): array
+    protected function excludeRow(array $line, string $reason, array $slots, ?string $label = null): array
     {
+        $label = $label ?? match ($reason) {
+            'non_mg_brand', 'known_non_mg' => 'مش منتج MG',
+            'unreadable_or_non_mg', 'family_not_in_catalog' => 'مش مقروء',
+            default => 'مش منتج MG',
+        };
+
         return [
             'raw_text' => $line['raw_text'] ?? '',
             'name' => $line['name'] ?? ($line['raw_text'] ?? ''),
             'qty' => $line['qty'] ?? null,
             'reason' => $reason,
+            'exclude_label' => $label,
             'slots' => $slots,
             'match_status' => 'not_mg',
         ];
@@ -434,11 +689,23 @@ class InvoiceOcrCatalogMatcher
         $line['pieces_per_box'] = $product->pieces_per_box;
         $line['points_per_unit'] = $product->points_per_unit;
         $line['main_image'] = $product->main_image;
+        // Unique match is "ready" for bulk approve — strip OCR noise flags (price/qty).
         $flags = array_values(array_filter(
             (array) ($line['needs_review'] ?? []),
-            fn ($f) => ! in_array($f, ['catalog_unmatched', 'needs_choice', 'mg_family_unknown_variant'], true)
+            fn ($f) => ! in_array($f, [
+                'catalog_unmatched',
+                'needs_choice',
+                'mg_family_unknown_variant',
+                'unknown_word',
+                'ambiguous_family',
+                'unconfirmed_term',
+                'price_missing',
+                'qty_missing',
+                'ambiguous_roles',
+            ], true)
         ));
         $line['needs_review'] = $flags;
+        // Do not set approved here — POS requires an explicit approve action.
 
         return $line;
     }
