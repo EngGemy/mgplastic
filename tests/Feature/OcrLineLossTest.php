@@ -174,7 +174,7 @@ class OcrLineLossTest extends TestCase
         $result = app(InvoiceOcrPipeline::class)->run($path);
         $this->assertFalse($result['ok']);
         $this->assertFalse($result['cached']);
-        $this->assertStringStartsWith('ocr:draft:v3:', InvoiceOcrPipeline::CACHE_PREFIX);
+        $this->assertStringStartsWith('ocr:draft:v4:', InvoiceOcrPipeline::CACHE_PREFIX);
 
         // Second run must hit the network again (nothing was cached).
         $again = app(InvoiceOcrPipeline::class)->run($path);

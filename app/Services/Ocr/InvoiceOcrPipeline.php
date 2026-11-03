@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Log;
 
 class InvoiceOcrPipeline
 {
-    public const CACHE_PREFIX = 'ocr:draft:v3:';
+    /** v4: bust stale 1-line caches from before unnumbered-list completeness. */
+    public const CACHE_PREFIX = 'ocr:draft:v4:';
 
     public function __construct(
         protected GeminiClient $gemini,
@@ -156,7 +157,12 @@ class InvoiceOcrPipeline
         }
 
         $finish = (string) ($result['finish_reason'] ?? '');
-        $complete = $accounted >= $rawLineCount && $finish === 'STOP' && $accounted > 0;
+        $estimated = (int) ($draft['estimated_visible_rows'] ?? $result['draft']['estimated_visible_rows'] ?? 0);
+        // Never cache under-reads (e.g. 1 of 4 notepad rows) — forces completeness on retry.
+        $complete = $accounted >= $rawLineCount
+            && $finish === 'STOP'
+            && $accounted > 0
+            && ($estimated === 0 || $accounted >= $estimated);
         if ($complete) {
             Cache::put($cacheKey, [
                 'ok' => true,
@@ -167,6 +173,7 @@ class InvoiceOcrPipeline
             Log::channel('ocr')->warning('[OCR] cache_skipped_incomplete', [
                 'returned' => $returned,
                 'raw_line_count' => $rawLineCount,
+                'estimated_visible_rows' => $estimated,
                 'finish_reason' => $finish,
             ]);
         }

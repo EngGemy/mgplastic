@@ -9,7 +9,7 @@ class OcrCacheClearCommand extends Command
 {
     protected $signature = 'ocr:cache-clear';
 
-    protected $description = 'Clear OCR draft cache keys only (v2/v3 prefixes), not the whole cache';
+    protected $description = 'Clear OCR draft cache keys only (v2/v3/v4 prefixes), not the whole cache';
 
     public function handle(): int
     {
@@ -22,7 +22,7 @@ class OcrCacheClearCommand extends Command
                 /** @var \Illuminate\Redis\Connections\Connection $redis */
                 $redis = $store->getRedis();
                 $prefix = (string) config('cache.prefix', '');
-                foreach (['ocr:draft:v2:*', 'ocr:draft:v3:*', 'ocr:pos:job:*'] as $pattern) {
+                foreach (['ocr:draft:v2:*', 'ocr:draft:v3:*', 'ocr:draft:v4:*', 'ocr:pos:job:*'] as $pattern) {
                     $keys = $redis->keys($prefix.$pattern);
                     if (is_array($keys) && $keys !== []) {
                         $redis->del(...$keys);

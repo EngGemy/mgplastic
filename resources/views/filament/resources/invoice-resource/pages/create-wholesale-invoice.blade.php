@@ -44,74 +44,75 @@
                 @enderror
             </div>
             <div class="pos-header-field pos-sheet-field">
-                <label class="pos-label">قراءة فاتورة من صورة (OCR)</label>
+                <label class="pos-label">قراءة من صورة</label>
                 @if($ocrResumeBanner && $ocrBatchId)
-                    <div class="pos-ocr-banner" role="status" aria-live="polite" style="border:1px solid #222;padding:.5rem;margin-bottom:.5rem;background:#f7f7f7">
-                        <strong>مسودة سابقة</strong> — يمكنك المتابعة من حيث توقفت.
-                        <button type="button" class="pos-sheet-btn" wire:click="dismissOcrResumeBanner">متابعة</button>
-                        <button type="button" class="pos-sheet-btn" wire:click="abandonOcrBatch">تجاهل</button>
+                    <div class="ocr-desk__alert" role="status" aria-live="polite" style="margin-bottom:.5rem;border:1px solid #d6d6d2;border-radius:4px">
+                        <p><strong>مسودة محفوظة</strong> — كمّل من حيث توقفت.</p>
+                        <div style="display:flex;gap:.35rem">
+                            <button type="button" class="ocr-btn ocr-btn--primary" style="padding:.4rem .7rem;font-size:.78rem" wire:click="dismissOcrResumeBanner">متابعة</button>
+                            <button type="button" class="ocr-btn ocr-btn--ghost" style="padding:.4rem .7rem;font-size:.78rem" wire:click="abandonOcrBatch">تجاهل</button>
+                        </div>
                     </div>
                 @endif
-                <div class="pos-sheet-actions">
-                    <label class="pos-sheet-btn pos-sheet-btn--upload">
-                        إضافة صورة
+                <div class="ocr-intake">
+                    <label class="ocr-intake__drop">
+                        اسحب الصورة هنا أو اضغط للاختيار
+                        <small>حتى 10 صور · JPG / PNG / WebP · لا تُضاف للسلة إلا بعد اعتمادك</small>
                         <input type="file" wire:model="invoiceOcrImages" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
                     </label>
-                    <label class="pos-sheet-btn pos-sheet-btn--upload">
-                        صورة واحدة
-                        <input type="file" wire:model="invoiceOcrImage" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
-                    </label>
-                </div>
-                @if(count($ocrImageStrip) > 0)
-                    <div class="pos-ocr-strip" style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0" aria-live="polite">
-                        @foreach($ocrImageStrip as $thumb)
-                            <div class="pos-ocr-thumb" style="width:88px;text-align:center;border:1px solid #333;padding:4px">
-                                <img src="{{ $thumb['preview'] }}" alt="صورة {{ $thumb['position'] }}" style="width:80px;height:60px;object-fit:cover">
-                                <div style="font-size:.7rem">
-                                    @switch($thumb['status'])
-                                        @case('queued') ⏳ انتظار @break
-                                        @case('reading') 🔄 قراءة @break
-                                        @case('retrying') ↺ إعادة @if($thumb['countdown'] !== null) ({{ $thumb['countdown'] }}ث) @endif @break
-                                        @case('done') ✓ {{ $thumb['lines_count'] }} بند @break
-                                        @case('empty') ○ فارغ @break
-                                        @case('failed') ✕ فشل @break
-                                        @case('canceled') — أُلغي @break
-                                        @default {{ $thumb['status'] }}
-                                    @endswitch
+                    <p class="pos-invoice-no-hint" wire:loading wire:target="invoiceOcrImage,invoiceOcrImages">جاري الرفع…</p>
+                    @if(count($ocrImageStrip) > 0)
+                        <div class="ocr-intake__strip" aria-live="polite">
+                            @foreach($ocrImageStrip as $thumb)
+                                <div class="ocr-intake__thumb">
+                                    <img src="{{ $thumb['preview'] }}" alt="صورة {{ $thumb['position'] }}">
+                                    <div @class([
+                                        'ocr-intake__status',
+                                        'ocr-intake__status--fail' => $thumb['status'] === 'failed',
+                                    ])>
+                                        @switch($thumb['status'])
+                                            @case('queued') ○ انتظار @break
+                                            @case('reading') ◌ قراءة @break
+                                            @case('retrying') ↻ إعادة @if($thumb['countdown'] !== null) {{ $thumb['countdown'] }}ث @endif @break
+                                            @case('done') ● {{ $thumb['lines_count'] }} بند @break
+                                            @case('empty') ○ فارغ @break
+                                            @case('failed') × فشل @break
+                                            @case('canceled') — أُلغي @break
+                                            @default {{ $thumb['status'] }}
+                                        @endswitch
+                                    </div>
+                                    @if(in_array($thumb['status'], ['failed', 'retrying', 'empty'], true))
+                                        <div class="ocr-intake__actions">
+                                            <button type="button" class="pos-sheet-btn" wire:click="retryOcrImage({{ $thumb['id'] }})">أعد</button>
+                                            <button type="button" class="pos-sheet-btn" wire:click="removeOcrImage({{ $thumb['id'] }})">حذف</button>
+                                        </div>
+                                    @endif
+                                    @if(! empty($thumb['error']))
+                                        <div style="font-size:.62rem;color:#6b6b6b;margin-top:.15rem">{{ $thumb['error'] }}</div>
+                                    @endif
                                 </div>
-                                @if(in_array($thumb['status'], ['failed', 'retrying', 'empty'], true))
-                                    <button type="button" class="pos-sheet-btn" style="font-size:.65rem;padding:2px 4px" wire:click="retryOcrImage({{ $thumb['id'] }})">أعد الآن</button>
-                                    <button type="button" class="pos-sheet-btn" style="font-size:.65rem;padding:2px 4px" wire:click="removeOcrImage({{ $thumb['id'] }})">حذف</button>
-                                @endif
-                                @if(! empty($thumb['error']))
-                                    <div style="font-size:.65rem;color:#666">{{ $thumb['error'] }}</div>
-                                @endif
-                            </div>
-                        @endforeach
-                        @if(count($ocrImageStrip) < 10)
-                            <label class="pos-ocr-thumb" style="width:88px;height:90px;border:1px dashed #333;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.75rem">
-                                + إضافة
-                                <input type="file" wire:model="invoiceOcrImage" accept="image/jpeg,image/png,image/webp" style="display:none">
-                            </label>
-                        @endif
-                    </div>
-                @endif
-                <details style="margin:.35rem 0">
-                    <summary class="pos-invoice-no-hint" style="cursor:pointer">لصق نص بدل الصورة</summary>
-                    <textarea wire:model="ocrPasteText" rows="3" class="pos-input" style="width:100%" placeholder="سطر لكل بند…"></textarea>
-                    <button type="button" class="pos-sheet-btn" wire:click="submitOcrPasteText">تحليل النص</button>
-                </details>
-                <p class="pos-invoice-no-hint" wire:loading.remove wire:target="invoiceOcrImage,invoiceOcrImages">
-                    حتى 10 صور — المسودة تُحفظ وتُستأنف بعد التحديث. لا تُضاف للسلة إلا بعد الاعتماد.
-                </p>
-                <p class="pos-invoice-no-hint" wire:loading wire:target="invoiceOcrImage,invoiceOcrImages">جاري رفع الصورة...</p>
+                            @endforeach
+                            @if(count($ocrImageStrip) < 10)
+                                <label class="ocr-intake__add">
+                                    + صورة
+                                    <input type="file" wire:model="invoiceOcrImage" accept="image/jpeg,image/png,image/webp">
+                                </label>
+                            @endif
+                        </div>
+                    @endif
+                    <details style="margin-top:.5rem">
+                        <summary class="pos-invoice-no-hint" style="cursor:pointer">أو الصق النص يدوياً</summary>
+                        <textarea wire:model="ocrPasteText" rows="3" class="pos-input" style="width:100%;margin-top:.35rem" placeholder="سطر لكل بند…"></textarea>
+                        <button type="button" class="ocr-btn ocr-btn--ghost" style="margin-top:.35rem" wire:click="submitOcrPasteText">حلّل النص</button>
+                    </details>
+                </div>
                 @error('invoiceOcrImage')
                     <p class="pos-sheet-error">{{ $message }}</p>
                 @enderror
                 @if($ocrStep === 'still_processing')
-                    <p class="pos-invoice-no-hint" role="status" aria-live="polite">ما زالت قيد المعالجة — يمكنك مغادرة الصفحة والمتابعة لاحقاً.</p>
+                    <p class="pos-invoice-no-hint" role="status" aria-live="polite">ما زالت قيد المعالجة — يمكنك المغادرة والمتابعة لاحقاً.</p>
                 @elseif($ocrReading || in_array($ocrStep, ['queued', 'polling', 'reading', 'processing'], true))
-                    <p class="pos-invoice-no-hint">الحالة: جاري الاستخراج…</p>
+                    <p class="pos-invoice-no-hint" role="status" aria-live="polite">جاري القراءة…</p>
                 @endif
                 @if($ocrBatchId && ($ocrReading || in_array($ocrStep, ['polling', 'still_processing'], true)))
                     <div wire:poll.{{ ($ocrPollTicks * 2) >= 20 ? '5s' : '2s' }}="pollOcrBatch"></div>
@@ -122,8 +123,8 @@
                     <p class="pos-sheet-error">{{ $ocrError }}</p>
                 @endif
                 @foreach($ocrMergeSuggestions as $sug)
-                    <div class="pos-ocr-banner" role="status" style="border:1px solid #222;padding:.4rem;margin:.35rem 0;font-size:.85rem">
-                        {{ $sug['message'] ?? 'تكرار منتج' }} — مجموع مقترح: {{ $sug['sum'] ?? '' }} (لن يُدمج تلقائياً)
+                    <div class="ocr-desk__alert" role="status" style="margin-top:.4rem;border:1px solid #d6d6d2;border-radius:4px">
+                        <p>{{ $sug['message'] ?? 'تكرار منتج' }} — مجموع {{ $sug['sum'] ?? '' }} (اختر أنت: دمج أو فصل)</p>
                     </div>
                 @endforeach
             </div>
@@ -169,17 +170,32 @@
                 ">
                 <header class="ocr-desk__head">
                     <div>
-                        <p class="ocr-desk__eyebrow">من الصورة إلى السلة</p>
-                        <h2 class="ocr-desk__title">راجع البنود قبل الإضافة</h2>
-                        <p class="ocr-desk__hint">① اختَر المنتج المناسب ← ② اضغط «اعتماد هذا» ← ③ أضِف المعتمد للسلة</p>
+                        <h2 class="ocr-desk__title">مراجعة القراءة</h2>
+                        <p class="ocr-desk__hint">اختَر المنتج ← اعتمد البند ← أضِف المعتمد للسلة. لن يُحفظ شيء تلقائياً.</p>
                     </div>
                     <div class="ocr-desk__stats" aria-label="ملخص الحالة">
-                        <span class="ocr-stat ocr-stat--warn"><b>{{ $pendingN }}</b> يحتاجك</span>
-                        <span class="ocr-stat ocr-stat--ok"><b>{{ $readyN }}</b> جاهز</span>
-                        <span class="ocr-stat ocr-stat--done"><b>{{ $approvedN }}</b> معتمد</span>
+                        <span class="ocr-stat ocr-stat--warn" title="يحتاج قرار"><span aria-hidden="true">◇</span> <b>{{ $pendingN }}</b> يحتاجك</span>
+                        <span class="ocr-stat ocr-stat--ok" title="جاهز"><span aria-hidden="true">○</span> <b>{{ $readyN }}</b> جاهز</span>
+                        <span class="ocr-stat ocr-stat--done" title="معتمد"><span aria-hidden="true">●</span> <b>{{ $approvedN }}</b> معتمد</span>
                         <span class="ocr-stat"><b>{{ $exclN }}</b> مستبعد</span>
                     </div>
                 </header>
+                @php
+                    $visibleLines = count($linesAll) + count($excludedAll);
+                    $underRead = $visibleLines > 0 && $visibleLines < 3 && ! $ocrReading;
+                @endphp
+                @if($underRead)
+                    <div class="ocr-desk__alert" role="status" aria-live="polite">
+                        <p>ظهر {{ $visibleLines }} بند فقط — لو الورقة فيها أكثر، أعد القراءة أو الصق النص.</p>
+                        <button type="button" class="ocr-btn ocr-btn--primary" style="padding:.45rem .8rem;font-size:.78rem" wire:click="forceRereadOcr">أعد القراءة الآن</button>
+                    </div>
+                @endif
+                @if($pendingN === 0 && $readyN === 0 && $approvedN === 0 && $exclN === 0 && ! $ocrReading)
+                    <div class="ocr-desk__alert" role="status">
+                        <p>لم تُستخرج بنود بعد. أعد الرفع أو الصق أسطر القائمة يدوياً من منطقة الرفع فوق.</p>
+                        <button type="button" class="ocr-btn ocr-btn--primary" style="padding:.45rem .8rem;font-size:.78rem" wire:click="forceRereadOcr">أعد المحاولة</button>
+                    </div>
+                @endif
 
                 <div class="ocr-desk__toolbar">
                     <div class="ocr-seg" role="group" aria-label="نظام افتراضي">
@@ -227,14 +243,13 @@
                                 <article class="ocr-card ocr-card--pending {{ $focused ? 'is-focus' : '' }}">
                                     <div class="ocr-card__top">
                                         <div class="ocr-card__write">
-                                            <span class="ocr-card__badge">مكتوب</span>
                                             @if(! empty($line['ocr_image_position']))
-                                                <span class="ocr-card__badge" title="فتح الصورة">صورة {{ $line['ocr_image_position'] }}</span>
+                                                <span class="ocr-card__badge">صورة {{ $line['ocr_image_position'] }}</span>
                                             @endif
                                             @if(($line['review_status'] ?? '') === 'added' || ! empty($line['added']))
                                                 <span class="ocr-card__badge">أُضيف</span>
                                             @endif
-                                            <p class="ocr-card__raw">«{{ $line['raw_text'] ?? '' }}»</p>
+                                            <p class="ocr-card__raw">{{ $line['raw_text'] ?? '' }}</p>
                                             <p class="ocr-card__meta">{{ $familyAr }} · {{ $sizeLabel }} · {{ $sysLabel }}</p>
                                         </div>
                                         <div class="ocr-qty" aria-label="الكمية">

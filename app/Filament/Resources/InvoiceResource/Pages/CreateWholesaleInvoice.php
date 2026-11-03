@@ -566,6 +566,38 @@ class CreateWholesaleInvoice extends Page
         $this->syncOcrBatchUi($image->batch->fresh());
     }
 
+    /** Bust OCR draft cache and re-queue every active image in the current batch. */
+    public function forceRereadOcr(): void
+    {
+        $batch = $this->ownedOcrBatch();
+        if (! $batch) {
+            Notification::make()->warning()->title('لا توجد دفعة لإعادة قراءتها')->send();
+
+            return;
+        }
+
+        $svc = app(OcrBatchService::class);
+        foreach ($batch->images()->whereNull('replaced_by_id')->get() as $image) {
+            if ($image->sha256) {
+                Cache::forget(\App\Services\Ocr\InvoiceOcrPipeline::CACHE_PREFIX.$image->sha256);
+            }
+            $image->attempts = 0;
+            $image->last_error_code = null;
+            $image->started_at = null;
+            $image->finished_at = null;
+            $image->status = 'queued';
+            $image->save();
+            $svc->dispatchIfCapacity($image->fresh());
+        }
+
+        $this->ocrDraft = null;
+        $this->ocrReading = true;
+        $this->ocrStep = 'polling';
+        $this->ocrPollTicks = 0;
+        $this->syncOcrBatchUi($batch->fresh());
+        Notification::make()->info()->title('بدأت إعادة القراءة')->body('تم تجاهل النتيجة القديمة المخزّنة.')->send();
+    }
+
     public function cancelOcrImage(int $imageId): void
     {
         $image = $this->ownedOcrImage($imageId);
