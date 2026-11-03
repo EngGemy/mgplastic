@@ -44,5 +44,10 @@ class InvoiceOcrLearningService
         $alias->hits = (int) $alias->hits + 1;
         $alias->last_used_at = now();
         $alias->save();
+
+        $product = \App\Models\Product::query()->find($productId);
+        if ($product) {
+            app(OcrTermAliasService::class)->learnFromCorrection($rawText, $product, $user);
+        }
     }
 }
