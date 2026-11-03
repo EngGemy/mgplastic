@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\Mobile\BiometricController;
 use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
 use App\Http\Controllers\Api\Mobile\HomeHighlightsController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
+use App\Http\Controllers\Api\Mobile\OtaController;
 use App\Http\Controllers\Api\Mobile\PushTokenController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
 use App\Http\Controllers\Api\Mobile\ProductCollectionController;
@@ -56,6 +57,9 @@ Route::prefix('v1/mobile')->group(function () {
 
     // ── Public app settings ─────────────────────────────────────
     Route::get('settings', [SettingsController::class, 'app']);
+
+    // OTA JS/asset updates — public, called on every app open (before login)
+    Route::get('ota/check', [OtaController::class, 'check'])->middleware('throttle:120,1');
 
     // آراء العملاء عن منتجات MG (عامة — موقع + تطبيق)
     Route::get('testimonials', [TestimonialController::class, 'index'])->middleware('throttle:60,1');
