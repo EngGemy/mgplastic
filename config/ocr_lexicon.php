@@ -172,7 +172,7 @@ return [
                     ['term' => 'توبو', 'confirmed' => false],
                     ['term' => 'طوبوا', 'confirmed' => false],
                     ['term' => 'طوبوو', 'confirmed' => false],
-                    ['term' => 'طوابي', 'confirmed' => false],
+                    ['term' => 'طوابي', 'confirmed' => true],
                 ],
                 'eg' => [
                     ['term' => 'ماسورة', 'confirmed' => true],
@@ -184,7 +184,7 @@ return [
                 ],
                 'loanword' => [
                     ['term' => 'tube', 'confirmed' => false],
-                    ['term' => 'tubo', 'confirmed' => false],
+                    ['term' => 'tubo', 'confirmed' => true],
                 ],
                 'english' => [
                     ['term' => 'pipe', 'confirmed' => true],

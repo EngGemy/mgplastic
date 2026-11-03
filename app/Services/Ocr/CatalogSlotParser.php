@@ -36,6 +36,9 @@ class CatalogSlotParser
     public function parse(string $raw, ?string $brandHint = null): array
     {
         $notes = [];
+        // Detect MG on the raw line before normalizer strips the brand token.
+        $mgOnRawLine = (bool) preg_match('/(?<!\p{L})mg(?!\p{L})/iu', $raw)
+            || str_contains(mb_strtolower($raw), 'ام جي');
         $normalized = ArabicTextNormalizer::normalize($raw);
         $lineNo = null;
 
@@ -119,6 +122,18 @@ class CatalogSlotParser
             ? ArabicTextNormalizer::normalize($brandHint)
             : null;
 
+        // Per-line brand only (ignore page letterheads fed as separate lines elsewhere).
+        $lineBrand = $this->detectLineBrand($normalized);
+        if ($mgOnRawLine) {
+            $brand = 'mg';
+        } elseif ($brand === null && $lineBrand !== null) {
+            $brand = $lineBrand;
+        } elseif ($brand !== null && $this->isMgBrandToken($brand)) {
+            $brand = 'mg';
+        }
+
+        $plumbingSignal = $this->hasPlumbingSignal($normalized, $family, $size, $unit, $familyCandidates);
+
         return [
             'family' => $family,
             'lexicon_family' => $lexiconFamily,
@@ -135,9 +150,89 @@ class CatalogSlotParser
             'line_no' => $lineNo,
             'normalized' => $normalized,
             'brand_hint' => $brand,
+            'mg_brand' => $mgOnRawLine || ($brand !== null && $this->isMgBrandToken($brand)),
+            'plumbing_signal' => $plumbingSignal,
             'parse_ok' => $parseOk,
             'parse_notes' => $notes,
         ];
+    }
+
+    protected function isMgBrandToken(string $token): bool
+    {
+        $b = ArabicTextNormalizer::normalize($token);
+
+        return $b === 'mg'
+            || $b === 'ام جي'
+            || str_contains($b, 'mg plastic')
+            || str_contains($b, 'ام جي بلاست');
+    }
+
+    /**
+     * Positive/negative brand tokens written on the same product line.
+     */
+    protected function detectLineBrand(string $normalized): ?string
+    {
+        if (preg_match('/(?<!\p{L})mg(?!\p{L})/iu', $normalized)) {
+            return 'mg';
+        }
+        if (str_contains($normalized, 'ام جي')) {
+            return 'mg';
+        }
+
+        foreach ((array) config('ocr_catalog.non_mg_brand_tokens', []) as $token) {
+            $t = ArabicTextNormalizer::normalize((string) $token);
+            if ($t !== '' && str_contains($normalized, $t)) {
+                return $t;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string,mixed>>  $familyCandidates
+     */
+    protected function hasPlumbingSignal(
+        string $normalized,
+        ?string $family,
+        ?float $size,
+        ?string $unit,
+        array $familyCandidates,
+    ): bool {
+        if ($family !== null || $familyCandidates !== []) {
+            return true;
+        }
+        if ($unit !== null) {
+            return true;
+        }
+        if ($size !== null && $this->sizeExistsInCatalog($size, $unit)) {
+            return true;
+        }
+        // Explicit unit words even if unit slot missed.
+        foreach (['بوصه', 'بوصة', 'انش', 'inch', 'مم', 'mm'] as $u) {
+            if (str_contains($normalized, ArabicTextNormalizer::normalize($u))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function sizeExistsInCatalog(float $size, ?string $unit): bool
+    {
+        $inches = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0];
+        $mm = [50, 63, 75, 90, 110, 160, 200];
+        if ($unit === 'mm' || $size >= 50) {
+            return in_array((int) $size, $mm, true);
+        }
+
+        foreach ($inches as $in) {
+            if (abs($in - $size) < 0.01) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -393,8 +488,9 @@ class CatalogSlotParser
             return [null, $nums[0], $nums[1], $unit, $notes];
         }
 
+        // Non-reducer: first number is size; later numbers are usually qty (handled outside slots).
         if (count($nums) >= 1) {
-            return [null, $nums[0], $nums[1] ?? null, $unit, $notes];
+            return [null, $nums[0], null, $unit, $notes];
         }
 
         return [null, null, null, $unit, $notes];
