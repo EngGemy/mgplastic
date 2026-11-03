@@ -4,7 +4,8 @@ namespace App\Filament\Resources\InvoiceResource\Pages;
 
 use App\Filament\Concerns\SetsCartQuantity;
 use App\Filament\Resources\InvoiceResource;
-use App\Jobs\ProcessPosOcrJob;
+use App\Models\OcrBatch;
+use App\Models\OcrImage;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -14,7 +15,7 @@ use App\Services\InvoiceCartSheetService;
 use App\Services\InvoiceNumberService;
 use App\Services\Ocr\InvoiceOcrCatalogMatcher;
 use App\Services\Ocr\InvoiceOcrLearningService;
-use App\Services\Ocr\InvoiceOcrPipeline;
+use App\Services\Ocr\OcrBatchService;
 use App\Services\WholesaleInvoiceService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
@@ -22,7 +23,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Js;
-use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
@@ -63,6 +63,9 @@ class CreateWholesaleInvoice extends Page
     /** Photo of a paper invoice — OCR draft for review (not auto-saved to cart). */
     public $invoiceOcrImage = null;
 
+    /** @var array<int, TemporaryUploadedFile>|TemporaryUploadedFile|null */
+    public $invoiceOcrImages = null;
+
     public bool $ocrReading = false;
 
     public string $ocrStep = 'idle';
@@ -77,6 +80,22 @@ class CreateWholesaleInvoice extends Page
 
     /** @var array<string, mixed>|null */
     public ?array $ocrDraft = null;
+
+    public ?int $ocrBatchId = null;
+
+    /** @var list<array<string, mixed>> */
+    public array $ocrImageStrip = [];
+
+    /** @var list<array<string, mixed>> */
+    public array $ocrMergeSuggestions = [];
+
+    public bool $ocrResumeBanner = false;
+
+    public bool $ocrAddingToCart = false;
+
+    public string $ocrPasteText = '';
+
+    public int $ocrPollTicks = 0;
 
     /** ask|us|eu — invoice-level default for ambiguous sizes */
     public string $ocrSystemDefault = 'ask';
@@ -99,6 +118,16 @@ class CreateWholesaleInvoice extends Page
     {
         if (auth()->user()?->isWholesaleDistributor()) {
             $this->wholesaleDistributorId = auth()->id();
+        }
+
+        $user = auth()->user();
+        if ($user) {
+            $batch = app(OcrBatchService::class)->findResumableDraft($user);
+            if ($batch) {
+                $this->ocrBatchId = $batch->id;
+                $this->ocrResumeBanner = true;
+                $this->syncOcrBatchUi($batch);
+            }
         }
     }
 
@@ -344,54 +373,96 @@ class CreateWholesaleInvoice extends Page
             return;
         }
 
+        $this->ingestOcrUpload($this->invoiceOcrImage);
+        $this->invoiceOcrImage = null;
+    }
+
+    public function updatedInvoiceOcrImages(): void
+    {
+        $files = $this->invoiceOcrImages;
+        if ($files instanceof TemporaryUploadedFile) {
+            $files = [$files];
+        }
+        if (! is_array($files) || $files === []) {
+            return;
+        }
+
+        foreach ($files as $file) {
+            if ($file instanceof TemporaryUploadedFile) {
+                $this->ingestOcrUpload($file);
+            }
+        }
+        $this->invoiceOcrImages = null;
+    }
+
+    protected function ingestOcrUpload(TemporaryUploadedFile $file): void
+    {
         if (! app(GeminiClient::class)->enabled()) {
             Notification::make()
                 ->danger()
                 ->title('Gemini غير مفعّل')
                 ->body('أضف GEMINI_API_KEY في إعدادات السيرفر ثم أعد تحميل الإعدادات.')
                 ->send();
-            $this->invoiceOcrImage = null;
 
             return;
         }
 
-        $this->validate([
-            'invoiceOcrImage' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
-        ]);
+        $user = auth()->user();
+        if (! $user) {
+            return;
+        }
 
-        $stored = $this->invoiceOcrImage->store('ocr-uploads/'.date('Y/m/d'), 'public');
-        $this->ocrPreviewUrl = Storage::disk('public')->url($stored);
-        $absolute = Storage::disk('public')->path($stored);
-        $this->invoiceOcrImage = null;
-        $this->ocrDraft = null;
+        $batches = app(OcrBatchService::class);
+        $batch = $this->ocrBatchId
+            ? OcrBatch::query()->where('user_id', $user->id)->find($this->ocrBatchId)
+            : null;
+        $batch ??= $batches->createOrResume(
+            $user,
+            $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
+        );
+        $this->ocrBatchId = $batch->id;
+        $this->ocrResumeBanner = false;
         $this->ocrError = null;
-        $this->ocrReading = true;
-        $this->ocrStep = 'queued';
 
-        $useQueue = config('queue.default') !== 'sync';
+        $result = $batches->addUploadedImage($batch, $file);
+        if ($result['duplicate'] ?? false) {
+            Notification::make()->warning()->title('الصورة مرفوعة مسبقاً')->body('already uploaded')->send();
+            $this->syncOcrBatchUi($batch->fresh());
 
-        if ($useQueue) {
-            $this->ocrJobKey = (string) Str::uuid();
-            Cache::put('ocr:pos:job:'.$this->ocrJobKey, [
-                'status' => 'queued',
-                'step' => 'queued',
-                'message' => 'في الانتظار…',
-            ], 600);
-            ProcessPosOcrJob::dispatch($this->ocrJobKey, $absolute);
-            $this->ocrStep = 'polling';
-            Notification::make()->info()->title('بدأت قراءة الصورة')->body('ستظهر المسودة للمراجعة دون حفظ تلقائي.')->send();
+            return;
+        }
+        if (! ($result['ok'] ?? false)) {
+            Notification::make()->danger()->title('تعذّر رفع الصورة')->body((string) ($result['error'] ?? ''))->send();
 
             return;
         }
 
-        // Local/sync: run inline (may take up to OCR timeout).
-        $this->ocrStep = 'reading';
-        $result = app(InvoiceOcrPipeline::class)->run($absolute);
-        $this->applyOcrPipelineResult($result);
+        /** @var OcrImage $image */
+        $image = $result['image'];
+        $this->ocrPreviewUrl = Storage::disk('public')->url($image->path);
+        $this->ocrImageSha = $image->sha256;
+        $this->ocrReading = true;
+        $this->ocrStep = 'polling';
+        $this->ocrPollTicks = 0;
+        $this->syncOcrBatchUi($batch->fresh());
+
+        if (config('queue.default') === 'sync') {
+            Notification::make()->info()->title('تمت قراءة الصورة')->body('راجع المسودة قبل الإضافة للسلة.')->send();
+
+            return;
+        }
+
+        Notification::make()->info()->title('بدأت قراءة الصورة')->body('يمكنك مراجعة البنود الجاهزة قبل انتهاء كل الصور.')->send();
     }
 
     public function pollOcrJob(): void
     {
+        if ($this->ocrBatchId) {
+            $this->pollOcrBatch();
+
+            return;
+        }
+
         if (! $this->ocrJobKey) {
             return;
         }
@@ -412,6 +483,159 @@ class CreateWholesaleInvoice extends Page
             $this->ocrJobKey = null;
             Notification::make()->danger()->title('تعذّرت قراءة الصورة')->body($this->ocrError)->send();
         }
+    }
+
+    public function pollOcrBatch(): void
+    {
+        if (! $this->ocrBatchId) {
+            return;
+        }
+
+        $batch = OcrBatch::query()->with('images')->find($this->ocrBatchId);
+        if (! $batch) {
+            return;
+        }
+
+        $this->ocrPollTicks++;
+        $this->syncOcrBatchUi($batch);
+
+        if ($batch->isSettled()) {
+            $this->ocrReading = false;
+            if ($this->ocrDraft) {
+                $this->ocrStep = 'review';
+            }
+        } elseif ($this->ocrPollTicks * 2 >= 90) {
+            $this->ocrStep = 'still_processing';
+        }
+    }
+
+    protected function syncOcrBatchUi(OcrBatch $batch): void
+    {
+        $batch->load(['images' => fn ($q) => $q->whereNull('replaced_by_id')->orderBy('position')]);
+        $this->ocrImageStrip = $batch->images->map(function (OcrImage $img) {
+            $countdown = null;
+            if ($img->status === 'retrying' && $img->next_retry_at) {
+                $countdown = $img->next_retry_at->isFuture()
+                    ? (int) now()->diffInSeconds($img->next_retry_at)
+                    : 0;
+            }
+
+            return [
+                'id' => $img->id,
+                'position' => $img->position,
+                'status' => $img->status,
+                'lines_count' => $img->lines_count,
+                'error' => $img->last_error_code,
+                'preview' => Storage::disk('public')->url($img->path),
+                'countdown' => $countdown,
+                'quality_warning' => (bool) $img->quality_warning,
+                'attempts' => $img->attempts,
+            ];
+        })->values()->all();
+
+        $built = app(OcrBatchService::class)->buildPosDraft($batch);
+        $this->ocrMergeSuggestions = $built['merge_suggestions'];
+        if (is_array($built['draft'] ?? null)) {
+            $draft = $built['draft'];
+            $draft['system_default'] = in_array($this->ocrSystemDefault, ['us', 'eu'], true) ? $this->ocrSystemDefault : null;
+            $draft['customer_user_id'] = $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null;
+            $this->ocrDraft = $draft;
+            if ($batch->isSettled()) {
+                $this->ocrStep = 'review';
+            } elseif ($this->ocrStep !== 'still_processing') {
+                $this->ocrStep = 'polling';
+            }
+        }
+
+        $pending = $batch->images->contains(fn (OcrImage $i) => in_array($i->status, ['queued', 'reading', 'retrying'], true));
+        $this->ocrReading = $pending;
+        if ($pending && $this->ocrStep !== 'still_processing') {
+            $this->ocrStep = 'polling';
+        }
+    }
+
+    public function retryOcrImage(int $imageId): void
+    {
+        $image = $this->ownedOcrImage($imageId);
+        if (! $image) {
+            return;
+        }
+        app(OcrBatchService::class)->retryNow($image);
+        $this->ocrReading = true;
+        $this->ocrStep = 'polling';
+        $this->syncOcrBatchUi($image->batch->fresh());
+    }
+
+    public function cancelOcrImage(int $imageId): void
+    {
+        $image = $this->ownedOcrImage($imageId);
+        if (! $image) {
+            return;
+        }
+        app(OcrBatchService::class)->cancelImage($image);
+        $this->syncOcrBatchUi($image->batch->fresh());
+    }
+
+    public function removeOcrImage(int $imageId): void
+    {
+        $this->cancelOcrImage($imageId);
+    }
+
+    public function submitOcrPasteText(): void
+    {
+        $text = trim($this->ocrPasteText);
+        if ($text === '') {
+            return;
+        }
+        $user = auth()->user();
+        if (! $user) {
+            return;
+        }
+        $batches = app(OcrBatchService::class);
+        $batch = $this->ownedOcrBatch() ?? $batches->createOrResume(
+            $user,
+            $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
+        );
+        $this->ocrBatchId = $batch->id;
+        $batches->addPasteText($batch, $text);
+        $this->ocrPasteText = '';
+        $this->ocrReading = true;
+        $this->ocrStep = 'polling';
+        $this->syncOcrBatchUi($batch->fresh());
+    }
+
+    public function dismissOcrResumeBanner(): void
+    {
+        $this->ocrResumeBanner = false;
+    }
+
+    public function abandonOcrBatch(): void
+    {
+        $batch = $this->ownedOcrBatch();
+        if ($batch) {
+            $batch->status = 'abandoned';
+            $batch->save();
+        }
+        $this->dismissOcrDraft();
+    }
+
+    protected function ownedOcrBatch(): ?OcrBatch
+    {
+        if (! $this->ocrBatchId || ! auth()->id()) {
+            return null;
+        }
+
+        return OcrBatch::query()->where('user_id', auth()->id())->find($this->ocrBatchId);
+    }
+
+    protected function ownedOcrImage(int $imageId): ?OcrImage
+    {
+        $batch = $this->ownedOcrBatch();
+        if (! $batch) {
+            return null;
+        }
+
+        return OcrImage::query()->where('batch_id', $batch->id)->find($imageId);
     }
 
     /** @param  array<string, mixed>  $result */
@@ -522,6 +746,8 @@ class CreateWholesaleInvoice extends Page
         }
 
         $this->ocrDraft['lines'][$lineIndex]['approved'] = true;
+        $this->ocrDraft['lines'][$lineIndex]['review_status'] = 'approved';
+        $this->persistOcrLineReview($lineIndex, 'approved');
         $this->ocrFocusLine = $lineIndex + 1;
     }
 
@@ -531,7 +757,22 @@ class CreateWholesaleInvoice extends Page
             return;
         }
         $this->ocrDraft['lines'][$lineIndex]['approved'] = false;
+        $this->ocrDraft['lines'][$lineIndex]['review_status'] = 'ready';
+        $this->persistOcrLineReview($lineIndex, 'ready');
         $this->ocrFocusLine = $lineIndex;
+    }
+
+    protected function persistOcrLineReview(int $lineIndex, string $status): void
+    {
+        $lineId = (int) ($this->ocrDraft['lines'][$lineIndex]['ocr_line_id'] ?? 0);
+        if ($lineId < 1) {
+            return;
+        }
+        \App\Models\OcrImageLine::query()->where('id', $lineId)->update([
+            'review_status' => $status,
+            'resolved_product_id' => $this->ocrDraft['lines'][$lineIndex]['matched_product_id'] ?? null,
+            'qty' => $this->ocrDraft['lines'][$lineIndex]['qty'] ?? null,
+        ]);
     }
 
     public function chooseOcrSystem(int $lineIndex, string $system): void
@@ -681,84 +922,119 @@ class CreateWholesaleInvoice extends Page
 
     public function applyApprovedOcrToCart(): void
     {
+        if ($this->ocrAddingToCart) {
+            return;
+        }
+
         if (! is_array($this->ocrDraft)) {
             Notification::make()->danger()->title('لا توجد مسودة')->send();
 
             return;
         }
 
-        $sheet = app(InvoiceCartSheetService::class);
-        $learning = app(InvoiceOcrLearningService::class);
-        $lines = [];
-        $errors = [];
-        $approvedCount = 0;
+        $this->ocrAddingToCart = true;
 
-        foreach ((array) ($this->ocrDraft['lines'] ?? []) as $line) {
-            // Explicit approval only — never auto-push money/cart without user action.
-            if (empty($line['approved'])) {
-                continue;
+        try {
+            $batch = $this->ownedOcrBatch();
+            if ($batch && $batch->cart_added_at && $batch->idempotency_token) {
+                Notification::make()->warning()->title('تمّت الإضافة مسبقاً')->body('نفس الدفعة — لن تُكرَّر البنود.')->send();
+
+                return;
             }
 
-            $productId = (int) ($line['matched_product_id'] ?? 0);
-            $qty = (int) round((float) ($line['qty'] ?? 0));
-            if ($productId < 1 || $qty < 1) {
-                $errors[] = 'بند بدون منتج/كمية: '.($line['raw_text'] ?? '');
+            $token = $batch?->ensureIdempotencyToken();
 
-                continue;
-            }
+            $sheet = app(InvoiceCartSheetService::class);
+            $learning = app(InvoiceOcrLearningService::class);
+            $lines = [];
+            $errors = [];
+            $approvedCount = 0;
+            $addedLineIds = [];
 
-            $product = Product::query()->with('translations')->find($productId);
-            if (! $product) {
-                $errors[] = 'منتج غير موجود #'.$productId;
-
-                continue;
-            }
-
-            $approvedCount++;
-            $cartLine = $sheet->cartLine($product, $qty);
-            $id = (string) $productId;
-            if (isset($lines[$id])) {
-                if (! empty($cartLine['boxes'])) {
-                    $lines[$id]['boxes'] = (int) $lines[$id]['boxes'] + (int) $cartLine['boxes'];
-                    $lines[$id]['quantity'] = (int) $lines[$id]['boxes'] * (int) $lines[$id]['pieces_per_box'];
-                } else {
-                    $lines[$id]['quantity'] = (int) $lines[$id]['quantity'] + (int) $cartLine['quantity'];
+            foreach ((array) ($this->ocrDraft['lines'] ?? []) as $idx => $line) {
+                if (empty($line['approved']) || ! empty($line['added'])) {
+                    continue;
                 }
-            } else {
-                $lines[$id] = $cartLine;
+
+                $productId = (int) ($line['matched_product_id'] ?? 0);
+                $qty = (int) round((float) ($line['qty'] ?? 0));
+                if ($productId < 1 || $qty < 1) {
+                    $errors[] = 'بند بدون منتج/كمية: '.($line['raw_text'] ?? '');
+
+                    continue;
+                }
+
+                $product = Product::query()->with('translations')->find($productId);
+                if (! $product) {
+                    $errors[] = 'منتج غير موجود #'.$productId;
+
+                    continue;
+                }
+
+                $approvedCount++;
+                $cartLine = $sheet->cartLine($product, $qty);
+                $id = (string) $productId;
+                if (isset($lines[$id])) {
+                    if (! empty($cartLine['boxes'])) {
+                        $lines[$id]['boxes'] = (int) $lines[$id]['boxes'] + (int) $cartLine['boxes'];
+                        $lines[$id]['quantity'] = (int) $lines[$id]['boxes'] * (int) $lines[$id]['pieces_per_box'];
+                    } else {
+                        $lines[$id]['quantity'] = (int) $lines[$id]['quantity'] + (int) $cartLine['quantity'];
+                    }
+                } else {
+                    $lines[$id] = $cartLine;
+                }
+
+                if (! empty($line['ocr_line_id'])) {
+                    $addedLineIds[] = (int) $line['ocr_line_id'];
+                }
+                $this->ocrDraft['lines'][$idx]['added'] = true;
+                $this->ocrDraft['lines'][$idx]['review_status'] = 'added';
+
+                if ($this->ocrImageSha) {
+                    $learning->rememberCorrection(
+                        $this->ocrImageSha,
+                        (string) ($line['raw_text'] ?? $line['name'] ?? ''),
+                        $productId,
+                        (float) $qty,
+                        auth()->user(),
+                        (string) ($line['slots']['system'] ?? $product->system ?? ''),
+                        $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
+                        $this->ocrRememberForCustomer,
+                    );
+                }
             }
 
-            if ($this->ocrImageSha) {
-                $learning->rememberCorrection(
-                    $this->ocrImageSha,
-                    (string) ($line['raw_text'] ?? $line['name'] ?? ''),
-                    $productId,
-                    (float) $qty,
-                    auth()->user(),
-                    (string) ($line['slots']['system'] ?? $product->system ?? ''),
-                    $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
-                    $this->ocrRememberForCustomer,
-                );
-            }
-        }
+            if ($lines === []) {
+                Notification::make()
+                    ->warning()
+                    ->title('لا بنود معتمدة')
+                    ->body('علّم البنود أو استخدم «اعتماد كل الأخضر» ثم طبّق على السلة.'.($errors ? "\n".implode("\n", array_slice($errors, 0, 5)) : ''))
+                    ->send();
 
-        if ($lines === []) {
+                return;
+            }
+
+            $this->cart = $lines;
+            $this->reviewing = false;
+
+            if ($batch && $addedLineIds !== []) {
+                app(OcrBatchService::class)->markLinesAdded($batch, $addedLineIds);
+            } elseif ($batch) {
+                $batch->status = 'added';
+                $batch->cart_added_at = now();
+                $batch->idempotency_token = $token;
+                $batch->save();
+            }
+
             Notification::make()
-                ->warning()
-                ->title('لا بنود معتمدة')
-                ->body('علّم البنود أو استخدم «اعتماد كل الأخضر» ثم طبّق على السلة.'.($errors ? "\n".implode("\n", array_slice($errors, 0, 5)) : ''))
+                ->success()
+                ->title('تم تطبيق '.$approvedCount.' منتج على السلة')
+                ->body('راجع الكميات قبل الإصدار. لم يُحفظ أي مبلغ مالياً من OCR دون هذا الاعتماد.')
                 ->send();
-
-            return;
+        } finally {
+            $this->ocrAddingToCart = false;
         }
-
-        $this->cart = $lines;
-        $this->reviewing = false;
-        Notification::make()
-            ->success()
-            ->title('تم تطبيق '.$approvedCount.' منتج على السلة')
-            ->body('راجع الكميات قبل الإصدار. لم يُحفظ أي مبلغ مالياً من OCR دون هذا الاعتماد.')
-            ->send();
     }
 
     public function dismissOcrDraft(): void
@@ -770,6 +1046,11 @@ class CreateWholesaleInvoice extends Page
         $this->ocrImageSha = null;
         $this->ocrReading = false;
         $this->ocrFocusLine = 0;
+        $this->ocrBatchId = null;
+        $this->ocrImageStrip = [];
+        $this->ocrMergeSuggestions = [];
+        $this->ocrResumeBanner = false;
+        $this->ocrPollTicks = 0;
     }
 
     public function getOcrApprovedCountProperty(): int
