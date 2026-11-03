@@ -1,0 +1,34 @@
+---
+description: After finishing work, automatically commit (if asked/needed), push, open PR, and merge to main
+alwaysApply: true
+---
+
+# Auto push & merge when work is done
+
+When a task is **finished** (implementation + tests/pint as required, and a clear done state):
+
+1. **Do not wait** for the user to say “push” or “merge” — do it as the last step of the finished task.
+2. Ensure changes are committed on a feature branch (never commit directly to `main` unless the user already said so).
+3. Push the branch:
+   ```bash
+   git push -u origin HEAD
+   ```
+4. Open a PR against `main` if one does not exist, then merge it:
+   ```bash
+   gh pr create --base main --fill
+   gh pr merge --merge --delete-branch
+   ```
+   If a PR already exists for the branch, skip create and only merge.
+5. After merge, switch local back to main and pull:
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+## Safety
+
+- Never `--force` push to `main`/`master`.
+- Never skip hooks (`--no-verify`) unless the user explicitly asks.
+- If push/PR/merge fails (auth, conflicts, checks), stop and report the error + the exact command that failed.
+- Do not push secrets (`.env`, credentials).
+- If there is nothing to push (clean main, no branch commits), say so and skip.
