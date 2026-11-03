@@ -52,9 +52,10 @@ class ProductCatalogController extends Controller
      * @param  callable(Product): array<string, mixed>|null  $mapProduct
      * @return array<string, mixed>
      */
-    protected function buildCatalogPayload(Request $request, ?callable $mapProduct = null): array
+    protected function buildCatalogPayload(Request $request, ?callable $mapProduct = null, int $maxPerPage = 50): array
     {
         $mapProduct ??= fn (Product $product) => $this->mapCatalogProduct($product);
+        $maxPerPage = max(1, min($maxPerPage, 500));
 
         $orderUnit = $this->requestedOrderUnit($request);
         $family = $this->requestedProductFamily($request);
@@ -125,7 +126,7 @@ class ProductCatalogController extends Controller
             ];
         }
 
-        $perPage = min(max((int) $request->integer('per_page', 20), 1), 50);
+        $perPage = min(max((int) $request->integer('per_page', 20), 1), $maxPerPage);
         $page = $this->catalogQuery($request, applyOrderUnit: true)->latest('id')->paginate($perPage);
         $pageItems = collect($page->items());
         $items = $pageItems
@@ -252,7 +253,7 @@ class ProductCatalogController extends Controller
     protected function catalogQuery(Request $request, bool $applyOrderUnit = true): Builder
     {
         $query = Product::query()
-            ->with(['translations', 'images', 'tags', 'sizes', 'category.translations', 'category.parent.translations']);
+            ->with(['translations', 'images', 'tags', 'sizes', 'variants', 'category.translations', 'category.parent.translations']);
 
         if ($request->filled('category_id')) {
             $catId = (int) $request->query('category_id');
@@ -412,9 +413,13 @@ class ProductCatalogController extends Controller
             implode(' ', array_filter([$group['tag'], $group['name'], ...$group['tags']])),
         );
 
+        $sku = $this->resolveProductSku($product);
+
         $item = [
             'id' => (int) $product->id,
             'product_id' => (int) $product->id,
+            'sku' => $sku,
+            'catalog_code' => $sku,
             'name' => localized_name($product, 'name', 'منتج #'.$product->id),
             'description' => api_plain_string(localized_name($product, 'description', '')),
             'image' => $image,
@@ -468,6 +473,8 @@ class ProductCatalogController extends Controller
         $short = $c->shortDescription();
         $imageUrl = $c->resolvedImageUrl();
 
+        $thumbUrl = $c->resolvedThumbUrl() ?? $imageUrl;
+
         $payload = [
             'id' => (int) $c->id,
             'name' => $name,
@@ -476,6 +483,7 @@ class ProductCatalogController extends Controller
             // Dynamic card icon (Filament → categories/*). Same value twice for app convenience.
             'image_url' => $imageUrl,
             'icon_url' => $imageUrl,
+            'thumb_url' => $thumbUrl,
             'badge' => $c->systemBadge(),
             'short_description' => $short,
             'description' => $short,
@@ -489,6 +497,7 @@ class ProductCatalogController extends Controller
         if ($includeChildren) {
             $payload['children'] = $c->children->map(function (ProductCategory $child) use ($c) {
                 $childUrl = $child->resolvedImageUrl();
+                $childThumb = $child->resolvedThumbUrl() ?? $childUrl;
 
                 return [
                     'id' => (int) $child->id,
@@ -497,6 +506,7 @@ class ProductCatalogController extends Controller
                     'image' => $childUrl ? $child->image : null,
                     'image_url' => $childUrl,
                     'icon_url' => $childUrl,
+                    'thumb_url' => $childThumb,
                     'badge' => $child->systemBadge(),
                     'short_description' => $child->shortDescription(),
                     'description' => $child->shortDescription(),
@@ -508,6 +518,31 @@ class ProductCatalogController extends Controller
         }
 
         return $payload;
+    }
+
+    protected function resolveProductSku(Product $product): ?string
+    {
+        if ($product->relationLoaded('variants')) {
+            $code = $product->variants
+                ->pluck('catalog_code')
+                ->map(fn ($c) => trim((string) $c))
+                ->first(fn ($c) => $c !== '');
+            if ($code) {
+                return $code;
+            }
+        } else {
+            $code = $product->variants()
+                ->whereNotNull('catalog_code')
+                ->where('catalog_code', '!=', '')
+                ->orderBy('id')
+                ->value('catalog_code');
+            if (is_string($code) && trim($code) !== '') {
+                return trim($code);
+            }
+        }
+
+        // Fallback: product id as searchable code when no variant catalog_code exists.
+        return (string) $product->id;
     }
 
     protected function storageUrlIfExists(?string $path): ?string

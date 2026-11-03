@@ -17,20 +17,33 @@ class ProductCategory extends Model
 
     public $translatedAttributes = ['name', 'description'];
 
-    protected $fillable = ['image', 'parent_id', 'slug'];
+    protected $fillable = ['image', 'image_thumb', 'parent_id', 'slug'];
 
     protected static function booted(): void
     {
         static::saving(function (ProductCategory $category): void {
-            if (! $category->isDirty('parent_id')) {
+            if ($category->isDirty('parent_id')) {
+                $parentId = $category->parent_id !== null ? (int) $category->parent_id : null;
+                if (static::parentWouldCreateCycle($category->id ? (int) $category->id : null, $parentId)) {
+                    throw ValidationException::withMessages([
+                        'parent_id' => ['لا يمكن اختيار أب يُنشئ حلقة في شجرة التصنيفات.'],
+                    ]);
+                }
+            }
+        });
+
+        static::saved(function (ProductCategory $category): void {
+            if (! $category->wasChanged('image') || ! filled($category->image)) {
                 return;
             }
-
-            $parentId = $category->parent_id !== null ? (int) $category->parent_id : null;
-            if (static::parentWouldCreateCycle($category->id ? (int) $category->id : null, $parentId)) {
-                throw ValidationException::withMessages([
-                    'parent_id' => ['لا يمكن اختيار أب يُنشئ حلقة في شجرة التصنيفات.'],
-                ]);
+            try {
+                $thumb = app(\App\Services\ImageThumbnailService::class)
+                    ->makeCategoryThumb((string) $category->image, 400);
+                if ($thumb && $thumb !== $category->image_thumb) {
+                    $category->forceFill(['image_thumb' => $thumb])->saveQuietly();
+                }
+            } catch (\Throwable) {
+                // Thumbnail generation is best-effort; full image still serves.
             }
         });
     }
@@ -113,6 +126,12 @@ class ProductCategory extends Model
         return PublicStorageUrl::try($this->image);
     }
 
+    /** ~400px WebP/JPEG thumbnail for mobile category cards. */
+    public function resolvedThumbUrl(): ?string
+    {
+        return PublicStorageUrl::try($this->image_thumb) ?? $this->resolvedImageUrl();
+    }
+
     /**
      * Small badge for system cards (EN / ASTM / …), derived from name/slug.
      */
@@ -125,10 +144,11 @@ class ProductCategory extends Model
         ]))));
 
         return match (true) {
+            // Gold system is not ASTM — check before american/astm keywords.
+            Str::contains($blob, ['ذهب', 'gold']) => null,
             Str::contains($blob, ['اوروب', 'أوروب', 'europ', 'european'])
                 || (bool) preg_match('/(^|[\s_\-])en([\s_\-]|$)/u', $blob) => 'EN',
             Str::contains($blob, ['امريك', 'أمريك', 'american', 'astm', 'schedule']) => 'ASTM',
-            Str::contains($blob, ['ذهب', 'gold']) => null,
             default => null,
         };
     }

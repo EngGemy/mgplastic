@@ -204,6 +204,7 @@ class Product extends Model
                                 ->orWhere('label_ar', 'like', $like)
                                 ->orWhere('label_en', 'like', $like);
                         })
+                        ->orWhereHas('variants', fn (Builder $v) => $v->where('catalog_code', 'like', $like))
                         ->orWhere('id', is_numeric($variant) ? (int) $variant : 0);
                 });
             }

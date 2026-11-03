@@ -9,6 +9,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ProductTag extends Model
 {
+    protected static function booted(): void
+    {
+        static::saving(function (ProductTag $tag): void {
+            if (filled($tag->name)) {
+                $tag->name = \App\Support\UnicodeText::nfkc((string) $tag->name);
+            }
+        });
+    }
+
     protected $fillable = [
         'product_category_id',
         'name',

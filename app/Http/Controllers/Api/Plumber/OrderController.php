@@ -45,7 +45,13 @@ class OrderController extends Controller
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            // Plumbers order by the piece only — reject box counts from the client.
+            'lines.*.boxes' => ['prohibited'],
+            'lines.*.order_unit' => ['nullable', 'in:piece'],
             'note' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'lines.*.boxes.prohibited' => 'طلبات السبّاك بالقطعة فقط — لا ترسل عدد صناديق.',
+            'lines.*.order_unit.in' => 'طلبات السبّاك بالقطعة فقط.',
         ]);
 
         if ($v->fails()) {
@@ -53,13 +59,20 @@ class OrderController extends Controller
         }
 
         try {
+            $lines = collect($request->input('lines', []))->map(function (array $line) {
+                unset($line['boxes']);
+
+                return $line;
+            })->all();
+
             $order = $this->orders->place(
                 requester: $request->user(),
                 channel: OrderStatus::CHANNEL_RETAIL_TO_PLUMBER,
-                lines: $request->input('lines'),
+                lines: $lines,
                 meta: [
                     'note' => $request->input('note'),
                     'retail_trader_id' => (int) $request->input('retail_trader_id'),
+                    'order_unit' => 'piece',
                 ],
             );
 
