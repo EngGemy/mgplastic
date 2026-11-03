@@ -73,7 +73,46 @@ class InvoiceOcrCatalogMatcher
 
             $raw = trim((string) ($line['raw_text'] ?? $line['name'] ?? ''));
             $brandHint = isset($line['brand']) ? (string) $line['brand'] : null;
-            $slots = $this->parser->parse($raw !== '' ? $raw : (string) ($line['name'] ?? ''), $brandHint);
+            $primaryText = $raw !== '' ? $raw : (string) ($line['name'] ?? '');
+            $slots = $this->parser->parse($primaryText, $brandHint);
+            $resolvedVia = 'primary';
+
+            // User forced a lexicon family (ambiguous مثلثات → tee|y_tee choice).
+            $forcedLex = isset($line['force_lexicon_family']) ? (string) $line['force_lexicon_family'] : '';
+            if ($forcedLex !== '') {
+                $slots['lexicon_family'] = $forcedLex;
+                $slots['family'] = app(\App\Services\Ocr\Lexicon\OcrLexicon::class)->catalogFamilyFor($forcedLex, $slots['angle'] ?? null);
+                $slots['lexicon_auto_ok'] = true;
+                $slots['family_candidates'] = [];
+                $slots['understanding'] = [
+                    'raw' => $primaryText,
+                    'means' => app(\App\Services\Ocr\Lexicon\OcrLexicon::class)->catalogNameFor($forcedLex),
+                    'source' => 'user_choice',
+                ];
+                $resolvedVia = 'user_family';
+            }
+
+            // Try Gemini alternate readings when primary has no family.
+            if (($slots['family'] ?? null) === null && empty($slots['family_candidates']) && $forcedLex === '') {
+                foreach (array_slice((array) ($line['alternatives'] ?? []), 0, 2) as $alt) {
+                    $altText = trim((string) $alt);
+                    if ($altText === '') {
+                        continue;
+                    }
+                    $altSlots = $this->parser->parse($altText, $brandHint);
+                    if (($altSlots['family'] ?? null) !== null || ! empty($altSlots['family_candidates'])) {
+                        $slots = $altSlots;
+                        $resolvedVia = 'alternative';
+                        Log::channel('ocr')->info('[OCR] alternative_resolved', [
+                            'index' => $index,
+                            'alternative' => mb_substr($altText, 0, 80),
+                            'family' => $slots['family'] ?? null,
+                        ]);
+                        break;
+                    }
+                }
+            }
+            $line['resolved_via'] = $resolvedVia;
             $counts['parsed']++;
 
             // Invoice-level default fills ambiguous system only.
@@ -116,6 +155,31 @@ class InvoiceOcrCatalogMatcher
                 continue;
             }
 
+            // Carry lexicon understanding chip + alternate family choices.
+            if (! empty($slots['understanding'])) {
+                $line['understanding'] = $slots['understanding'];
+            }
+            if (! empty($slots['family_candidates'])) {
+                $line['family_candidates'] = $slots['family_candidates'];
+            }
+
+            // Ambiguous lexicon families (مثلثات → tee|y_tee): keep line, ask user.
+            if ($slots['family'] === null && ! empty($slots['family_candidates'])) {
+                $line['match_decision'] = 'needs_choice';
+                $line['match_status'] = 'needs_choice';
+                $line['matched_product_id'] = null;
+                $line['candidates'] = [];
+                $line['match_reason'] = 'عائلة غير مؤكدة — اختَر المعنى';
+                $flags = array_values((array) ($line['needs_review'] ?? []));
+                $flags[] = 'needs_choice';
+                $flags[] = 'ambiguous_family';
+                $line['needs_review'] = array_values(array_unique($flags));
+                $counts['needs_choice']++;
+                $lines[] = $line;
+
+                continue;
+            }
+
             // Unknown family → not MG catalog family.
             if ($slots['family'] === null) {
                 $excluded[] = $this->excludeRow($line, 'family_not_in_catalog', $slots);
@@ -128,8 +192,12 @@ class InvoiceOcrCatalogMatcher
             $candidates = $this->retrieveCandidates($slots, $products);
             $status = $candidates['status'];
             $list = $candidates['candidates'];
+            $lexiconAutoOk = (bool) ($slots['lexicon_auto_ok'] ?? true);
+            if (! empty($line['understanding_confirmed']) || $forcedLex !== '') {
+                $lexiconAutoOk = true;
+            }
 
-            if ($status === 'matched' && count($list) === 1) {
+            if ($status === 'matched' && count($list) === 1 && $lexiconAutoOk) {
                 $product = $products->firstWhere('id', $list[0]['product_id']);
                 if ($product) {
                     $reason = $this->matchReason($slots);
@@ -139,6 +207,25 @@ class InvoiceOcrCatalogMatcher
 
                     continue;
                 }
+            }
+
+            // Unconfirmed dialect/English hit: suggest candidates, never auto-accept.
+            if (! $lexiconAutoOk && $list !== []) {
+                $line['match_decision'] = 'needs_choice';
+                $line['match_status'] = 'needs_choice';
+                $line['matched_product_id'] = null;
+                $line['candidates'] = $list;
+                $line['match_reason'] = ! empty($slots['understanding'])
+                    ? sprintf('فهمتها: %s = %s — أكّد أو صحّح', $slots['understanding']['raw'], $slots['understanding']['means'])
+                    : 'مصطلح غير مؤكد — راجع الاقتراح';
+                $flags = array_values((array) ($line['needs_review'] ?? []));
+                $flags[] = 'needs_choice';
+                $flags[] = 'unconfirmed_term';
+                $line['needs_review'] = array_values(array_unique($flags));
+                $counts['needs_choice']++;
+                $lines[] = $line;
+
+                continue;
             }
 
             if ($status === 'needs_choice' || ($list !== [] && $status !== 'matched')) {
