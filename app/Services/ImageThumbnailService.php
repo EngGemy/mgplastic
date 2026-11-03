@@ -93,6 +93,91 @@ class ImageThumbnailService
         return $relative;
     }
 
+    /**
+     * Category card thumbnail (~400px). Prefers WebP when GD supports it; else JPEG.
+     */
+    public function makeCategoryThumb(string $sourceRelativePath, int $maxWidth = 400, int $quality = 78): ?string
+    {
+        $source = Storage::disk($this->disk)->path($sourceRelativePath);
+        if (! is_file($source) || ! is_readable($source)) {
+            Log::warning('[ImageThumbnail] Category source missing', ['path' => $sourceRelativePath]);
+
+            return null;
+        }
+
+        $base = pathinfo($sourceRelativePath, PATHINFO_FILENAME);
+        $preferWebp = function_exists('imagewebp');
+        $ext = $preferWebp ? 'webp' : 'jpg';
+        $relative = 'categories/thumbs/'.$base.'_'.$maxWidth.'.'.$ext;
+        $absolute = Storage::disk($this->disk)->path($relative);
+        $this->ensureDirectory(dirname($absolute));
+
+        if ($preferWebp) {
+            if ($this->writeResizedWebp($source, $absolute, $maxWidth, $quality)) {
+                return $relative;
+            }
+        }
+
+        $relativeJpg = 'categories/thumbs/'.$base.'_'.$maxWidth.'.jpg';
+        $absoluteJpg = Storage::disk($this->disk)->path($relativeJpg);
+        if ($this->writeResized($source, $absoluteJpg, $maxWidth, $quality)) {
+            return $relativeJpg;
+        }
+
+        return null;
+    }
+
+    protected function writeResizedWebp(string $sourcePath, string $destPath, int $maxEdge, int $quality): bool
+    {
+        if (! function_exists('imagecreatetruecolor') || ! function_exists('imagewebp')) {
+            return false;
+        }
+
+        $info = @getimagesize($sourcePath);
+        if ($info === false) {
+            return false;
+        }
+
+        [$width, $height] = $info;
+        $mime = $info['mime'] ?? '';
+
+        $src = match ($mime) {
+            'image/jpeg', 'image/jpg' => @imagecreatefromjpeg($sourcePath),
+            'image/png' => @imagecreatefrompng($sourcePath),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($sourcePath) : false,
+            'image/gif' => @imagecreatefromgif($sourcePath),
+            default => false,
+        };
+
+        if ($src === false) {
+            return false;
+        }
+
+        if (in_array($mime, ['image/jpeg', 'image/jpg'], true) && function_exists('exif_read_data')) {
+            $src = $this->applyExifOrientation($src, $sourcePath) ?? $src;
+            $width = imagesx($src);
+            $height = imagesy($src);
+        }
+
+        $scale = min(1, $maxEdge / max($width, $height, 1));
+        $nw = max(1, (int) round($width * $scale));
+        $nh = max(1, (int) round($height * $scale));
+
+        $dst = imagecreatetruecolor($nw, $nh);
+        imagealphablending($dst, false);
+        imagesavealpha($dst, true);
+        $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+        imagefilledrectangle($dst, 0, 0, $nw, $nh, $transparent);
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $width, $height);
+
+        $ok = imagewebp($dst, $destPath, $quality);
+
+        imagedestroy($src);
+        imagedestroy($dst);
+
+        return $ok && is_file($destPath) && filesize($destPath) > 0;
+    }
+
     protected function writeResized(string $sourcePath, string $destPath, int $maxEdge, int $quality): bool
     {
         if (! function_exists('imagecreatetruecolor')) {

@@ -16,6 +16,7 @@ use Illuminate\Support\Collection;
  * - Without retail_trader_id → full MG catalog (browse).
  * - With retail_trader_id → full MG catalog in the same order/filters as pipes,
  *   with that shop's available_quantity on every row (0 = visible but not orderable).
+ * - Always piece quantities (plumbers never order by the box).
  */
 class ProductCatalogController extends TraderProductCatalogController
 {
@@ -39,6 +40,13 @@ class ProductCatalogController extends TraderProductCatalogController
                 ->stockQtyByProductForRetailTrader($shop);
         }
 
+        // Default larger pages; allow up to 200 or a single full dump via per_page=all.
+        if (! $request->filled('per_page')) {
+            $request->merge(['per_page' => 100]);
+        } elseif (in_array(strtolower((string) $request->query('per_page')), ['all', '0'], true)) {
+            $request->merge(['per_page' => 500]);
+        }
+
         $payload = $this->buildCatalogPayload($request, function (Product $product) use ($stock) {
             $available = null;
             if ($stock instanceof Collection) {
@@ -46,12 +54,29 @@ class ProductCatalogController extends TraderProductCatalogController
             }
 
             return $this->mapCatalogProduct($product, $available);
-        });
+        }, maxPerPage: 200);
 
         $payload['retail_trader_id'] = $shopId;
         $payload['stock_mode'] = $shopId !== null;
         $payload['filters']['retail_trader_id'] = $shopId;
+
+        $page = (int) ($payload['pagination']['current_page'] ?? 1);
         $groups = $payload['groups'] ?? [];
+        $sizeGroups = $payload['size_groups'] ?? $groups;
+        $filters = $payload['filters'] ?? [];
+
+        // Meta trees only on page 1 — later pages are items + pagination.
+        if ($page > 1) {
+            $groups = [];
+            $sizeGroups = [];
+            $payload['groups'] = [];
+            $payload['size_groups'] = [];
+            $payload['categories'] = [];
+            $filters = array_filter([
+                'retail_trader_id' => $shopId,
+                'order_unit' => $filters['order_unit'] ?? 'piece',
+            ], fn ($v) => $v !== null);
+        }
 
         return response()->json([
             'status' => true,
@@ -61,8 +86,8 @@ class ProductCatalogController extends TraderProductCatalogController
             'data' => $payload,
             'items' => $payload['items'] ?? [],
             'groups' => $groups,
-            'size_groups' => $payload['size_groups'] ?? $groups,
-            'filters' => $payload['filters'] ?? [],
+            'size_groups' => $sizeGroups,
+            'filters' => $filters,
         ])->header('Content-Language', $lang);
     }
 
@@ -72,6 +97,11 @@ class ProductCatalogController extends TraderProductCatalogController
     protected function mapCatalogProduct(Product $product, ?int $availableQuantity = null): array
     {
         $item = parent::mapCatalogProduct($product, $availableQuantity);
+
+        // Plumbers always order by the piece — never by the box.
+        // pieces_per_box stays informational (how stock is packed at the shop).
+        $item['order_unit'] = 'piece';
+        $item['order_by'] = 'piece';
 
         if ($availableQuantity !== null) {
             $qty = max(0, $availableQuantity);
