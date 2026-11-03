@@ -187,6 +187,30 @@
                                         </div>
                                     @endif
 
+                                    @php
+                                        $understanding = (array) ($line['understanding'] ?? []);
+                                        $famCands = (array) ($line['family_candidates'] ?? []);
+                                    @endphp
+                                    @if(!empty($understanding['raw']) && !empty($understanding['means']) && empty($line['understanding_confirmed']))
+                                        <div class="ocr-sys" style="flex-wrap:wrap;gap:8px;align-items:center">
+                                            <span class="ocr-card__badge">فهمتها: {{ $understanding['raw'] }} = {{ $understanding['means'] }}</span>
+                                            <button type="button" class="ocr-sys__btn is-on" wire:click="confirmOcrUnderstanding({{ $i }})">تأكيد</button>
+                                            <button type="button" class="ocr-sys__btn" wire:click="$set('ocrFocusLine', {{ $i }})">تصحيح</button>
+                                        </div>
+                                    @endif
+
+                                    @if(count($famCands) > 1 && empty($matchedId))
+                                        <div class="ocr-sys" style="flex-wrap:wrap;gap:8px">
+                                            <span>أي معنى؟</span>
+                                            @foreach($famCands as $fc)
+                                                <button type="button" class="ocr-sys__btn"
+                                                    wire:click="chooseOcrLexiconFamily({{ $i }}, '{{ $fc['family'] ?? '' }}')">
+                                                    {{ $fc['catalog_name'] ?? ($fc['family'] ?? '') }}
+                                                </button>
+                                            @endforeach
+                                        </div>
+                                    @endif
+
                                     <p class="ocr-card__ask">أي منتج تقصد؟</p>
                                     <div class="ocr-picks" role="radiogroup">
                                         @forelse($cands as $ci => $cand)

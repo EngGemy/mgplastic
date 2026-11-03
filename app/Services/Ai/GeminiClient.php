@@ -485,12 +485,25 @@ Transcribe EVERY visible line top to bottom, one entry per number/row — do not
 Quantity-only lists are valid: unit_price and line_total may be null/omitted.
 For each line return raw_text (as written), name (cleaned, without leading list index), qty, optional unit_price/line_total, confidence 0..1, optional brand (null if unmarked; never invent MG).
 Convert Arabic-Indic digits to Latin in qty. Unknown fields = null. Do not invent lines.
+Transcribe exactly what you see; keep dialect spelling. If a word looks like one of the reading-hints vocabulary words, prefer that spelling. Do NOT invent full catalog product names.
+When a word is uncertain, add up to 2 alternate readings in alternatives (single words or short phrases only).
 PROMPT;
 
-        if ($catalogNames !== []) {
-            $base .= "\n\nOptional catalog hints (do NOT drop lines that are absent from this list):\n"
-                .implode(' | ', array_slice($catalogNames, 0, (int) config('services.gemini.ocr_catalog_prompt_limit', 80)));
+        $hints = [];
+        try {
+            $limit = (int) config('ocr_lexicon.gemini_reading_hints_limit', 120);
+            $hints = app(\App\Services\Ocr\Lexicon\OcrLexicon::class)->readingHints($limit);
+        } catch (\Throwable) {
+            $hints = [];
         }
+        if ($hints !== []) {
+            $base .= "\n\nReading hints (vocabulary words only — not product SKUs):\n"
+                .implode(' | ', $hints);
+        }
+
+        // Keep catalog product names out of the prompt (they bias toward one product).
+        // $catalogNames retained in signature for callers/tests; intentionally unused here.
+        unset($catalogNames);
 
         return $base;
     }
@@ -522,6 +535,11 @@ PROMPT;
                             'line_total' => ['type' => 'NUMBER', 'nullable' => true],
                             'confidence' => ['type' => 'NUMBER', 'nullable' => true],
                             'brand' => ['type' => 'STRING', 'nullable' => true],
+                            'alternatives' => [
+                                'type' => 'ARRAY',
+                                'nullable' => true,
+                                'items' => ['type' => 'STRING'],
+                            ],
                         ],
                         // Quantity-only lists: do not require prices or confidence.
                         'required' => ['raw_text'],
@@ -669,6 +687,14 @@ PROMPT;
                 $needsReview[] = 'price_missing';
             }
 
+            $alternatives = [];
+            foreach (array_slice((array) ($line['alternatives'] ?? []), 0, 2) as $alt) {
+                $a = trim((string) $alt);
+                if ($a !== '') {
+                    $alternatives[] = $a;
+                }
+            }
+
             $lines[] = [
                 'raw_text' => $raw !== '' ? $raw : $display,
                 'name' => $cleanedName !== '' ? $cleanedName : ($raw !== '' ? $raw : 'بند'),
@@ -678,6 +704,7 @@ PROMPT;
                 'line_total' => $this->toFloat($line['line_total'] ?? null),
                 'confidence' => $this->normalizeConfidence($line['confidence'] ?? null),
                 'brand' => $this->nullableString($line['brand'] ?? null),
+                'alternatives' => $alternatives,
                 'needs_review' => $needsReview,
             ];
         }

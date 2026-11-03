@@ -552,6 +552,60 @@ class CreateWholesaleInvoice extends Page
         }
     }
 
+    /** Confirm dialect/English understanding chip (keep current family suggestion). */
+    public function confirmOcrUnderstanding(int $lineIndex): void
+    {
+        if (! isset($this->ocrDraft['lines'][$lineIndex])) {
+            return;
+        }
+
+        $line = $this->ocrDraft['lines'][$lineIndex];
+        $line['understanding_confirmed'] = true;
+        if (! empty($line['slots']['lexicon_family'])) {
+            $line['force_lexicon_family'] = (string) $line['slots']['lexicon_family'];
+        }
+
+        $enriched = app(\App\Services\Ocr\InvoiceOcrCatalogMatcher::class)->enrich(
+            ['lines' => [$line]],
+            $this->ocrSystemDefault === 'ask' ? null : $this->ocrSystemDefault,
+            $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
+        );
+        if (! empty($enriched['lines'][0])) {
+            $this->ocrDraft['lines'][$lineIndex] = array_merge($enriched['lines'][0], [
+                'understanding_confirmed' => true,
+                'force_lexicon_family' => $line['force_lexicon_family'] ?? null,
+            ]);
+        }
+    }
+
+    /** User picked a lexicon family when مثلثات (etc.) was ambiguous. */
+    public function chooseOcrLexiconFamily(int $lineIndex, string $lexiconFamily): void
+    {
+        if (! isset($this->ocrDraft['lines'][$lineIndex]) || $lexiconFamily === '') {
+            return;
+        }
+
+        $line = $this->ocrDraft['lines'][$lineIndex];
+        $line['force_lexicon_family'] = $lexiconFamily;
+        $line['understanding_confirmed'] = true;
+
+        $enriched = app(\App\Services\Ocr\InvoiceOcrCatalogMatcher::class)->enrich(
+            ['lines' => [$line]],
+            $this->ocrSystemDefault === 'ask' ? null : $this->ocrSystemDefault,
+            $this->wholesaleDistributorId ? (int) $this->wholesaleDistributorId : null,
+        );
+        if (! empty($enriched['lines'][0])) {
+            $this->ocrDraft['lines'][$lineIndex] = array_merge($enriched['lines'][0], [
+                'force_lexicon_family' => $lexiconFamily,
+                'understanding_confirmed' => true,
+            ]);
+        } else {
+            $this->ocrDraft['lines'][$lineIndex]['match_status'] = 'needs_choice';
+            $this->ocrDraft['lines'][$lineIndex]['needs_review'] = ['needs_choice'];
+            $this->ocrDraft['lines'][$lineIndex]['force_lexicon_family'] = $lexiconFamily;
+        }
+    }
+
     public function adjustOcrQty(int $lineIndex, int $delta): void
     {
         if (! isset($this->ocrDraft['lines'][$lineIndex])) {
