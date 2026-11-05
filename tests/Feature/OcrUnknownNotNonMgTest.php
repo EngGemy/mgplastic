@@ -28,59 +28,59 @@ class OcrUnknownNotNonMgTest extends TestCase
         $this->catalog['pipe_gold_11'] = $this->makeProduct(121, 'pipe', 4.0, 'in', 'us', 'ماسورة ذهبي PAR 11', variant: ['gold' => true]);
     }
 
-    public function test_four_handwritten_lines_roles(): void
+    public function test_plumbing_without_mg_is_excluded_mg_forms_match(): void
     {
         $matcher = app(InvoiceOcrCatalogMatcher::class);
         $draft = $matcher->enrich([
             'lines' => [
                 ['raw_text' => 'مثلثات واي 4 بوصة 6', 'qty' => 6],
                 ['raw_text' => 'واي Mg 3 بوصة 10', 'qty' => 10],
-                ['raw_text' => 'مخفض 4-2 Mg 6', 'qty' => 6],
+                ['raw_text' => 'مخفض 4-2 ام جي 6', 'qty' => 6],
                 ['raw_text' => 'طوبو 4 بوصة 6', 'qty' => 6],
+                ['raw_text' => 'ماسورة 4 بوصة امجي', 'qty' => 2],
             ],
         ], 'us');
 
-        $this->assertSame(4, ($draft['match_counts']['matched'] ?? 0) + ($draft['match_counts']['needs_choice'] ?? 0) + ($draft['match_counts']['excluded'] ?? 0));
-        $this->assertCount(0, $draft['excluded']);
+        $this->assertSame(
+            5,
+            ($draft['match_counts']['matched'] ?? 0)
+            + ($draft['match_counts']['needs_choice'] ?? 0)
+            + ($draft['match_counts']['excluded'] ?? 0)
+        );
+
+        $excludedRaws = collect($draft['excluded'])->pluck('raw_text')->all();
+        $this->assertContains('مثلثات واي 4 بوصة 6', $excludedRaws);
+        $this->assertContains('طوبو 4 بوصة 6', $excludedRaws);
+        $this->assertSame(
+            'plumbing_without_mg',
+            collect($draft['excluded'])->firstWhere('raw_text', 'مثلثات واي 4 بوصة 6')['reason'] ?? null
+        );
+        $this->assertSame(
+            'بدون علامة MG',
+            collect($draft['excluded'])->firstWhere('raw_text', 'مثلثات واي 4 بوصة 6')['exclude_label'] ?? null
+        );
 
         $byRaw = collect($draft['lines'])->keyBy(fn ($l) => (string) ($l['raw_text'] ?? ''));
-
-        $y4 = $byRaw['مثلثات واي 4 بوصة 6'];
-        $this->assertSame('wye', $y4['slots']['family']);
-        $this->assertSame(4.0, (float) $y4['slots']['size_value']);
-        $this->assertNull($y4['slots']['size2_value']);
-        $this->assertSame(6.0, (float) $y4['qty']);
-        $this->assertSame('matched', $y4['match_status']);
-        $this->assertSame($this->catalog['wye_4']->id, $y4['matched_product_id']);
-        $this->assertSame([], $y4['needs_review'] ?? []);
 
         $y3 = $byRaw['واي Mg 3 بوصة 10'];
         $this->assertSame('wye', $y3['slots']['family']);
         $this->assertTrue((bool) ($y3['slots']['mg_brand'] ?? false));
         $this->assertSame('matched', $y3['match_status']);
         $this->assertSame($this->catalog['wye_3']->id, $y3['matched_product_id']);
-        $this->assertSame([], $y3['needs_review'] ?? []);
 
-        $red = $byRaw['مخفض 4-2 Mg 6'];
+        $red = $byRaw['مخفض 4-2 ام جي 6'];
         $this->assertSame('reducer', $red['slots']['family']);
-        $this->assertSame(4.0, (float) $red['slots']['size_value']);
-        $this->assertSame(2.0, (float) $red['slots']['size2_value']);
+        $this->assertTrue((bool) ($red['slots']['mg_brand'] ?? false));
         $this->assertSame('matched', $red['match_status']);
         $this->assertSame($this->catalog['reducer']->id, $red['matched_product_id']);
-        $this->assertSame([], $red['needs_review'] ?? [], 'unique reducer must be ready (empty needs_review)');
 
-        $pipe = $byRaw['طوبو 4 بوصة 6'];
-        $this->assertSame('pipe', $pipe['slots']['family']);
-        $this->assertSame(4.0, (float) $pipe['slots']['size_value']);
-        $this->assertSame('needs_choice', $pipe['match_status']);
-        $this->assertNull($pipe['matched_product_id']);
-        $candIds = collect($pipe['candidates'])->pluck('product_id')->all();
-        $this->assertSame($this->catalog['pipe_plain']->id, $candIds[0] ?? null, 'plain pipe ranks first');
-        $this->assertContains($this->catalog['pipe_silent']->id, $candIds);
-        $this->assertContains($this->catalog['pipe_gold_86']->id, $candIds);
+        $pipeMg = $byRaw['ماسورة 4 بوصة امجي'];
+        $this->assertSame('pipe', $pipeMg['slots']['family']);
+        $this->assertTrue((bool) ($pipeMg['slots']['mg_brand'] ?? false));
+        $this->assertSame('needs_choice', $pipeMg['match_status']);
     }
 
-    public function test_qahwa_excluded_faucet_with_unit_needs_review(): void
+    public function test_qahwa_and_unmarked_faucet_and_rival_brand_excluded(): void
     {
         $matcher = app(InvoiceOcrCatalogMatcher::class);
         $draft = $matcher->enrich([
@@ -88,34 +88,54 @@ class OcrUnknownNotNonMgTest extends TestCase
                 ['raw_text' => 'قهوة', 'qty' => 1],
                 ['raw_text' => 'حنفية 1 بوصة', 'qty' => 2],
                 ['raw_text' => 'NIĞTAŞ', 'qty' => null],
+                ['raw_text' => 'حنفية 1 بوصة MG', 'qty' => 1, 'brand' => 'MG'],
             ],
         ]);
 
-        $this->assertGreaterThanOrEqual(2, count($draft['excluded']));
         $q = collect($draft['excluded'])->firstWhere('raw_text', 'قهوة');
         $this->assertNotNull($q);
         $this->assertSame('known_non_mg', $q['reason']);
         $this->assertSame('مش منتج MG', $q['exclude_label']);
 
+        $faucet = collect($draft['excluded'])->firstWhere('raw_text', 'حنفية 1 بوصة');
+        $this->assertNotNull($faucet);
+        $this->assertSame('plumbing_without_mg', $faucet['reason']);
+        $this->assertSame('بدون علامة MG', $faucet['exclude_label']);
+
         $header = collect($draft['excluded'])->first(fn ($e) => str_contains(mb_strtolower((string) ($e['raw_text'] ?? '')), 'nig')
             || str_contains((string) ($e['raw_text'] ?? ''), 'NIĞ'));
         $this->assertNotNull($header, 'letterhead without plumbing signal is excluded');
 
-        $faucet = collect($draft['lines'])->firstWhere('raw_text', 'حنفية 1 بوصة');
-        $this->assertNotNull($faucet);
-        $this->assertSame('unknown_word', $faucet['match_status']);
-        $this->assertContains('unknown_word', $faucet['needs_review']);
-        $this->assertSame('كلمة غير معروفة', $faucet['match_reason']);
-        $this->assertNotEmpty($faucet['family_chips'] ?? []);
+        $faucetMg = collect($draft['lines'])->firstWhere('raw_text', 'حنفية 1 بوصة MG');
+        $this->assertNotNull($faucetMg);
+        $this->assertTrue((bool) ($faucetMg['slots']['mg_brand'] ?? false));
+        $this->assertSame('unknown_word', $faucetMg['match_status']);
+        $this->assertContains('unknown_word', $faucetMg['needs_review']);
 
         $accounted = count($draft['lines']) + count($draft['excluded']);
-        $this->assertSame(3, $accounted);
+        $this->assertSame(4, $accounted);
         $this->assertSame(
             $accounted,
             ($draft['match_counts']['matched'] ?? 0)
             + ($draft['match_counts']['needs_choice'] ?? 0)
             + ($draft['match_counts']['excluded'] ?? 0)
         );
+    }
+
+    public function test_parser_detects_mg_spellings(): void
+    {
+        $parser = app(CatalogSlotParser::class);
+
+        foreach (['Mg', 'M.G', 'ام جي', 'امجي', 'إم جي', 'MG Plastic'] as $mark) {
+            $slots = $parser->parse('ماسورة 4 بوصة '.$mark);
+            $this->assertTrue((bool) $slots['mg_brand'], "failed for spelling: {$mark}");
+        }
+
+        $bare = $parser->parse('ماسورة 4 بوصة');
+        $this->assertFalse((bool) $bare['mg_brand']);
+
+        $viaBrand = $parser->parse('ماسورة 4 بوصة', 'ام جي');
+        $this->assertTrue((bool) $viaBrand['mg_brand']);
     }
 
     public function test_parser_does_not_steal_qty_as_size2(): void

@@ -59,7 +59,7 @@ class OcrV2Test extends TestCase
         $matcher = app(InvoiceOcrCatalogMatcher::class);
         $draft = $matcher->enrich([
             'lines' => [
-                ['raw_text' => 'ماسورة بلاستيك 4 بوصة', 'name' => 'ماسورة بلاستيك 4 بوصة', 'qty' => 1, 'confidence' => 0.95],
+                ['raw_text' => 'ماسورة بلاستيك 4 بوصة MG', 'name' => 'ماسورة بلاستيك 4 بوصة MG', 'qty' => 1, 'confidence' => 0.95],
                 ['raw_text' => 'xyz-unknown-item-999', 'name' => 'xyz-unknown-item-999', 'qty' => 1, 'confidence' => 0.4],
             ],
             'overall_confidence' => 0.7,

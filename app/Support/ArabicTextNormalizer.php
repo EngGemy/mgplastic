@@ -46,8 +46,10 @@ final class ArabicTextNormalizer
         $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
         $text = trim($text);
 
-        // Strip brand token MG (handwriting rarely has it; catalog always does)
-        $text = preg_replace('/\bmg\b/iu', '', $text) ?? $text;
+        // Strip brand tokens MG / ام جي (detected on raw before normalize; catalog names include them)
+        $text = preg_replace('/\bm[\s.\-_\/]*g\b/iu', '', $text) ?? $text;
+        $text = preg_replace('/ام\s*\.?\s*جي(?:\s*بلاست)?/u', '', $text) ?? $text;
+        $text = preg_replace('/امجي(?:\s*بلاست)?/u', '', $text) ?? $text;
         $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
 
         return trim($text);

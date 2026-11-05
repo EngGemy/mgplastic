@@ -170,14 +170,15 @@
                 ">
                 <header class="ocr-desk__head">
                     <div>
+                        <p class="ocr-desk__brand">MG · قراءة الورقة</p>
                         <h2 class="ocr-desk__title">مراجعة القراءة</h2>
-                        <p class="ocr-desk__hint">اختَر المنتج ← اعتمد البند ← أضِف المعتمد للسلة. لن يُحفظ شيء تلقائياً.</p>
+                        <p class="ocr-desk__hint">بنود السباكة بدون علامة <b>MG / ام جي</b> تُستبعد تلقائياً. اختَر المنتج ← اعتمد ← أضِف للسلة.</p>
                     </div>
                     <div class="ocr-desk__stats" aria-label="ملخص الحالة">
                         <span class="ocr-stat ocr-stat--warn" title="يحتاج قرار"><span aria-hidden="true">◇</span> <b>{{ $pendingN }}</b> يحتاجك</span>
                         <span class="ocr-stat ocr-stat--ok" title="جاهز"><span aria-hidden="true">○</span> <b>{{ $readyN }}</b> جاهز</span>
                         <span class="ocr-stat ocr-stat--done" title="معتمد"><span aria-hidden="true">●</span> <b>{{ $approvedN }}</b> معتمد</span>
-                        <span class="ocr-stat"><b>{{ $exclN }}</b> مستبعد</span>
+                        <span class="ocr-stat ocr-stat--excl" title="مستبعد من السلة"><span aria-hidden="true">⊘</span> <b>{{ $exclN }}</b> مستبعد</span>
                     </div>
                 </header>
                 @php
@@ -245,6 +246,9 @@
                                         <div class="ocr-card__write">
                                             @if(! empty($line['ocr_image_position']))
                                                 <span class="ocr-card__badge">صورة {{ $line['ocr_image_position'] }}</span>
+                                            @endif
+                                            @if(! empty($slots['mg_brand']))
+                                                <span class="ocr-card__badge ocr-card__badge--mg">MG</span>
                                             @endif
                                             @if(($line['review_status'] ?? '') === 'added' || ! empty($line['added']))
                                                 <span class="ocr-card__badge">أُضيف</span>
@@ -382,22 +386,39 @@
                         @endif
 
                         @if($exclN > 0)
-                            <button type="button" class="ocr-excluded-toggle" @click="showExcluded = !showExcluded">
-                                <span>مستبعد من السلة ({{ $exclN }})</span>
-                                <span x-text="showExcluded ? 'إخفاء' : 'عرض'"></span>
+                            @php
+                                $exclMg = collect($excludedAll)->filter(fn ($e) => in_array($e['reason'] ?? '', ['plumbing_without_mg', 'non_mg_brand', 'known_non_mg'], true))->count();
+                                $exclMeta = $exclN.' بند'.($exclMg > 0 ? ' · '.$exclMg.' بدون MG / مش MG' : '');
+                            @endphp
+                            <button type="button" class="ocr-excluded-toggle" @click="showExcluded = !showExcluded" :aria-expanded="showExcluded">
+                                <span class="ocr-excluded-toggle__lead">
+                                    <span class="ocr-excluded-toggle__title">مستبعد من السلة</span>
+                                    <span class="ocr-excluded-toggle__meta">{{ $exclMeta }}</span>
+                                </span>
+                                <span class="ocr-excluded-toggle__chev" x-text="showExcluded ? 'إخفاء' : 'عرض'"></span>
                             </button>
                             <div x-show="showExcluded" x-cloak class="ocr-excluded">
                                 @foreach($excludedAll as $ei => $ex)
                                     @php
-                                        $exLabel = $ex['exclude_label']
-                                            ?? (in_array($ex['reason'] ?? '', ['non_mg_brand', 'known_non_mg'], true) ? 'مش منتج MG' : 'مش مقروء');
+                                        $exReason = (string) ($ex['reason'] ?? '');
+                                        if ($exReason === 'plumbing_without_mg') {
+                                            $exLabel = $ex['exclude_label'] ?? 'بدون علامة MG';
+                                            $exChip = 'بدون MG';
+                                        } elseif (in_array($exReason, ['non_mg_brand', 'known_non_mg'], true)) {
+                                            $exLabel = $ex['exclude_label'] ?? 'مش منتج MG';
+                                            $exChip = 'مش MG';
+                                        } else {
+                                            $exLabel = $ex['exclude_label'] ?? 'مش مقروء';
+                                            $exChip = 'غير مقروء';
+                                        }
                                     @endphp
                                     <div class="ocr-excluded__row">
-                                        <div>
-                                            <s>«{{ $ex['raw_text'] ?? '' }}»</s>
+                                        <div class="ocr-excluded__body">
+                                            <span class="ocr-excluded__chip">{{ $exChip }}</span>
+                                            <s class="ocr-excluded__raw">«{{ $ex['raw_text'] ?? '' }}»</s>
                                             <small>× {{ $ex['qty'] ?? '?' }} — {{ $exLabel }}</small>
                                         </div>
-                                        <button type="button" class="ocr-btn ocr-btn--ghost" wire:click="restoreExcludedOcrLine({{ $ei }})">إرجاع للمراجعة</button>
+                                        <button type="button" class="ocr-btn ocr-btn--ghost" wire:click="restoreExcludedOcrLine({{ $ei }})">إرجاع</button>
                                     </div>
                                 @endforeach
                             </div>

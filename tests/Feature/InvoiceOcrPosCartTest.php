@@ -87,7 +87,7 @@ class InvoiceOcrPosCartTest extends TestCase
                                 'subtotal' => 20,
                                 'tax' => 0,
                                 'lines' => [
-                                    ['raw_text' => 'كوع ٩٠ ١ بوصه نظام امريك', 'name' => 'كوع 90 1 بوصه', 'qty' => 4, 'unit_price' => 5, 'line_total' => 20, 'confidence' => 0.95],
+                                    ['raw_text' => 'كوع ٩٠ ١ بوصه نظام امريك MG', 'name' => 'كوع 90 1 بوصه MG', 'qty' => 4, 'unit_price' => 5, 'line_total' => 20, 'confidence' => 0.95],
                                 ],
                                 'overall_confidence' => 0.9,
                                 'source_type' => 'printed',

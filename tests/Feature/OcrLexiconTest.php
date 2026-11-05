@@ -142,8 +142,8 @@ class OcrLexiconTest extends TestCase
 
         $draft = [
             'lines' => [
-                ['raw_text' => 'طوبو ٤ بوصه', 'qty' => 1],
-                ['raw_text' => 'مثلثات ٢ بوصه', 'qty' => 1],
+                ['raw_text' => 'طوبو ٤ بوصه MG', 'qty' => 1],
+                ['raw_text' => 'مثلثات ٢ بوصه ام جي', 'qty' => 1],
                 ['raw_text' => 'منتج غريب جدا', 'qty' => 1],
             ],
         ];
@@ -176,7 +176,7 @@ class OcrLexiconTest extends TestCase
         ]);
 
         $out = app(InvoiceOcrCatalogMatcher::class)->enrich([
-            'lines' => [['raw_text' => 'توبو 4 بوصة', 'qty' => 1]],
+            'lines' => [['raw_text' => 'توبو 4 بوصة MG', 'qty' => 1]],
         ]);
 
         $line = $out['lines'][0] ?? null;
