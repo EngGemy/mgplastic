@@ -39,12 +39,14 @@ grep -E 'slow_request|Allowed memory' storage/logs/*.log | tail -n 50
 ```
 Note method+path from `performance.log`; fix unbounded `get()`/`all()`; do not raise memory_limit.
 
-### Worker not running
+### Worker not running / OCR jobs killed mid-run
 ```bash
 pgrep -af queue:work || echo 'NO WORKER'
-# crontab:
+# Both crons required every minute (schedule alone ≠ queues):
 # * * * * * /bin/bash $HOME/mgplastic_app/scripts/queue-worker.sh >> $HOME/mgplastic_app/storage/logs/queue-worker.log 2>&1
 # * * * * * cd $HOME/mgplastic_app && php artisan schedule:run >> /dev/null 2>&1
+# scripts/queue-worker.sh must use --queue=whatsapp,default and --timeout=90
+# (≥ OCR_JOB_TIMEOUT / ProcessOcrImageJob ~50s). Lower worker timeout kills OCR mid-run.
 ```
 
 ### After any .env / config change

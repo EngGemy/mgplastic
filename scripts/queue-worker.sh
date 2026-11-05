@@ -23,4 +23,4 @@ exec "$PHP_BIN" artisan queue:work \
   --tries=3 \
   --max-time=3600 \
   --memory=192 \
-  --timeout=30
+  --timeout=90
