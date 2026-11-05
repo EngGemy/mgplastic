@@ -40,7 +40,7 @@ class ProductCatalogController extends TraderProductCatalogController
                 ->stockQtyByProductForRetailTrader($shop);
         }
 
-        // Default larger pages; allow up to 200 or a single full dump via per_page=all.
+        // Default larger pages; allow up to 500 or a single full dump via per_page=all.
         if (! $request->filled('per_page')) {
             $request->merge(['per_page' => 100]);
         } elseif (in_array(strtolower((string) $request->query('per_page')), ['all', '0'], true)) {
@@ -54,7 +54,7 @@ class ProductCatalogController extends TraderProductCatalogController
             }
 
             return $this->mapCatalogProduct($product, $available);
-        }, maxPerPage: 200);
+        }, maxPerPage: 500);
 
         $payload['retail_trader_id'] = $shopId;
         $payload['stock_mode'] = $shopId !== null;
@@ -76,6 +76,7 @@ class ProductCatalogController extends TraderProductCatalogController
                 'retail_trader_id' => $shopId,
                 'order_unit' => $filters['order_unit'] ?? 'piece',
             ], fn ($v) => $v !== null);
+            $payload['filters'] = $filters;
         }
 
         return response()->json([

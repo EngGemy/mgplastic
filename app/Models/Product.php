@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicStorageUrl;
 use Astrotomic\Translatable\Translatable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -39,6 +40,7 @@ class Product extends Model
         'box_price_aed',
         'notes',
         'main_image',
+        'image_thumb',
         'meta',
 
         // ✅ الحقول الجديدة
@@ -83,6 +85,30 @@ class Product extends Model
         'variant' => 'array',
         'derived_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(function (Product $product): void {
+            if (! $product->wasChanged(['catalog_image_path', 'main_image'])) {
+                return;
+            }
+
+            $source = $product->primaryImagePath();
+            if ($source === null) {
+                return;
+            }
+
+            try {
+                $thumb = app(\App\Services\ImageThumbnailService::class)
+                    ->makeProductThumb($source, 320);
+                if ($thumb && $thumb !== $product->image_thumb) {
+                    $product->forceFill(['image_thumb' => $thumb])->saveQuietly();
+                }
+            } catch (\Throwable) {
+                // Thumbnail generation is best-effort; full image still serves.
+            }
+        });
+    }
 
     // --- Relations ---
     public function category(): BelongsTo
@@ -390,6 +416,65 @@ class Product extends Model
         }
 
         return null;
+    }
+
+    /** Relative path of the preferred product image on the public disk. */
+    public function primaryImagePath(): ?string
+    {
+        foreach ([$this->catalog_image_path, $this->main_image] as $raw) {
+            $path = $this->normalizePathStringOrArray($raw);
+            if (! $path || Str::startsWith($path, ['http://', 'https://', '//'])) {
+                continue;
+            }
+
+            $path = ltrim(preg_replace('#^storage/#', '', $path) ?? $path, '/');
+            $candidates = array_values(array_unique(array_filter([
+                $path,
+                ! str_contains($path, '/') ? 'products/catalog/images/'.$path : null,
+                ! str_contains($path, '/') ? 'products/main/'.$path : null,
+            ])));
+
+            foreach ($candidates as $candidate) {
+                if (Storage::disk('public')->exists($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** ~320px WebP/JPEG thumbnail for catalog cards; falls back to full image. */
+    public function resolvedThumbUrl(): ?string
+    {
+        return PublicStorageUrl::try($this->image_thumb) ?? $this->display_image_url;
+    }
+
+    /**
+     * First non-empty variant catalog_code, else product id as searchable code.
+     */
+    public function resolveSku(): string
+    {
+        if ($this->relationLoaded('variants')) {
+            $code = $this->variants
+                ->pluck('catalog_code')
+                ->map(fn ($c) => trim((string) $c))
+                ->first(fn ($c) => $c !== '');
+            if (is_string($code) && $code !== '') {
+                return $code;
+            }
+        } else {
+            $code = $this->variants()
+                ->whereNotNull('catalog_code')
+                ->where('catalog_code', '!=', '')
+                ->orderBy('id')
+                ->value('catalog_code');
+            if (is_string($code) && trim($code) !== '') {
+                return trim($code);
+            }
+        }
+
+        return (string) $this->id;
     }
 
     public function getCatalogPdfUrlAttribute(): ?string

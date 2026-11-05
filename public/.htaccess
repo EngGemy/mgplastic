@@ -1,3 +1,10 @@
+# Long-cache static media under /storage (thumbs + originals). CDN still recommended.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(?i:jpe?g|png|gif|webp|avif|svg|ico|zip)$">
+        Header set Cache-Control "public, max-age=604800, immutable"
+    </FilesMatch>
+</IfModule>
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes

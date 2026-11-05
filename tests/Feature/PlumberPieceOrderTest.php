@@ -85,15 +85,39 @@ class PlumberPieceOrderTest extends TestCase
             ->assertStatus(422);
     }
 
-    public function test_per_page_allows_200(): void
+    public function test_per_page_allows_500(): void
     {
         $plumber = User::factory()->create(['role' => 'plumber', 'is_approved' => true, 'is_active' => true]);
         Product::factory()->count(3)->create(['points_per_unit' => 1]);
 
         $this->actingAs($plumber, 'sanctum')
-            ->getJson('/api/v1/mobile/plumber/products?per_page=200')
+            ->getJson('/api/v1/mobile/plumber/products?per_page=500')
             ->assertOk()
-            ->assertJsonPath('data.pagination.per_page', 200);
+            ->assertJsonPath('data.pagination.per_page', 500);
+    }
+
+    public function test_catalog_exposes_thumb_url_and_page_two_omits_groups(): void
+    {
+        $plumber = User::factory()->create(['role' => 'plumber', 'is_approved' => true, 'is_active' => true]);
+        Product::factory()->count(3)->create(['points_per_unit' => 1]);
+
+        $page1 = $this->actingAs($plumber, 'sanctum')
+            ->getJson('/api/v1/mobile/plumber/products?per_page=1&page=1')
+            ->assertOk();
+
+        $item = collect($page1->json('items') ?? [])->first();
+        $this->assertIsArray($item);
+        $this->assertArrayHasKey('thumb_url', $item);
+        $this->assertIsArray($page1->json('groups'));
+
+        $page2 = $this->actingAs($plumber, 'sanctum')
+            ->getJson('/api/v1/mobile/plumber/products?per_page=1&page=2')
+            ->assertOk();
+
+        $this->assertSame([], $page2->json('groups'));
+        $this->assertSame([], $page2->json('size_groups'));
+        $this->assertSame([], $page2->json('data.groups'));
+        $this->assertSame([], $page2->json('data.size_groups'));
     }
 
     /**
