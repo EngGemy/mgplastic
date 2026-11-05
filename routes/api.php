@@ -1,49 +1,37 @@
 <?php
 
-use App\Http\Controllers\Api\Blog\BlogController;
-use App\Http\Controllers\Api\Event\EventController;
-use App\Http\Controllers\Api\Plumber\PlumberProfileController;
-use App\Http\Controllers\Api\Product\ProductController;
-use App\Http\Controllers\Api\Static\SliderController;
-use App\Http\Controllers\Api\Store\PlumberStoreController;
-use App\Http\Controllers\Api\Store\PlumberStoreMediaController;
-use App\Http\Controllers\Api\Store\NetworkStoreController;
-use App\Http\Controllers\Api\Plumber\InvoiceController as PlumberInvoiceController;
-use App\Http\Controllers\Api\Plumber\WalletController;
-
-
-use Illuminate\Support\Facades\Route;
-
-// Auth Controllers
-use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\LoginController;
+use App\Http\Controllers\Api\Auth\PasswordResetByPhoneController;
 use App\Http\Controllers\Api\Auth\PlumberRegisterController;
+use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\StoreRegisterController;
 use App\Http\Controllers\Api\Auth\VerifyOtpController;
-use App\Http\Controllers\Api\Auth\PasswordResetByPhoneController;
-
-
-// Static Controllers
-use App\Http\Controllers\Api\Static\TermsController;
-use App\Http\Controllers\Api\Static\PrivacyController;
-use App\Http\Controllers\Api\Static\SocialMediaController;
-
-// Claim Controller
-use App\Http\Controllers\Api\Static\ClaimController;
-
-use App\Http\Controllers\Api\Location\CountryController;
-use App\Http\Controllers\Api\Location\CityController;
-
-use App\Http\Controllers\Api\Plumber\PlumberPublicController;
-
-use App\Http\Controllers\Vendor\VendorStoreSliderController;
-
-use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
+use App\Http\Controllers\Api\Blog\BlogController;
 use App\Http\Controllers\Api\Distribution\DistributionController;
+use App\Http\Controllers\Api\Event\EventController;
+use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
+use App\Http\Controllers\Api\Location\CityController;
+// Auth Controllers
+use App\Http\Controllers\Api\Location\CountryController;
+use App\Http\Controllers\Api\Plumber\InvoiceController as PlumberInvoiceController;
+use App\Http\Controllers\Api\Plumber\PlumberProfileController;
+use App\Http\Controllers\Api\Plumber\PlumberPublicController;
+use App\Http\Controllers\Api\Plumber\WalletController;
+use App\Http\Controllers\Api\Product\ProductController;
+// Static Controllers
+use App\Http\Controllers\Api\Static\ClaimController;
+use App\Http\Controllers\Api\Static\PrivacyController;
+use App\Http\Controllers\Api\Static\SliderController;
+// Claim Controller
+use App\Http\Controllers\Api\Static\SocialMediaController;
+use App\Http\Controllers\Api\Static\TermsController;
+use App\Http\Controllers\Api\Store\NetworkStoreController;
+use App\Http\Controllers\Api\Store\PlumberStoreController;
+use App\Http\Controllers\Api\Store\PlumberStoreMediaController;
+use App\Http\Controllers\Vendor\VendorStoreSliderController;
 use App\Models\Invoice;
 use App\Services\DistributionService;
-
-
+use Illuminate\Support\Facades\Route;
 
 // =========================
 // AUTH ROUTES
@@ -51,11 +39,11 @@ use App\Services\DistributionService;
 Route::middleware('api')->prefix('v1/auth')->group(function () {
     // Normal User Register & Login
     Route::post('register', [RegisterController::class, 'register']);
-    Route::post('login', [LoginController::class, 'login']);
+    Route::post('login', [LoginController::class, 'login'])->middleware('throttle:10,1');
 
     // Plumber Register (separate logic)
     Route::post('register-plumber', [PlumberRegisterController::class, 'register']);
-    Route::post('login-plumber', [LoginController::class, 'login']); // can reuse login if same logic
+    Route::post('login-plumber', [LoginController::class, 'login'])->middleware('throttle:10,1');
 
     // Wholesale store self-registration (موزع الجملة) — pending admin approval
     Route::post('register-store', [StoreRegisterController::class, 'register']);
@@ -66,8 +54,6 @@ Route::middleware('api')->prefix('v1/auth')->group(function () {
     Route::post('send-otp', [VerifyOtpController::class, 'send'])->middleware('throttle:6,1');
     Route::post('verify-otp', [VerifyOtpController::class, 'verify'])->middleware('throttle:6,1');
     Route::post('resend-otp', [VerifyOtpController::class, 'resend'])->middleware('throttle:3,1');
-
-
 
     // Forgot by phone
     Route::post('forgot-password/send-otp', [PasswordResetByPhoneController::class, 'sendOtp'])->middleware('throttle:3,1');
@@ -93,7 +79,6 @@ Route::middleware('api')->prefix('v1')->group(function () {
     Route::get('claims', [ClaimController::class, 'index']);  // View all claims
 });
 
-
 Route::middleware('api')->prefix('v1')->group(function () {
     // General sliders (optional filter ?type=home|store)
     Route::get('sliders', [SliderController::class, 'index']);
@@ -105,8 +90,6 @@ Route::middleware('api')->prefix('v1')->group(function () {
     // Add new slider (admin)
     Route::post('sliders', [SliderController::class, 'store']);
 });
-
-
 
 Route::prefix('v1/plumber-stores')->group(function () {
     // Public
@@ -168,7 +151,6 @@ Route::get('v1/network-stores/{store}', [NetworkStoreController::class, 'publicS
 Route::get('v1/vendors/{store}', [NetworkStoreController::class, 'publicShow'])
     ->where('store', '[A-Za-z0-9\-]+');
 
-
 Route::middleware('api')->prefix('v1/events')->group(function () {
     Route::get('/', [EventController::class, 'index']);
     Route::get('/{id}', [EventController::class, 'show']);
@@ -186,7 +168,6 @@ Route::middleware(['api', 'auth:sanctum'])->prefix('v1/plumber')->group(function
     Route::delete('/social-links/{linkId}', [PlumberProfileController::class, 'deleteSocialLink']);
 });
 
-
 Route::prefix('v1/blogs')->group(function () {
     Route::post('/', [BlogController::class, 'store']);
     Route::post('/{id}/approve', [BlogController::class, 'approve']);
@@ -196,9 +177,7 @@ Route::prefix('v1/blogs')->group(function () {
     Route::post('/{id}/comment', [BlogController::class, 'comment'])->middleware('auth:sanctum');
 });
 
-
-
-//Route::prefix('v1/products')->group(function () {
+// Route::prefix('v1/products')->group(function () {
 //    // READ (public)
 //    Route::get('/categories', [ProductController::class, 'categories']);
 //    Route::get('/category/{id}', [ProductController::class, 'productsByCategory'])->whereNumber('id');
@@ -212,7 +191,7 @@ Route::prefix('v1/blogs')->group(function () {
 //    // Gallery helpers
 //    Route::post('/{id}/images', [ProductController::class, 'addImages'])->whereNumber('id');
 //    Route::delete('/{id}/images/{imageId}', [ProductController::class, 'deleteImage'])->whereNumber('id')->whereNumber('imageId');
-//});
+// });
 
 Route::prefix('v1/products')->group(function () {
     // READ (public)
@@ -232,8 +211,6 @@ Route::prefix('v1/products')->group(function () {
         ->whereNumber('id')->whereNumber('imageId');
 });
 
-
-
 Route::middleware('api')->prefix('v1')->group(function () {
     // Countries
     Route::get('countries', [CountryController::class, 'index']);
@@ -245,16 +222,10 @@ Route::middleware('api')->prefix('v1')->group(function () {
     Route::get('cities/{id}', [CityController::class, 'show']);
 });
 
-
-
-
 Route::prefix('v1/plumbers')->group(function () {
     Route::get('/', [PlumberPublicController::class, 'index']);   // list
     Route::get('/{id}', [PlumberPublicController::class, 'show']); // show
 });
-
-
-
 
 Route::prefix('v1')->group(function () {
 
@@ -304,7 +275,7 @@ Route::prefix('v1')->group(function () {
 
                 /** Work media (images/videos) */
                 Route::post('work-photos', [PlumberProfileController::class, 'addWorkMedia']);   // POST /api/v1/plumber/work-photos
-                Route::get('work-photos',  [PlumberProfileController::class, 'listWorkPhotos']); // GET  /api/v1/plumber/work-photos
+                Route::get('work-photos', [PlumberProfileController::class, 'listWorkPhotos']); // GET  /api/v1/plumber/work-photos
                 Route::delete('work-photos/{id}', [PlumberProfileController::class, 'deleteWorkPhoto']); // DELETE /api/v1/plumber/work-photos/{id}
 
                 /** Social links */
@@ -316,18 +287,15 @@ Route::prefix('v1')->group(function () {
 
 });
 
-
-
 Route::middleware(['auth:sanctum'])->prefix('vendor')->group(function () {
     // Slider images CRUD for a vendor-owned store
-    Route::get   ('/stores/{store}/slider-images',                   [VendorStoreSliderController::class, 'index']);
-    Route::post  ('/stores/{store}/slider-images',                   [VendorStoreSliderController::class, 'store']);        // multiple upload
-    Route::patch ('/stores/{store}/slider-images/reorder',           [VendorStoreSliderController::class, 'reorder']);      // bulk reorder
-    Route::patch ('/stores/{store}/slider-images/{image}',           [VendorStoreSliderController::class, 'update']);       // update one
-    Route::patch ('/stores/{store}/slider-images/{image}/primary',   [VendorStoreSliderController::class, 'setPrimary']);   // set primary
-    Route::delete('/stores/{store}/slider-images/{image}',           [VendorStoreSliderController::class, 'destroy']);      // delete
+    Route::get('/stores/{store}/slider-images', [VendorStoreSliderController::class, 'index']);
+    Route::post('/stores/{store}/slider-images', [VendorStoreSliderController::class, 'store']);        // multiple upload
+    Route::patch('/stores/{store}/slider-images/reorder', [VendorStoreSliderController::class, 'reorder']);      // bulk reorder
+    Route::patch('/stores/{store}/slider-images/{image}', [VendorStoreSliderController::class, 'update']);       // update one
+    Route::patch('/stores/{store}/slider-images/{image}/primary', [VendorStoreSliderController::class, 'setPrimary']);   // set primary
+    Route::delete('/stores/{store}/slider-images/{image}', [VendorStoreSliderController::class, 'destroy']);      // delete
 });
-
 
 // Public wallet visibility (apps read this to hide/show the wallet tab)
 Route::prefix('ios')->group(function () {
