@@ -17,6 +17,7 @@ class ProductCategoryResource extends JsonResource
         $name = $this->resource->normalizedDisplayName($lang);
         $short = $this->resource->shortDescription($lang);
         $imageUrl = $this->resource->resolvedImageUrl();
+        $thumbUrl = $this->resource->resolvedThumbUrl() ?? $imageUrl;
 
         return [
             'id' => $this->id,
@@ -30,6 +31,7 @@ class ProductCategoryResource extends JsonResource
             'image' => $imageUrl ? $this->image : null,
             'image_url' => $imageUrl,
             'icon_url' => $imageUrl,
+            'thumb_url' => $thumbUrl,
             'badge' => $this->resource->systemBadge(),
             'products_count' => $this->when(isset($this->products_count), (int) $this->products_count),
             'tags' => $this->whenLoaded('tags', fn ($tags) => $tags->pluck('name')->values()->all()),

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
 
 class OtaUpdate extends Model
 {
@@ -31,6 +32,18 @@ class OtaUpdate extends Model
             'is_active' => 'boolean',
             'activated_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => static::bumpCheckCache());
+        static::deleted(fn () => static::bumpCheckCache());
+    }
+
+    /** Invalidate cached GET /mobile/ota/check responses (Filament + artisan + tinker). */
+    public static function bumpCheckCache(): void
+    {
+        Cache::forever('ota:check:generation', (int) Cache::get('ota:check:generation', 1) + 1);
     }
 
     public function uploader(): BelongsTo

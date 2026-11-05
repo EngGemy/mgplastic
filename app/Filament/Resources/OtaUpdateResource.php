@@ -304,7 +304,6 @@ class OtaUpdateResource extends Resource
 
     public static function forgetOtaCache(): void
     {
-        // Bump generation so existing 60s keys are ignored immediately after publish/toggle.
-        cache()->forever('ota:check:generation', (int) cache()->get('ota:check:generation', 1) + 1);
+        OtaUpdate::bumpCheckCache();
     }
 }

@@ -54,7 +54,7 @@ class MobileHomeWholesaleApiTest extends TestCase
 
         $this->getJson('/api/v1/mobile/distributor/products/categories?systems=1')
             ->assertOk()
-            ->assertJsonPath('data.items.0.name', 'حسب النظام الاوروبي')
+            ->assertJsonPath('data.items.0.name', 'النظام الاوروبي')
             ->assertJsonPath('data.items.0.short_description', 'مقاسات ومواصفات · EN Standard')
             ->assertJsonPath('data.items.0.badge', 'EN')
             ->assertJsonPath('data.items.0.icon_url', null);
@@ -69,8 +69,10 @@ class MobileHomeWholesaleApiTest extends TestCase
 
         $this->getJson('/api/v1/products/categories')
             ->assertOk()
+            ->assertJsonPath('data.0.name', 'النظام الاوروبي')
             ->assertJsonPath('data.0.short_description', 'مقاسات ومواصفات · EN Standard')
-            ->assertJsonPath('data.0.image_url', null);
+            ->assertJsonPath('data.0.image_url', null)
+            ->assertJsonPath('data.0.thumb_url', null);
     }
 
     public function test_broken_storage_urls_become_null(): void

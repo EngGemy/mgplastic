@@ -41,7 +41,8 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => env('APP_URL').'/storage',
+            // Prefer MEDIA_URL (CDN) when set, e.g. https://cdn.example.com/storage
+            'url' => rtrim((string) env('MEDIA_URL', env('APP_URL').'/storage'), '/'),
             'visibility' => 'public',
             'throw' => false,
             'report' => false,

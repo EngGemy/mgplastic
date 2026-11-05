@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Storage;
  */
 final class PublicStorageUrl
 {
+    /** @var array<string, bool> Request-local reachability cache (avoids repeated exists/is_file). */
+    protected static array $reachable = [];
+
     /** @deprecated Use try() — kept so older call sites never 500. */
     public static function make(?string $path): ?string
     {
@@ -43,7 +46,7 @@ final class PublicStorageUrl
         }
 
         // Optional fallback under public/images (product-type icons, etc.)
-        if (! Storage::disk('public')->exists($path)) {
+        if (! self::diskExists($path)) {
             $publicFile = public_path('images/'.$path);
             if (is_file($publicFile)) {
                 return asset('images/'.$path);
@@ -63,17 +66,32 @@ final class PublicStorageUrl
     {
         $relative = ltrim(str_replace('\\', '/', $relative), '/');
 
-        if ($relative === '' || ! Storage::disk('public')->exists($relative)) {
-            return null;
-        }
-
-        // Must be reachable via /storage/… (missing storage:link ⇒ HTTP 404 for clients).
-        $webPath = public_path('storage/'.$relative);
-        if (! is_file($webPath)) {
+        if ($relative === '' || ! self::isReachable($relative)) {
             return null;
         }
 
         return Storage::disk('public')->url($relative);
+    }
+
+    protected static function isReachable(string $relative): bool
+    {
+        if (array_key_exists($relative, self::$reachable)) {
+            return self::$reachable[$relative];
+        }
+
+        if (! self::diskExists($relative)) {
+            return self::$reachable[$relative] = false;
+        }
+
+        // Must be reachable via /storage/… (missing storage:link ⇒ HTTP 404 for clients).
+        $webPath = public_path('storage/'.$relative);
+
+        return self::$reachable[$relative] = is_file($webPath);
+    }
+
+    protected static function diskExists(string $relative): bool
+    {
+        return Storage::disk('public')->exists($relative);
     }
 
     /**
@@ -91,5 +109,11 @@ final class PublicStorageUrl
         }
 
         return ltrim(rawurldecode($m[1]), '/');
+    }
+
+    /** Clear request-local cache (tests). */
+    public static function flushCache(): void
+    {
+        self::$reachable = [];
     }
 }

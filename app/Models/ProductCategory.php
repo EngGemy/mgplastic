@@ -175,6 +175,7 @@ class ProductCategory extends Model
         }
 
         $plain = trim(preg_replace('/\s+/u', ' ', strip_tags($raw)) ?? '');
+        $plain = self::normalizeArabicCatalogLabel($plain);
 
         return $plain !== '' ? Str::limit($plain, 120, '…') : null;
     }
@@ -189,10 +190,22 @@ class ProductCategory extends Model
             ?? $this->slug
             ?? ('تصنيف #'.$this->id)
         ));
-        $name = preg_replace('/\s+/u', ' ', $name) ?? $name;
-        $name = str_replace(['الاوروربي', 'الأوروربي'], 'الاوروبي', $name);
 
-        return trim($name);
+        return self::normalizeArabicCatalogLabel($name);
+    }
+
+    /**
+     * Fix common Arabic catalog noise: typo الاوروربي, leading «حسب», trailing «-ملحقات».
+     */
+    public static function normalizeArabicCatalogLabel(string $value): string
+    {
+        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
+        $value = str_replace(['الاوروربي', 'الأوروربي'], 'الاوروبي', $value);
+        $value = preg_replace('/^حسب\s+/u', '', $value) ?? $value;
+        $value = preg_replace('/\s*-ملحقات\b/u', '', $value) ?? $value;
+        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
+
+        return trim($value);
     }
 
     protected function defaultSystemBlurb(): string

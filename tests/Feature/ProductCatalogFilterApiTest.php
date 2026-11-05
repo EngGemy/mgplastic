@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductTag;
+use App\Models\ProductVariant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -59,6 +60,10 @@ class ProductCatalogFilterApiTest extends TestCase
         ]);
         $elbow->translateOrNew('ar')->name = 'كوع اختبار';
         $elbow->save();
+        ProductVariant::query()->create([
+            'product_id' => $elbow->id,
+            'catalog_code' => 'MG-ELBOW-1',
+        ]);
         ProductTag::syncNamesOntoProduct($elbow, ['كوع']);
 
         $pipe = Product::factory()->create([
@@ -80,7 +85,10 @@ class ProductCatalogFilterApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('meta.total', 1)
             ->assertJsonPath('data.0.id', $elbow->id)
-            ->assertJsonPath('data.0.tags.0', 'كوع');
+            ->assertJsonPath('data.0.tags.0', 'كوع')
+            ->assertJsonPath('data.0.sku', 'MG-ELBOW-1')
+            ->assertJsonPath('data.0.catalog_code', 'MG-ELBOW-1')
+            ->assertJsonStructure(['data' => [['thumb_url', 'image_url', 'sku']]]);
 
         $this->getJson('/api/v1/products?search=ماسورة&classification=standard', $headers)
             ->assertOk()

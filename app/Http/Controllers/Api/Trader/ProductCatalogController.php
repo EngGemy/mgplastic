@@ -134,34 +134,38 @@ class ProductCatalogController extends Controller
             ->values();
         $items = $this->sortCatalogItems($items, $sizeOrder);
 
-        // Groups must reflect the FULL filtered catalog (not only this page).
-        // Cache trees by filter signature so scrolling pages does not rematch 500 products.
-        $groupCacheKey = 'catalog_groups:'.md5(json_encode([
-            $filters,
-            $orderUnit,
-            $sizeOrder,
-            app()->getLocale(),
-        ]));
-        $trees = \Illuminate\Support\Facades\Cache::remember($groupCacheKey, 45, function () use ($request, $mapProduct, $sizeOrder, $inventory, $items) {
-            $allForGroups = $this->catalogQuery($request, applyOrderUnit: true)
-                ->limit(500)
-                ->get();
+        // Meta trees (groups / size_groups / categories) only on page 1 — later pages are items + pagination.
+        $trees = ['groups' => [], 'size_groups' => [], 'categories' => []];
+        if ($page->currentPage() <= 1) {
+            // Groups must reflect the FULL filtered catalog (not only this page).
+            // Cache trees by filter signature so scrolling pages does not rematch 500 products.
+            $groupCacheKey = 'catalog_groups:'.md5(json_encode([
+                $filters,
+                $orderUnit,
+                $sizeOrder,
+                app()->getLocale(),
+            ]));
+            $trees = \Illuminate\Support\Facades\Cache::remember($groupCacheKey, 45, function () use ($request, $mapProduct, $sizeOrder, $inventory, $items) {
+                $allForGroups = $this->catalogQuery($request, applyOrderUnit: true)
+                    ->limit(500)
+                    ->get();
 
-            // Skip remapping products already mapped for the current page.
-            $mappedById = $items->keyBy('product_id');
-            $allMapped = $allForGroups->map(function (Product $product) use ($mapProduct, $mappedById) {
-                $existing = $mappedById->get($product->id);
-                if (is_array($existing)) {
-                    return $existing;
-                }
+                // Skip remapping products already mapped for the current page.
+                $mappedById = $items->keyBy('product_id');
+                $allMapped = $allForGroups->map(function (Product $product) use ($mapProduct, $mappedById) {
+                    $existing = $mappedById->get($product->id);
+                    if (is_array($existing)) {
+                        return $existing;
+                    }
 
-                return $mapProduct($product);
-            })->values();
+                    return $mapProduct($product);
+                })->values();
 
-            $allMapped = $this->sortCatalogItems($allMapped, $sizeOrder);
+                $allMapped = $this->sortCatalogItems($allMapped, $sizeOrder);
 
-            return $inventory->groupCatalogBrowse($allMapped, $sizeOrder);
-        });
+                return $inventory->groupCatalogBrowse($allMapped, $sizeOrder);
+            });
+        }
 
         return [
             'items' => $items,
@@ -170,7 +174,13 @@ class ProductCatalogController extends Controller
             'categories' => $trees['categories'],
             'view' => 'paginated',
             'units' => $units,
-            'filters' => $filters,
+            'filters' => $page->currentPage() <= 1 ? $filters : array_filter([
+                'order_unit' => $filters['order_unit'] ?? null,
+                'product_family' => $filters['product_family'] ?? null,
+                'product_type' => $filters['product_type'] ?? null,
+                'category_id' => $filters['category_id'] ?? null,
+                'size_order' => $filters['size_order'] ?? null,
+            ], fn ($v) => $v !== null && $v !== ''),
             'pagination' => $this->paginationMeta($page),
         ];
     }
@@ -413,7 +423,10 @@ class ProductCatalogController extends Controller
             implode(' ', array_filter([$group['tag'], $group['name'], ...$group['tags']])),
         );
 
-        $sku = $this->resolveProductSku($product);
+        $sku = $product->resolveSku();
+        $imageUrl = $product->display_image_url
+            ?? ($image ? $this->storageUrlIfExists($image) : null);
+        $thumbUrl = $product->resolvedThumbUrl() ?? $imageUrl;
 
         $item = [
             'id' => (int) $product->id,
@@ -423,8 +436,8 @@ class ProductCatalogController extends Controller
             'name' => localized_name($product, 'name', 'منتج #'.$product->id),
             'description' => api_plain_string(localized_name($product, 'description', '')),
             'image' => $image,
-            'image_url' => $product->display_image_url
-                ?? ($image ? $this->storageUrlIfExists($image) : null),
+            'image_url' => $imageUrl,
+            'thumb_url' => $thumbUrl,
             'points_per_unit' => null,
             'has_points' => $points > 0,
             'product_kind' => $product->productKind(),
@@ -518,31 +531,6 @@ class ProductCatalogController extends Controller
         }
 
         return $payload;
-    }
-
-    protected function resolveProductSku(Product $product): ?string
-    {
-        if ($product->relationLoaded('variants')) {
-            $code = $product->variants
-                ->pluck('catalog_code')
-                ->map(fn ($c) => trim((string) $c))
-                ->first(fn ($c) => $c !== '');
-            if ($code) {
-                return $code;
-            }
-        } else {
-            $code = $product->variants()
-                ->whereNotNull('catalog_code')
-                ->where('catalog_code', '!=', '')
-                ->orderBy('id')
-                ->value('catalog_code');
-            if (is_string($code) && trim($code) !== '') {
-                return trim($code);
-            }
-        }
-
-        // Fallback: product id as searchable code when no variant catalog_code exists.
-        return (string) $product->id;
     }
 
     protected function storageUrlIfExists(?string $path): ?string

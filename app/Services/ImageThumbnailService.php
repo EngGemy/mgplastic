@@ -98,17 +98,39 @@ class ImageThumbnailService
      */
     public function makeCategoryThumb(string $sourceRelativePath, int $maxWidth = 400, int $quality = 78): ?string
     {
+        return $this->makeDiskThumb($sourceRelativePath, 'categories/thumbs', $maxWidth, $quality, 'Category');
+    }
+
+    /**
+     * Product list thumbnail (~320px) for mobile/public catalog rows.
+     */
+    public function makeProductThumb(string $sourceRelativePath, int $maxWidth = 320, int $quality = 78): ?string
+    {
+        return $this->makeDiskThumb($sourceRelativePath, 'products/thumbs', $maxWidth, $quality, 'Product');
+    }
+
+    /**
+     * Resize an existing public-disk image into $outputDir/{base}_{width}.{webp|jpg}.
+     */
+    protected function makeDiskThumb(
+        string $sourceRelativePath,
+        string $outputDir,
+        int $maxWidth,
+        int $quality,
+        string $label,
+    ): ?string {
         $source = Storage::disk($this->disk)->path($sourceRelativePath);
         if (! is_file($source) || ! is_readable($source)) {
-            Log::warning('[ImageThumbnail] Category source missing', ['path' => $sourceRelativePath]);
+            Log::warning("[ImageThumbnail] {$label} source missing", ['path' => $sourceRelativePath]);
 
             return null;
         }
 
         $base = pathinfo($sourceRelativePath, PATHINFO_FILENAME);
+        $outputDir = trim($outputDir, '/');
         $preferWebp = function_exists('imagewebp');
         $ext = $preferWebp ? 'webp' : 'jpg';
-        $relative = 'categories/thumbs/'.$base.'_'.$maxWidth.'.'.$ext;
+        $relative = $outputDir.'/'.$base.'_'.$maxWidth.'.'.$ext;
         $absolute = Storage::disk($this->disk)->path($relative);
         $this->ensureDirectory(dirname($absolute));
 
@@ -118,7 +140,7 @@ class ImageThumbnailService
             }
         }
 
-        $relativeJpg = 'categories/thumbs/'.$base.'_'.$maxWidth.'.jpg';
+        $relativeJpg = $outputDir.'/'.$base.'_'.$maxWidth.'.jpg';
         $absoluteJpg = Storage::disk($this->disk)->path($relativeJpg);
         if ($this->writeResized($source, $absoluteJpg, $maxWidth, $quality)) {
             return $relativeJpg;
