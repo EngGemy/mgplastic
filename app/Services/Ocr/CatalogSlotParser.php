@@ -37,8 +37,7 @@ class CatalogSlotParser
     {
         $notes = [];
         // Detect MG on the raw line before normalizer strips the brand token.
-        $mgOnRawLine = (bool) preg_match('/(?<!\p{L})mg(?!\p{L})/iu', $raw)
-            || str_contains(mb_strtolower($raw), 'ام جي');
+        $mgOnRawLine = $this->rawMentionsMg($raw);
         $normalized = ArabicTextNormalizer::normalize($raw);
         $lineNo = null;
 
@@ -118,18 +117,22 @@ class CatalogSlotParser
             $family = null;
         }
 
+        // Brand hint must be checked before normalize strips MG tokens.
+        $brandHintIsMg = $brandHint !== null && trim($brandHint) !== '' && $this->isMgBrandToken($brandHint);
         $brand = $brandHint !== null && trim($brandHint) !== ''
             ? ArabicTextNormalizer::normalize($brandHint)
             : null;
 
         // Per-line brand only (ignore page letterheads fed as separate lines elsewhere).
         $lineBrand = $this->detectLineBrand($normalized);
-        if ($mgOnRawLine) {
+        $mgBrand = $mgOnRawLine || $brandHintIsMg || ($lineBrand === 'mg');
+        if ($mgBrand) {
             $brand = 'mg';
         } elseif ($brand === null && $lineBrand !== null) {
             $brand = $lineBrand;
-        } elseif ($brand !== null && $this->isMgBrandToken($brand)) {
+        } elseif ($brand !== null && $brand !== '' && $this->isMgBrandToken($brand)) {
             $brand = 'mg';
+            $mgBrand = true;
         }
 
         $plumbingSignal = $this->hasPlumbingSignal($normalized, $family, $size, $unit, $familyCandidates);
@@ -149,8 +152,8 @@ class CatalogSlotParser
             'variant' => $variant,
             'line_no' => $lineNo,
             'normalized' => $normalized,
-            'brand_hint' => $brand,
-            'mg_brand' => $mgOnRawLine || ($brand !== null && $this->isMgBrandToken($brand)),
+            'brand_hint' => $brand !== '' ? $brand : null,
+            'mg_brand' => $mgBrand,
             'plumbing_signal' => $plumbingSignal,
             'parse_ok' => $parseOk,
             'parse_notes' => $notes,
@@ -159,12 +162,40 @@ class CatalogSlotParser
 
     protected function isMgBrandToken(string $token): bool
     {
-        $b = ArabicTextNormalizer::normalize($token);
+        return $this->rawMentionsMg($token);
+    }
 
-        return $b === 'mg'
-            || $b === 'ام جي'
-            || str_contains($b, 'mg plastic')
-            || str_contains($b, 'ام جي بلاست');
+    /**
+     * MG / ام جي in Latin or Arabic, any common handwriting spelling.
+     */
+    protected function rawMentionsMg(string $text): bool
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return false;
+        }
+
+        // Latin: MG, M.G, M G, mg plastic
+        if (preg_match('/(?<!\p{L})m[\s.\-_\/]*g(?!\p{L})/iu', $text)) {
+            return true;
+        }
+        if (preg_match('/mg\s*plastic/iu', $text)) {
+            return true;
+        }
+
+        // Arabic: ام جي / امجي / ام.جي / إم جي / ام جي بلاست
+        $folded = mb_strtolower($text, 'UTF-8');
+        $folded = str_replace(['أ', 'إ', 'آ', 'ٱ'], 'ا', $folded);
+        $folded = preg_replace('/[\x{064B}-\x{065F}\x{0670}\x{0640}]/u', '', $folded) ?? $folded;
+
+        if (preg_match('/ام\s*\.?\s*جي(?:\s*بلاست|\s*plastic)?/u', $folded)) {
+            return true;
+        }
+        if (preg_match('/امجي(?:\s*بلاست)?/u', $folded)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -172,10 +203,7 @@ class CatalogSlotParser
      */
     protected function detectLineBrand(string $normalized): ?string
     {
-        if (preg_match('/(?<!\p{L})mg(?!\p{L})/iu', $normalized)) {
-            return 'mg';
-        }
-        if (str_contains($normalized, 'ام جي')) {
+        if ($this->rawMentionsMg($normalized)) {
             return 'mg';
         }
 

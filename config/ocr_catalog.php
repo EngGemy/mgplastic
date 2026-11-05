@@ -87,6 +87,13 @@ return [
     ],
 
     /*
+    | Plumbing / fittings lines must show MG / ام جي (any spelling) on the line
+    | or in Gemini brand — otherwise they go to excluded[] (مستبعد).
+    | Learned aliases still bypass (already mapped to an MG catalog product).
+    */
+    'require_mg_brand' => (bool) env('OCR_REQUIRE_MG_BRAND', true),
+
+    /*
     | Explicit non-MG brand tokens found on a product line → exclude as not_mg.
     | Page letterheads that appear as their own OCR lines are handled by plumbing_signal.
     */

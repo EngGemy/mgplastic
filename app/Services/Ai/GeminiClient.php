@@ -566,7 +566,7 @@ This is a handwritten / thermal / printed Arabic invoice or shopping list (Libya
 Transcribe EVERY visible product row top to bottom — numbered OR unnumbered. Do not skip, merge, or stop after the first row.
 Unnumbered lists are common: each handwritten row is one line; the trailing number on that row is usually qty (not a list index).
 Quantity-only lists are valid: unit_price and line_total may be null/omitted.
-For each line return raw_text (as written), name (cleaned, without leading list index), qty, optional unit_price/line_total, confidence 0..1, optional brand (null if unmarked; never invent MG).
+For each line return raw_text (as written), name (cleaned, without leading list index), qty, optional unit_price/line_total, confidence 0..1, optional brand: set when MG / ام جي / امجي / MG Plastic is written on that row (null if unmarked; never invent MG). Read every visible row — the server excludes unmarked plumbing.
 Also set estimated_visible_rows to how many distinct product rows you can see on the paper (integer), even if you return fewer lines.
 Convert Arabic-Indic digits to Latin in qty. Unknown fields = null. Do not invent lines.
 Transcribe exactly what you see; keep dialect spelling (طوبو/طبه/ماسورة, واي, مخفض, مثلث). If a word looks like one of the reading-hints vocabulary words, prefer that spelling. Do NOT invent full catalog product names.

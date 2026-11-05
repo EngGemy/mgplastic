@@ -36,26 +36,26 @@ class OcrLineLossTest extends TestCase
     {
         return [
             [
-                'raw_text' => '١ وصله عاديه ١ بوصه',
-                'name' => '١ وصله عاديه ١ بوصه',
+                'raw_text' => '١ وصله عاديه ١ بوصه MG',
+                'name' => '١ وصله عاديه ١ بوصه MG',
                 'qty' => 2,
             ],
             [
-                'raw_text' => '٢ كوع ٩٠ ١ بوصه نظاف اتك',
-                'name' => '٢ كوع ٩٠ ١ بوصه نظاف اتك',
+                'raw_text' => '٢ كوع ٩٠ ١ بوصه نظاف اتك Mg',
+                'name' => '٢ كوع ٩٠ ١ بوصه نظاف اتك Mg',
                 'qty' => 3,
                 'unit_price' => null,
                 'line_total' => null,
                 'confidence' => null,
             ],
             [
-                'raw_text' => '٣ وصله سن خارجي ١ بوصه نظاف ارم',
-                'name' => '٣ وصله سن خارجي ١ بوصه نظاف ارم',
+                'raw_text' => '٣ وصله سن خارجي ١ بوصه نظاف ارم ام جي',
+                'name' => '٣ وصله سن خارجي ١ بوصه نظاف ارم ام جي',
                 'qty' => 5,
             ],
             [
-                'raw_text' => '٤ نهية نظافه ١,٥ بوصه',
-                'name' => '٤ نهية نظافه ١,٥ بوصه',
+                'raw_text' => '٤ نهية نظافه ١,٥ بوصه امجي',
+                'name' => '٤ نهية نظافه ١,٥ بوصه امجي',
                 'qty' => 7,
                 'confidence' => 0.4,
             ],
@@ -221,8 +221,8 @@ class OcrLineLossTest extends TestCase
     {
         $this->fakeGeminiDraft([
             [
-                'raw_text' => 'كوع 1 بوصه',
-                'name' => 'كوع 1 بوصه',
+                'raw_text' => 'كوع 1 بوصه MG',
+                'name' => 'كوع 1 بوصه MG',
                 'qty' => 3,
                 'unit_price' => null,
                 'line_total' => null,

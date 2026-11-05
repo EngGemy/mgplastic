@@ -172,6 +172,22 @@ class InvoiceOcrCatalogMatcher
                 continue;
             }
 
+            // Plumbing / fittings without MG / ام جي on the line → مستبعد (aliases already bypassed).
+            $plumbingish = ($slots['family'] ?? null) !== null
+                || ! empty($slots['family_candidates'])
+                || ! empty($slots['plumbing_signal']);
+            if (
+                (bool) config('ocr_catalog.require_mg_brand', true)
+                && $plumbingish
+                && empty($slots['mg_brand'])
+            ) {
+                $excluded[] = $this->excludeRow($line, 'plumbing_without_mg', $slots, 'بدون علامة MG');
+                $counts['excluded']++;
+                Log::channel('ocr')->info('[OCR] excluded', ['reason' => 'plumbing_without_mg', 'index' => $index]);
+
+                continue;
+            }
+
             // Ambiguous lexicon families (مثلثات → tee|y_tee): keep line, ask user.
             if ($slots['family'] === null && ! empty($slots['family_candidates'])) {
                 $line['match_decision'] = 'needs_choice';
@@ -655,6 +671,7 @@ class InvoiceOcrCatalogMatcher
     protected function excludeRow(array $line, string $reason, array $slots, ?string $label = null): array
     {
         $label = $label ?? match ($reason) {
+            'plumbing_without_mg' => 'بدون علامة MG',
             'non_mg_brand', 'known_non_mg' => 'مش منتج MG',
             'unreadable_or_non_mg', 'family_not_in_catalog' => 'مش مقروء',
             default => 'مش منتج MG',

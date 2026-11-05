@@ -89,7 +89,7 @@ class OcrBatchResilienceTest extends TestCase
             }
 
             return Http::response($this->geminiOkPayload([
-                ['raw_text' => 'ماسورة 4', 'name' => 'ماسورة 4', 'qty' => 2, 'confidence' => 0.9],
+                ['raw_text' => 'ماسورة 4 MG', 'name' => 'ماسورة 4 MG', 'qty' => 2, 'confidence' => 0.9],
             ]));
         });
 
@@ -126,7 +126,7 @@ class OcrBatchResilienceTest extends TestCase
             }
 
             return Http::response($this->geminiOkPayload([
-                ['raw_text' => 'كوع 1', 'name' => 'كوع 1', 'qty' => 1, 'confidence' => 0.9],
+                ['raw_text' => 'كوع 1 MG', 'name' => 'كوع 1 MG', 'qty' => 1, 'confidence' => 0.9],
             ]));
         });
 
@@ -341,7 +341,7 @@ class OcrBatchResilienceTest extends TestCase
     {
         Http::fake([
             'generativelanguage.googleapis.com/*' => Http::response($this->geminiOkPayload([
-                ['raw_text' => 'ماسورة 4 بوصة', 'name' => 'ماسورة 4 بوصة', 'qty' => 2, 'confidence' => 0.95],
+                ['raw_text' => 'ماسورة 4 بوصة MG', 'name' => 'ماسورة 4 بوصة MG', 'qty' => 2, 'confidence' => 0.95],
             ])),
         ]);
 

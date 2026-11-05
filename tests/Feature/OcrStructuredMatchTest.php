@@ -143,9 +143,9 @@ class OcrStructuredMatchTest extends TestCase
         $matcher = app(InvoiceOcrCatalogMatcher::class);
         $draft = $matcher->enrich([
             'lines' => [
-                ['raw_text' => 'وصله عاديه ١ بوصه', 'qty' => 2],
-                ['raw_text' => 'كوع ٩٠ ١ بوصه نظاف اتك', 'qty' => 3], // نظام امريك typo/noise
-                ['raw_text' => 'مثلث عادي ١١٠', 'qty' => 1],
+                ['raw_text' => 'وصله عاديه ١ بوصه MG', 'qty' => 2],
+                ['raw_text' => 'كوع ٩٠ ١ بوصه نظاف اتك Mg', 'qty' => 3], // نظام امريك typo/noise
+                ['raw_text' => 'مثلث عادي ١١٠ ام جي', 'qty' => 1],
                 ['raw_text' => 'قهوة', 'qty' => 1],
             ],
         ]);
@@ -191,8 +191,8 @@ class OcrStructuredMatchTest extends TestCase
         $matcher = app(InvoiceOcrCatalogMatcher::class);
         $draft = $matcher->enrich([
             'lines' => [
-                ['raw_text' => 'وصله سن خارجي ١ بوصه نظاف ارم', 'qty' => 5],
-                ['raw_text' => 'نهية نظافه ١,٥ بوصه', 'qty' => 7],
+                ['raw_text' => 'وصله سن خارجي ١ بوصه نظاف ارم MG', 'qty' => 5],
+                ['raw_text' => 'نهية نظافه ١,٥ بوصه ام جي', 'qty' => 7],
             ],
         ]);
 
@@ -221,7 +221,7 @@ class OcrStructuredMatchTest extends TestCase
         $matcher = app(InvoiceOcrCatalogMatcher::class);
         $draft = $matcher->enrich([
             'lines' => [
-                ['raw_text' => 'كوع ٩٠ ٣ بوصه', 'qty' => 2],
+                ['raw_text' => 'كوع ٩٠ ٣ بوصه MG', 'qty' => 2],
             ],
         ]);
         $line = $draft['lines'][0];
@@ -279,7 +279,7 @@ class OcrStructuredMatchTest extends TestCase
     {
         $draft = app(InvoiceOcrCatalogMatcher::class)->enrich([
             'lines' => [
-                ['raw_text' => 'كوع ٩٠ ١ بوصه نظام امريك', 'qty' => 3],
+                ['raw_text' => 'كوع ٩٠ ١ بوصه نظام امريك MG', 'qty' => 3],
             ],
         ]);
         $this->assertSame('matched', $draft['lines'][0]['match_status']);
