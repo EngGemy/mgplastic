@@ -461,9 +461,13 @@ class HomePopupResource extends Resource
                         'always' => 'كل فتح',
                         default => 'مرة',
                     }),
-                Tables\Columns\IconColumn::make('is_active')
-                    ->label('مفعّل')
-                    ->boolean(),
+                Tables\Columns\ToggleColumn::make('is_active')
+                    ->label('تفعيل')
+                    ->onColor('success')
+                    ->offColor('danger')
+                    ->afterStateUpdated(function (HomePopup $record, bool $state): void {
+                        // Pausing → mobile gets popup: null on next home/layout.
+                    }),
                 Tables\Columns\TextColumn::make('sort_order')
                     ->label('أولوية')
                     ->sortable(),
@@ -475,17 +479,73 @@ class HomePopupResource extends Resource
                 Tables\Filters\TernaryFilter::make('is_active')->label('مفعّل'),
             ])
             ->actions([
+                Tables\Actions\Action::make('preview_json')
+                    ->label('JSON')
+                    ->icon('heroicon-o-code-bracket')
+                    ->color('gray')
+                    ->modalHeading(fn (HomePopup $record): string => 'معاينة الـ popup · #'.$record->id.' · v'.$record->version)
+                    ->modalDescription('نفس الشكل اللي هيوصّل للتطبيق من data.popup (عربي · أول دور مستهدف أو guest).')
+                    ->modalContent(fn (HomePopup $record) => self::jsonPreviewHtml($record))
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('إغلاق'),
+                Tables\Actions\Action::make('toggle_active')
+                    ->label(fn (HomePopup $record) => $record->is_active ? 'إيقاف' : 'تفعيل')
+                    ->icon(fn (HomePopup $record) => $record->is_active ? 'heroicon-o-pause-circle' : 'heroicon-o-play-circle')
+                    ->color(fn (HomePopup $record) => $record->is_active ? 'warning' : 'success')
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (HomePopup $record) => $record->is_active
+                        ? 'إيقاف البوب أب؟'
+                        : 'تفعيل البوب أب؟')
+                    ->modalDescription(fn (HomePopup $record) => $record->is_active
+                        ? 'هيختفي من التطبيق فوراً (popup: null).'
+                        : 'هيظهر للجمهور المستهدف حسب الجدولة.')
+                    ->action(function (HomePopup $record): void {
+                        $record->is_active = ! $record->is_active;
+                        $record->save();
+                    }),
                 Tables\Actions\EditAction::make()->label('تعديل'),
                 Tables\Actions\DeleteAction::make()->label('حذف'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\BulkAction::make('activate')
+                        ->label('تفعيل المحدد')
+                        ->icon('heroicon-o-play-circle')
+                        ->color('success')
+                        ->action(fn ($records) => $records->each->update(['is_active' => true])),
+                    Tables\Actions\BulkAction::make('deactivate')
+                        ->label('إيقاف المحدد')
+                        ->icon('heroicon-o-pause-circle')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->action(fn ($records) => $records->each->update(['is_active' => false])),
                 ]),
             ])
             ->emptyStateHeading('مفيش بوب أب بعد')
             ->emptyStateDescription('أضف إعلاناً أو تصويتاً يظهر أول ما المستخدم يفتح الرئيسية.')
             ->emptyStateIcon('heroicon-o-sparkles');
+    }
+
+    public static function jsonPreviewHtml(HomePopup $record): \Illuminate\Support\HtmlString
+    {
+        $roles = is_array($record->target_roles) && $record->target_roles !== []
+            ? $record->target_roles
+            : ['guest'];
+        $role = (string) ($roles[0] ?? 'guest');
+        if ($role === 'vendor') {
+            $role = 'retail_trader';
+        }
+
+        $payload = $record->toMobilePayload($role, 'ar');
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        return new \Illuminate\Support\HtmlString(
+            '<div style="margin-bottom:8px;font-size:13px;color:#64748b;">role = <b>'.e($role).'</b> · Accept-Language = ar</div>'
+            .'<pre style="direction:ltr;text-align:left;max-height:480px;overflow:auto;font-size:12px;line-height:1.45;background:#0f172a;color:#e2e8f0;padding:14px;border-radius:10px;white-space:pre-wrap;word-break:break-word;">'
+            .e((string) $json)
+            .'</pre>'
+        );
     }
 
     public static function getPages(): array
