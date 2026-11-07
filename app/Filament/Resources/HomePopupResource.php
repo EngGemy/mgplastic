@@ -10,10 +10,10 @@ use App\Models\Product;
 use App\Models\ProductCollection;
 use App\Models\ProductPromotion;
 use App\Models\User;
-use App\Services\HomeMobileLayoutService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -24,314 +24,385 @@ class HomePopupResource extends Resource
 
     protected static ?string $model = HomePopup::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-sparkles';
 
-    protected static ?int $navigationSort = 42;
+    protected static ?int $navigationSort = 5;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المحتوى';
+        return 'بوب أب الرئيسية';
     }
 
     public static function getNavigationLabel(): string
     {
-        return 'إعلانات الرئيسية';
+        return 'إدارة البوب أب';
     }
 
     public static function getModelLabel(): string
     {
-        return 'إعلان منبثق';
+        return 'بوب أب';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return 'إعلانات الرئيسية';
+        return 'بوب أب الرئيسية';
     }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Group::make()
+                Forms\Components\Section::make('الإحصائيات المباشرة')
+                    ->description('مشاهدات / ضغطات فريدة · تتحدّث مع أحداث التطبيق')
+                    ->icon('heroicon-o-chart-bar')
+                    ->visible(fn (?HomePopup $record) => filled($record?->id))
                     ->schema([
-                        Forms\Components\Section::make('محتوى الإعلان')
-                            ->description('اعمل إعلاناً منفصلاً لكل جمهور (ضيف / سباك / قطاعي / جملة) عشان كل واحد يشوف محتوى وشكل مختلف.')
-                            ->icon('heroicon-o-megaphone')
+                        Forms\Components\Grid::make(4)->schema([
+                            Forms\Components\Placeholder::make('stat_views')
+                                ->label('مشاهدات')
+                                ->content(fn (?HomePopup $record) => (string) ($record?->statsSummary()['views'] ?? 0)),
+                            Forms\Components\Placeholder::make('stat_clicks')
+                                ->label('ضغطات')
+                                ->content(fn (?HomePopup $record) => (string) ($record?->statsSummary()['clicks'] ?? 0)),
+                            Forms\Components\Placeholder::make('stat_ctr')
+                                ->label('CTR')
+                                ->content(function (?HomePopup $record) {
+                                    $ctr = (float) ($record?->statsSummary()['ctr'] ?? 0);
+
+                                    return round($ctr * 100, 1).'%';
+                                }),
+                            Forms\Components\Placeholder::make('stat_dismiss')
+                                ->label('إغلاق')
+                                ->content(fn (?HomePopup $record) => (string) ($record?->statsSummary()['dismisses'] ?? 0)),
+                        ]),
+                        Forms\Components\Placeholder::make('stat_buttons')
+                            ->label('نتائج الأزرار / التصويت')
+                            ->content(function (?HomePopup $record) {
+                                $by = $record?->statsSummary()['by_button'] ?? [];
+                                if ($by === []) {
+                                    return 'لا بيانات بعد';
+                                }
+                                $total = max(1, array_sum($by));
+                                $parts = [];
+                                foreach ($by as $id => $count) {
+                                    $parts[] = $id.': '.$count.' ('.round(($count / $total) * 100, 1).'%)';
+                                }
+
+                                return implode(' · ', $parts);
+                            }),
+                    ])
+                    ->collapsed(false)
+                    ->columnSpanFull(),
+
+                Forms\Components\Tabs::make('popup_tabs')
+                    ->tabs([
+                        Forms\Components\Tabs\Tab::make('المحتوى')
+                            ->icon('heroicon-o-photo')
                             ->schema([
-                                Forms\Components\TextInput::make('title')
-                                    ->label('العنوان')
-                                    ->placeholder('مثال: سباك مميز هذا الأسبوع')
-                                    ->maxLength(200)
-                                    ->columnSpanFull(),
+                                Forms\Components\Section::make('النوع والصورة')
+                                    ->description('الصورة تتحمّل قبل ظهور الكارت في التطبيق — اضغطها لحد ~300KB، عرض 800px، نسبة مقترحة 4:5.')
+                                    ->schema([
+                                        Forms\Components\ToggleButtons::make('kind')
+                                            ->label('نوع البوب أب')
+                                            ->options([
+                                                'announcement' => 'إعلان',
+                                                'poll' => 'تصويت',
+                                            ])
+                                            ->icons([
+                                                'announcement' => 'heroicon-o-megaphone',
+                                                'poll' => 'heroicon-o-chart-bar',
+                                            ])
+                                            ->colors([
+                                                'announcement' => 'primary',
+                                                'poll' => 'warning',
+                                            ])
+                                            ->inline()
+                                            ->required()
+                                            ->live()
+                                            ->default('announcement')
+                                            ->helperText('التصويت: أول إجابتين جنب بعض، وبعد الإجابة مش يظهر تاني لنفس version.')
+                                            ->columnSpanFull(),
 
-                                Forms\Components\TextInput::make('subtitle')
-                                    ->label('وصف قصير')
-                                    ->placeholder('سطر تحت العنوان (اختياري)')
-                                    ->maxLength(255)
-                                    ->columnSpanFull(),
+                                        Forms\Components\FileUpload::make('image_path')
+                                            ->label('الصورة')
+                                            ->disk('public')
+                                            ->directory('home-popups')
+                                            ->image()
+                                            ->imageEditor()
+                                            ->imageEditorAspectRatios(['4:5', '16:9', '1:1', null])
+                                            ->imagePreviewHeight('280')
+                                            ->openable()
+                                            ->downloadable()
+                                            ->maxSize(512)
+                                            ->helperText('مستحسن 800×1000 (4:5) · أقصى رفع هنا 512KB — الأفضل ≤300KB WebP/JPG')
+                                            ->columnSpanFull()
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(function ($state, Set $set) {
+                                                if (! is_string($state) || $state === '') {
+                                                    return;
+                                                }
+                                                try {
+                                                    $absolute = \Illuminate\Support\Facades\Storage::disk('public')->path($state);
+                                                    if (! is_file($absolute)) {
+                                                        return;
+                                                    }
+                                                    $size = @getimagesize($absolute);
+                                                    if (is_array($size) && ($size[1] ?? 0) > 0) {
+                                                        $ratio = round(((float) $size[0]) / ((float) $size[1]), 2);
+                                                        if ($ratio >= 0.5 && $ratio <= 2.0) {
+                                                            $set('image_ratio', $ratio);
+                                                        }
+                                                    }
+                                                } catch (\Throwable) {
+                                                    // ignore
+                                                }
+                                            }),
 
-                                Forms\Components\FileUpload::make('image_path')
-                                    ->label('صورة الإعلان')
-                                    ->disk('public')
-                                    ->directory('home-popups')
-                                    ->image()
-                                    ->imageEditor()
-                                    ->imageEditorAspectRatios(['4:5', '3:4', '1:1', null])
-                                    ->imagePreviewHeight('260')
-                                    ->openable()
-                                    ->downloadable()
-                                    ->maxSize(5120)
-                                    ->required()
-                                    ->helperText('يفضّل صورة عمودية تقريباً 4:5 — حتى 5MB')
-                                    ->columnSpanFull(),
+                                        Forms\Components\TextInput::make('image_ratio')
+                                            ->label('نسبة الصورة (عرض ÷ طول)')
+                                            ->numeric()
+                                            ->step(0.01)
+                                            ->minValue(0.5)
+                                            ->maxValue(2)
+                                            ->default(0.8)
+                                            ->helperText('تتحسب تلقائياً من الصورة · 4:5 = 0.8 · 16:9 = 1.78'),
+                                    ]),
 
-                                Forms\Components\ToggleButtons::make('kind')
-                                    ->label('نوع الإعلان')
-                                    ->options([
-                                        'promo' => 'عرض / دعاية',
-                                        'announcement' => 'تنويه',
-                                        'event' => 'فعالية',
-                                        'feature' => 'سباك / محل مميز',
-                                        'auth' => 'تسجيل / دخول',
-                                    ])
-                                    ->inline()
-                                    ->required()
-                                    ->default('promo')
-                                    ->columnSpanFull(),
-
-                                Forms\Components\ToggleButtons::make('layout')
-                                    ->label('شكل العرض في التطبيق')
-                                    ->options([
-                                        'hero' => 'صورة كاملة + زر',
-                                        'card' => 'بطاقة بصورة وعنوان',
-                                        'auth' => 'دعوة تسجيل (ضيف)',
-                                        'announce' => 'تنويه نصّي',
-                                    ])
-                                    ->icons([
-                                        'hero' => 'heroicon-o-photo',
-                                        'card' => 'heroicon-o-rectangle-group',
-                                        'auth' => 'heroicon-o-user-plus',
-                                        'announce' => 'heroicon-o-bell-alert',
-                                    ])
-                                    ->inline()
-                                    ->required()
-                                    ->default('hero')
-                                    ->helperText('كل جمهور يقدر ياخد شكل مختلف — مثلاً الضيف auth والسباك hero')
-                                    ->columnSpanFull(),
+                                Forms\Components\Section::make('النصوص (عربي / English)')
+                                    ->schema([
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\TextInput::make('title_ar')
+                                                ->label('العنوان عربي')
+                                                ->maxLength(60)
+                                                ->placeholder('سباك الشهر'),
+                                            Forms\Components\TextInput::make('title_en')
+                                                ->label('Title English')
+                                                ->maxLength(60)
+                                                ->placeholder('Plumber of the month'),
+                                            Forms\Components\Textarea::make('body_ar')
+                                                ->label('النص عربي')
+                                                ->rows(3)
+                                                ->maxLength(200)
+                                                ->placeholder('أحمد علي — أعلى تقييم…'),
+                                            Forms\Components\Textarea::make('body_en')
+                                                ->label('Body English')
+                                                ->rows(3)
+                                                ->maxLength(200),
+                                        ]),
+                                    ]),
                             ]),
 
-                        Forms\Components\Section::make('الزر والوجهة')
-                            ->description('نص الزر (cta.text) ووجهة الضغط (cta.link).')
+                        Forms\Components\Tabs\Tab::make('الأزرار')
                             ->icon('heroicon-o-cursor-arrow-rays')
                             ->schema([
-                                Forms\Components\TextInput::make('cta_text')
-                                    ->label('نص الزر')
-                                    ->placeholder('مثال: عرض السباك · سجّل الآن')
-                                    ->required()
-                                    ->maxLength(80)
-                                    ->columnSpanFull(),
-
-                                Forms\Components\Select::make('link_type')
-                                    ->label('عند الضغط يفتح')
-                                    ->options([
-                                        'home' => 'الرئيسية',
-                                        'auth_login' => 'تسجيل الدخول',
-                                        'auth_register' => 'شاشة التسجيل (اختيار نوع)',
-                                        'auth_register_plumber' => 'تسجيل سباك',
-                                        'auth_register_retail' => 'تسجيل قطاعي',
-                                        'plumber' => 'صفحة سباك',
-                                        'shop' => 'صفحة محل',
-                                        'event' => 'فعالية',
-                                        'product' => 'منتج',
-                                        'product_collection' => 'مجموعة منتجات',
-                                        'product_promotion' => 'إعلان MG',
-                                        'catalog' => 'الكتالوج',
-                                        'wallet' => 'المحفظة',
-                                        'points' => 'النقاط',
-                                        'pending_receipts' => 'بضاعة بانتظار الاستلام',
-                                        'support' => 'الدعم',
-                                        'deep_link' => 'مسار deep link حر',
-                                        'url' => 'رابط خارجي https',
-                                    ])
-                                    ->searchable()
-                                    ->required()
-                                    ->live()
-                                    ->default('home')
-                                    ->columnSpanFull(),
-
-                                Forms\Components\TextInput::make('link_path')
-                                    ->label('مسار الـ deep link')
-                                    ->placeholder('مثال: auth/login أو list/shops أو trader-orders')
-                                    ->helperText('بدون mgplastic:// — التطبيق يبني الرابط تلقائياً')
-                                    ->required(fn (Get $get) => $get('link_type') === 'deep_link')
-                                    ->visible(fn (Get $get) => $get('link_type') === 'deep_link')
-                                    ->columnSpanFull(),
-
-                                Forms\Components\TextInput::make('link_url')
-                                    ->label('الرابط الخارجي')
-                                    ->placeholder('https://…')
-                                    ->url()
-                                    ->prefixIcon('heroicon-o-link')
-                                    ->required(fn (Get $get) => $get('link_type') === 'url')
-                                    ->visible(fn (Get $get) => $get('link_type') === 'url')
-                                    ->columnSpanFull(),
-
-                                Forms\Components\Select::make('link_id')
-                                    ->label(fn (Get $get) => match ($get('link_type')) {
-                                        'plumber' => 'السباك',
-                                        'shop' => 'المحل',
-                                        'event' => 'الفعالية',
-                                        'product_collection' => 'المجموعة',
-                                        'product_promotion' => 'الإعلان',
-                                        'product' => 'المنتج',
-                                        default => 'الهدف',
-                                    })
-                                    ->searchable()
-                                    ->preload()
-                                    ->required(fn (Get $get) => in_array($get('link_type'), [
-                                        'plumber',
-                                        'shop',
-                                        'event',
-                                        'product',
-                                        'product_collection',
-                                        'product_promotion',
-                                    ], true))
-                                    ->options(function (Get $get) {
-                                        return match ($get('link_type')) {
-                                            'plumber' => User::query()
-                                                ->where('role', 'plumber')
-                                                ->where('is_active', true)
-                                                ->orderBy('name')
-                                                ->limit(500)
-                                                ->get()
-                                                ->mapWithKeys(fn (User $u) => [
-                                                    $u->id => trim(($u->name ?: 'سباك').' #'.$u->id),
+                                Forms\Components\Section::make('أزرار البوب أب')
+                                    ->description(fn (Get $get) => $get('kind') === 'poll'
+                                        ? 'كل زرار = إجابة تصويت. خلّي link_type = «بدون — إجابة» وlink فاضية. أول إجابتين يظهروا جنب بعض.'
+                                        : 'رتّب الأزرار · أي ضغط بيقفل البوب أب ويبعت إحصائيات. الوجهة: سباك / محل / منتج / تسجيل / لينك خارجي…')
+                                    ->schema([
+                                        Forms\Components\Repeater::make('buttons')
+                                            ->label('الأزرار')
+                                            ->addActionLabel('إضافة زرار')
+                                            ->reorderable()
+                                            ->collapsible()
+                                            ->cloneable()
+                                            ->defaultItems(1)
+                                            ->itemLabel(fn (array $state): ?string => ($state['text_ar'] ?? $state['id'] ?? null)
+                                                ? trim(($state['id'] ?? '').' — '.($state['text_ar'] ?? ''))
+                                                : null)
+                                            ->schema([
+                                                Forms\Components\Grid::make(3)->schema([
+                                                    Forms\Components\TextInput::make('id')
+                                                        ->label('مفتاح الزرار (للإحصائيات)')
+                                                        ->required()
+                                                        ->maxLength(40)
+                                                        ->placeholder('visit · yes · facebook')
+                                                        ->helperText('في التصويت: yes / no / a / b'),
+                                                    Forms\Components\Select::make('style')
+                                                        ->label('الشكل')
+                                                        ->options([
+                                                            'primary' => 'Primary',
+                                                            'outline' => 'Outline',
+                                                            'ghost' => 'Ghost',
+                                                        ])
+                                                        ->default('primary'),
+                                                    Forms\Components\Select::make('link_type')
+                                                        ->label('الوجهة')
+                                                        ->options([
+                                                            'none' => 'بدون — إجابة تصويت',
+                                                            'plumber' => 'سباك معيّن',
+                                                            'shop' => 'محل معيّن',
+                                                            'product' => 'منتج',
+                                                            'product_promotion' => 'عرض MG',
+                                                            'product_collection' => 'مجموعة منتجات',
+                                                            'event' => 'فعالية',
+                                                            'register' => 'تسجيل حساب (زوار)',
+                                                            'login' => 'تسجيل الدخول',
+                                                            'catalog' => 'الكتالوج',
+                                                            'list_plumbers' => 'كل السباكين',
+                                                            'list_shops' => 'كل المحلات',
+                                                            'list_events' => 'كل الفعاليات',
+                                                            'support' => 'الدعم',
+                                                            'home' => 'الرئيسية',
+                                                            'wallet' => 'المحفظة',
+                                                            'points' => 'النقاط',
+                                                            'pending_receipts' => 'بضاعة بانتظار الاستلام',
+                                                            'deep_link' => 'مسار deep link حر',
+                                                            'url' => 'لينك خارجي (فيسبوك / واتساب / …)',
+                                                        ])
+                                                        ->searchable()
+                                                        ->required()
+                                                        ->live()
+                                                        ->default('none'),
                                                 ]),
-                                            'shop' => User::query()
-                                                ->whereIn('role', ['retail_trader', 'wholesale_distributor'])
-                                                ->where('is_active', true)
-                                                ->orderBy('brand_name')
-                                                ->orderBy('name')
-                                                ->limit(500)
-                                                ->get()
-                                                ->mapWithKeys(fn (User $u) => [
-                                                    $u->id => trim(($u->brand_name ?: $u->name ?: 'محل').' #'.$u->id),
+                                                Forms\Components\Grid::make(2)->schema([
+                                                    Forms\Components\TextInput::make('text_ar')
+                                                        ->label('نص الزرار عربي')
+                                                        ->required()
+                                                        ->maxLength(25),
+                                                    Forms\Components\TextInput::make('text_en')
+                                                        ->label('Button text EN')
+                                                        ->maxLength(25),
                                                 ]),
-                                            'event' => Event::query()
-                                                ->with('translations')
-                                                ->orderByDesc('id')
-                                                ->limit(200)
-                                                ->get()
-                                                ->mapWithKeys(fn (Event $e) => [
-                                                    $e->id => (string) (localized_name($e, 'title', "فعالية #{$e->id}")),
-                                                ]),
-                                            'product_collection' => ProductCollection::query()
-                                                ->where('is_active', true)
-                                                ->orderBy('sort_order')
-                                                ->orderBy('title')
-                                                ->pluck('title', 'id'),
-                                            'product_promotion' => ProductPromotion::query()
-                                                ->where('is_active', true)
-                                                ->orderBy('sort_order')
-                                                ->orderBy('title')
-                                                ->pluck('title', 'id'),
-                                            'product' => Product::query()
-                                                ->with('translations')
-                                                ->orderBy('id')
-                                                ->limit(500)
-                                                ->get()
-                                                ->mapWithKeys(fn (Product $p) => [
-                                                    $p->id => localized_name($p, 'name', "منتج #{$p->id}"),
-                                                ]),
-                                            default => [],
-                                        };
-                                    })
-                                    ->visible(fn (Get $get) => in_array($get('link_type'), [
-                                        'plumber',
-                                        'shop',
-                                        'event',
-                                        'product',
-                                        'product_collection',
-                                        'product_promotion',
-                                    ], true))
-                                    ->columnSpanFull(),
+                                                Forms\Components\Select::make('link_id')
+                                                    ->label(fn (Get $get) => match ($get('link_type')) {
+                                                        'plumber' => 'اختر السباك',
+                                                        'shop' => 'اختر المحل',
+                                                        'event' => 'اختر الفعالية',
+                                                        'product' => 'اختر المنتج',
+                                                        'product_collection' => 'اختر المجموعة',
+                                                        'product_promotion' => 'اختر العرض',
+                                                        default => 'الهدف',
+                                                    })
+                                                    ->searchable()
+                                                    ->preload()
+                                                    ->required(fn (Get $get) => in_array($get('link_type'), [
+                                                        'plumber', 'shop', 'event', 'product',
+                                                        'product_collection', 'product_promotion',
+                                                    ], true))
+                                                    ->options(fn (Get $get) => self::linkTargetOptions((string) $get('link_type')))
+                                                    ->visible(fn (Get $get) => in_array($get('link_type'), [
+                                                        'plumber', 'shop', 'event', 'product',
+                                                        'product_collection', 'product_promotion',
+                                                    ], true)),
+                                                Forms\Components\TextInput::make('link_path')
+                                                    ->label('مسار deep link')
+                                                    ->placeholder('trader-orders أو plumber-orders/new')
+                                                    ->visible(fn (Get $get) => $get('link_type') === 'deep_link'),
+                                                Forms\Components\TextInput::make('link_url')
+                                                    ->label('لينك خارجي')
+                                                    ->placeholder('https://facebook.com/… · https://wa.me/2189… · tel:+2189…')
+                                                    ->visible(fn (Get $get) => $get('link_type') === 'url'),
+                                            ])
+                                            ->columnSpanFull(),
+                                    ]),
                             ]),
-                    ])
-                    ->columnSpan(['lg' => 2]),
 
-                Forms\Components\Group::make()
-                    ->schema([
-                        Forms\Components\Section::make('الجمهور والجدولة')
+                        Forms\Components\Tabs\Tab::make('الجمهور والجدولة')
                             ->icon('heroicon-o-user-group')
                             ->schema([
-                                Forms\Components\CheckboxList::make('target_roles')
-                                    ->label('يظهر لـ')
-                                    ->options([
-                                        'guest' => 'زائر / ضيف (بدون توكن)',
-                                        'plumber' => 'سباك',
-                                        'retail_trader' => 'تاجر قطاعي',
-                                        'wholesale_distributor' => 'موزع جملة',
-                                    ])
-                                    ->columns(1)
-                                    ->required()
-                                    ->default(['guest'])
-                                    ->helperText('للمحتوى المختلف لكل دور: اعمل إعلاناً منفصلاً واختر دوراً واحداً فقط'),
+                                Forms\Components\Section::make('مين يشوفه؟')
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('target_roles')
+                                            ->label('الأدوار')
+                                            ->options([
+                                                'guest' => 'زائر / ضيف (بدون توكن)',
+                                                'plumber' => 'سباك',
+                                                'retail_trader' => 'تاجر قطاعي (و vendor)',
+                                                'wholesale_distributor' => 'موزع جملة',
+                                            ])
+                                            ->columns(2)
+                                            ->required()
+                                            ->default(['guest'])
+                                            ->helperText('اعمل بوب أب منفصل لكل جمهور لو المحتوى مختلف'),
 
-                                Forms\Components\ToggleButtons::make('frequency')
-                                    ->label('تكرار العرض')
-                                    ->options([
-                                        'once' => 'مرة واحدة (بعد الإغلاق)',
-                                        'once_per_day' => 'مرة يومياً',
-                                        'every_open' => 'كل فتح للرئيسية',
-                                    ])
-                                    ->inline()
-                                    ->required()
-                                    ->default('once')
-                                    ->columnSpanFull(),
+                                        Forms\Components\Select::make('test_user_ids')
+                                            ->label('حسابات تجربة فقط (اختياري)')
+                                            ->multiple()
+                                            ->searchable()
+                                            ->preload()
+                                            ->options(fn () => User::query()
+                                                ->whereIn('role', ['plumber', 'retail_trader', 'wholesale_distributor', 'vendor'])
+                                                ->where('is_active', true)
+                                                ->orderBy('name')
+                                                ->limit(300)
+                                                ->get()
+                                                ->mapWithKeys(fn (User $u) => [
+                                                    $u->id => trim(($u->name ?: 'مستخدم').' · '.$u->role.' #'.$u->id),
+                                                ]))
+                                            ->helperText('لو اخترت حسابات: البوب أب يظهر لهم بس قبل النشر للكل'),
+                                    ]),
 
-                                Forms\Components\Toggle::make('dismissible')
-                                    ->label('يمكن إغلاقه بـ ✕')
-                                    ->default(true)
-                                    ->inline(false),
+                                Forms\Components\Section::make('الظهور والإغلاق')
+                                    ->schema([
+                                        Forms\Components\ToggleButtons::make('show')
+                                            ->label('التكرار')
+                                            ->options([
+                                                'once' => 'مرة واحدة',
+                                                'daily' => 'مرة يومياً',
+                                                'always' => 'كل فتح',
+                                            ])
+                                            ->inline()
+                                            ->required()
+                                            ->default('once')
+                                            ->helperText('التصويت يختفي بعد الإجابة بغض النظر عن التكرار'),
 
-                                Forms\Components\DateTimePicker::make('starts_at')
-                                    ->label('يبدأ من')
-                                    ->seconds(false)
-                                    ->native(false),
+                                        Forms\Components\Toggle::make('dismissible')
+                                            ->label('يمكن الإغلاق (× / لاحقاً / برة الكارت)')
+                                            ->default(true)
+                                            ->inline(false)
+                                            ->helperText('عطّله في التصويت الإجباري'),
 
-                                Forms\Components\DateTimePicker::make('ends_at')
-                                    ->label('ينتهي في')
-                                    ->seconds(false)
-                                    ->native(false),
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\TextInput::make('dismiss_text_ar')
+                                                ->label('نص «لاحقاً» عربي')
+                                                ->placeholder('لاحقاً')
+                                                ->maxLength(40)
+                                                ->helperText('اتركه فاضي = الافتراضي · اكتب فراغ مقصود بـ "" من الـ API لإخفاء الزرار'),
+                                            Forms\Components\TextInput::make('dismiss_text_en')
+                                                ->label('Dismiss text EN')
+                                                ->placeholder('Later')
+                                                ->maxLength(40),
+                                        ]),
 
-                                Forms\Components\Toggle::make('is_active')
-                                    ->label('ظاهر في التطبيق')
-                                    ->helperText('عطّله لإخفاء الإعلان دون حذفه.')
-                                    ->default(true)
-                                    ->inline(false),
+                                        Forms\Components\Grid::make(2)->schema([
+                                            Forms\Components\DateTimePicker::make('starts_at')
+                                                ->label('من (توقيت ليبيا UTC+2)')
+                                                ->seconds(false)
+                                                ->native(false),
+                                            Forms\Components\DateTimePicker::make('ends_at')
+                                                ->label('إلى')
+                                                ->seconds(false)
+                                                ->native(false),
+                                        ]),
 
-                                Forms\Components\TextInput::make('sort_order')
-                                    ->label('الأولوية')
-                                    ->numeric()
-                                    ->minValue(0)
-                                    ->default(0)
-                                    ->helperText('الأعلى يظهر أولاً لو فيه أكتر من إعلان لنفس الدور'),
-                            ]),
+                                        Forms\Components\TextInput::make('sort_order')
+                                            ->label('الأولوية')
+                                            ->numeric()
+                                            ->default(0)
+                                            ->helperText('الأعلى يظهر لو فيه أكتر من بوب أب لنفس الدور'),
 
-                        Forms\Components\Section::make('للتطبيق')
-                            ->icon('heroicon-o-device-phone-mobile')
-                            ->schema([
-                                Forms\Components\Placeholder::make('api_hint')
-                                    ->label('')
-                                    ->content('GET /api/v1/mobile/home/popup — Bearer اختياري · ?role=guest'),
-                                Forms\Components\Placeholder::make('roles_hint')
-                                    ->label('')
-                                    ->content('الأدوار: '.implode(' · ', HomeMobileLayoutService::ROLES)),
+                                        Forms\Components\Toggle::make('is_active')
+                                            ->label('مفعّل — ظاهر في التطبيق')
+                                            ->default(true)
+                                            ->inline(false)
+                                            ->helperText('إيقافه → popup: null فوراً'),
+
+                                        Forms\Components\Placeholder::make('version_info')
+                                            ->label('رقم الإصدار الحالي')
+                                            ->content(fn (?HomePopup $record) => 'version = '.((int) ($record?->version ?? 1))),
+
+                                        Forms\Components\Checkbox::make('rebroadcast')
+                                            ->label('اعرضه تاني للي شافوه (يزيد version)')
+                                            ->helperText('تصليح إملائي عادي ما يزودش الإصدار — فعّل ده بس لو عايز يظهر من جديد')
+                                            ->dehydrated(false)
+                                            ->visible(fn (?HomePopup $record) => $record !== null),
+                                    ]),
                             ]),
                     ])
-                    ->columnSpan(['lg' => 1]),
-            ])
-            ->columns(3);
+                    ->columnSpanFull()
+                    ->persistTabInQueryString(),
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -342,47 +413,21 @@ class HomePopupResource extends Resource
                     ->label('صورة')
                     ->disk('public')
                     ->square()
-                    ->size(72),
-
-                Tables\Columns\TextColumn::make('title')
+                    ->size(64),
+                Tables\Columns\TextColumn::make('title_ar')
                     ->label('العنوان')
                     ->placeholder('—')
                     ->searchable()
                     ->weight('bold')
-                    ->wrap()
-                    ->limit(40),
-
-                Tables\Columns\TextColumn::make('cta_text')
-                    ->label('الزر')
-                    ->limit(24),
-
+                    ->description(fn (HomePopup $r) => 'v'.((int) $r->version).' · '.$r->kind),
                 Tables\Columns\TextColumn::make('kind')
                     ->label('النوع')
                     ->badge()
-                    ->formatStateUsing(fn (string $state) => match ($state) {
-                        'promo' => 'عرض',
-                        'announcement' => 'تنويه',
-                        'event' => 'فعالية',
-                        'feature' => 'مميز',
-                        'auth' => 'تسجيل',
-                        default => $state,
-                    }),
-
-                Tables\Columns\TextColumn::make('layout')
-                    ->label('الشكل')
-                    ->badge()
-                    ->color('gray')
-                    ->formatStateUsing(fn (?string $state) => match ($state) {
-                        'card' => 'بطاقة',
-                        'auth' => 'تسجيل',
-                        'announce' => 'تنويه',
-                        default => 'صورة كاملة',
-                    }),
-
+                    ->formatStateUsing(fn (string $s) => $s === 'poll' ? 'تصويت' : 'إعلان')
+                    ->color(fn (string $s) => $s === 'poll' ? 'warning' : 'primary'),
                 Tables\Columns\TextColumn::make('target_roles')
                     ->label('الجمهور')
                     ->formatStateUsing(function ($state) {
-                        $roles = is_array($state) ? $state : [];
                         $labels = [
                             'guest' => 'زائر',
                             'plumber' => 'سباك',
@@ -390,38 +435,30 @@ class HomePopupResource extends Resource
                             'wholesale_distributor' => 'جملة',
                         ];
 
-                        return collect($roles)->map(fn ($r) => $labels[$r] ?? $r)->implode(' · ') ?: '—';
-                    })
-                    ->wrap(),
-
+                        return collect(is_array($state) ? $state : [])
+                            ->map(fn ($r) => $labels[$r] ?? $r)
+                            ->implode(' · ') ?: '—';
+                    }),
+                Tables\Columns\TextColumn::make('show')
+                    ->label('تكرار')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $s) => match ($s) {
+                        'daily' => 'يومياً',
+                        'always' => 'كل فتح',
+                        default => 'مرة',
+                    }),
+                Tables\Columns\IconColumn::make('is_active')
+                    ->label('مفعّل')
+                    ->boolean(),
                 Tables\Columns\TextColumn::make('sort_order')
                     ->label('أولوية')
-                    ->sortable()
-                    ->alignCenter(),
-
-                Tables\Columns\IconColumn::make('is_active')
-                    ->label('ظاهر')
-                    ->boolean(),
-
-                Tables\Columns\TextColumn::make('ends_at')
-                    ->label('ينتهي')
-                    ->dateTime('Y-m-d H:i')
-                    ->placeholder('—')
-                    ->toggleable(),
+                    ->sortable(),
             ])
             ->defaultSort('sort_order', 'desc')
             ->filters([
                 Tables\Filters\SelectFilter::make('kind')
-                    ->label('النوع')
-                    ->options([
-                        'promo' => 'عرض',
-                        'announcement' => 'تنويه',
-                        'event' => 'فعالية',
-                        'feature' => 'مميز',
-                        'auth' => 'تسجيل',
-                    ]),
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('ظاهر في التطبيق'),
+                    ->options(['announcement' => 'إعلان', 'poll' => 'تصويت']),
+                Tables\Filters\TernaryFilter::make('is_active')->label('مفعّل'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()->label('تعديل'),
@@ -432,9 +469,9 @@ class HomePopupResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->emptyStateHeading('لا توجد إعلانات بعد')
-            ->emptyStateDescription('أضف إعلاناً منبثقاً ليظهر عند فتح الرئيسية في التطبيق.')
-            ->emptyStateIcon('heroicon-o-rectangle-stack');
+            ->emptyStateHeading('مفيش بوب أب بعد')
+            ->emptyStateDescription('أضف إعلاناً أو تصويتاً يظهر أول ما المستخدم يفتح الرئيسية.')
+            ->emptyStateIcon('heroicon-o-sparkles');
     }
 
     public static function getPages(): array
@@ -444,5 +481,34 @@ class HomePopupResource extends Resource
             'create' => Pages\CreateHomePopup::route('/create'),
             'edit' => Pages\EditHomePopup::route('/{record}/edit'),
         ];
+    }
+
+    /** @return array<int|string, string> */
+    protected static function linkTargetOptions(string $linkType): array
+    {
+        return match ($linkType) {
+            'plumber' => User::query()
+                ->where('role', 'plumber')->where('is_active', true)
+                ->orderBy('name')->limit(500)->get()
+                ->mapWithKeys(fn (User $u) => [$u->id => trim(($u->name ?: 'سباك').' #'.$u->id)])
+                ->all(),
+            'shop' => User::query()
+                ->whereIn('role', ['retail_trader', 'wholesale_distributor', 'vendor'])
+                ->where('is_active', true)
+                ->orderBy('brand_name')->orderBy('name')->limit(500)->get()
+                ->mapWithKeys(fn (User $u) => [$u->id => trim(($u->brand_name ?: $u->name ?: 'محل').' #'.$u->id)])
+                ->all(),
+            'event' => Event::query()->with('translations')->orderByDesc('id')->limit(200)->get()
+                ->mapWithKeys(fn (Event $e) => [$e->id => (string) localized_name($e, 'title', "فعالية #{$e->id}")])
+                ->all(),
+            'product_collection' => ProductCollection::query()->where('is_active', true)
+                ->orderBy('sort_order')->orderBy('title')->pluck('title', 'id')->all(),
+            'product_promotion' => ProductPromotion::query()->where('is_active', true)
+                ->orderBy('sort_order')->orderBy('title')->pluck('title', 'id')->all(),
+            'product' => Product::query()->with('translations')->orderBy('id')->limit(500)->get()
+                ->mapWithKeys(fn (Product $p) => [$p->id => localized_name($p, 'name', "منتج #{$p->id}")])
+                ->all(),
+            default => [],
+        };
     }
 }

@@ -109,7 +109,7 @@ class HomeMobileLayoutService
      *
      * @return array<string, mixed>
      */
-    public function layoutPayload(?string $role = null, ?User $user = null): array
+    public function layoutPayload(?string $role = null, ?User $user = null, string $locale = 'ar'): array
     {
         $this->ensureSeeded();
         $role = $this->normalizeRole($role, $user);
@@ -152,7 +152,12 @@ class HomeMobileLayoutService
         });
 
         // Live count — not cached so receive clears the badge immediately.
-        return $this->applyPendingReceiptsBadge($payload, $user);
+        $payload = $this->applyPendingReceiptsBadge($payload, $user);
+
+        // Popup is live (not cached) so admin pause/publish is instant.
+        $payload['popup'] = \App\Models\HomePopup::mobilePayloadFor($role, $user, $locale);
+
+        return $payload;
     }
 
     /**
@@ -227,7 +232,7 @@ class HomeMobileLayoutService
             if ($user->isPlumber()) {
                 return 'plumber';
             }
-            if ($user->isRetailTrader()) {
+            if ($user->isRetailTrader() || $user->isVendor()) {
                 return 'retail_trader';
             }
             if ($user->isWholesaleDistributor()) {
@@ -236,6 +241,9 @@ class HomeMobileLayoutService
         }
 
         $role = strtolower(trim((string) $role));
+        if ($role === 'vendor') {
+            $role = 'retail_trader';
+        }
 
         return in_array($role, self::ROLES, true) ? $role : 'guest';
     }
