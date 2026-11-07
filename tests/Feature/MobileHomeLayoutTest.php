@@ -258,4 +258,44 @@ class MobileHomeLayoutTest extends TestCase
         $this->assertNotEmpty($traderMain['items']);
         $this->assertStringContainsString('product_type', $traderMain['items'][0]['link']);
     }
+
+    public function test_plumber_home_stores_lists_retail_traders_only(): void
+    {
+        app(HomeMobileLayoutService::class)->ensureSeeded();
+
+        $retail = User::factory()->create([
+            'role' => 'retail_trader',
+            'is_approved' => true,
+            'is_active' => true,
+            'brand_name' => 'قطاعي تجريبي',
+        ]);
+        User::factory()->create([
+            'role' => 'wholesale_distributor',
+            'is_approved' => true,
+            'is_active' => true,
+            'brand_name' => 'جملة تجريبي',
+            'is_central_warehouse' => false,
+        ]);
+        User::factory()->create([
+            'role' => 'wholesale_distributor',
+            'is_approved' => true,
+            'is_active' => true,
+            'brand_name' => 'مخزن الدعوة',
+            'is_central_warehouse' => true,
+        ]);
+
+        $plumber = User::factory()->create(['role' => 'plumber', 'is_approved' => true, 'is_active' => true]);
+        Sanctum::actingAs($plumber);
+        app(HomeMobileLayoutService::class)->forgetCache();
+
+        $stores = collect($this->getJson('/api/v1/mobile/home/layout')->json('data.sections'))
+            ->firstWhere('type', 'stores');
+
+        $this->assertNotNull($stores);
+        $ids = collect($stores['items'] ?? [])->pluck('id')->all();
+        $roles = collect($stores['items'] ?? [])->pluck('role')->unique()->values()->all();
+
+        $this->assertContains($retail->id, $ids);
+        $this->assertSame(['retail_trader'], $roles);
+    }
 }
