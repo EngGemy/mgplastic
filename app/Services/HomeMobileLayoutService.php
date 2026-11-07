@@ -121,7 +121,7 @@ class HomeMobileLayoutService
             $cacheKey .= ':u'.$user->id;
         }
 
-        return Cache::remember($cacheKey, 60, function () use ($role, $user, $settings) {
+        $payload = Cache::remember($cacheKey, 60, function () use ($role, $user, $settings) {
             $legacy = $settings->toApiLayout();
             $productTypes = app(ProductTypeService::class)->catalogForHome();
             $highlights = $this->mapHighlightsForApi();
@@ -150,6 +150,75 @@ class HomeMobileLayoutService
                 ],
             ];
         });
+
+        // Live count — not cached so receive clears the badge immediately.
+        return $this->applyPendingReceiptsBadge($payload, $user);
+    }
+
+    /**
+     * Overlay pending-receipt badge_count on home sections (and quick-link tiles).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function applyPendingReceiptsBadge(array $payload, ?User $user): array
+    {
+        $pending = app(PendingReceiptsService::class);
+        $count = $pending->countFor($user);
+        $sections = is_array($payload['sections'] ?? null) ? $payload['sections'] : [];
+        $out = [];
+
+        foreach ($sections as $section) {
+            if (! is_array($section)) {
+                continue;
+            }
+
+            $type = (string) ($section['type'] ?? '');
+
+            if ($type === 'pending_receipts') {
+                if ($count < 1) {
+                    continue;
+                }
+
+                $settings = is_array($section['settings'] ?? null)
+                    ? $section['settings']
+                    : (array) ($section['settings'] ?? []);
+                $settings['link'] = PendingReceiptsService::DEEP_LINK;
+                $settings['deep_link'] = PendingReceiptsService::DEEP_LINK;
+
+                $section['badge_count'] = $count;
+                $section['settings'] = (object) $settings;
+                $section['items'] = $pending->homeItems($count);
+                $out[] = $section;
+
+                continue;
+            }
+
+            if (in_array($type, ['quick_actions', 'shop_quick_links'], true) && is_array($section['items'] ?? null)) {
+                $section['items'] = array_map(function ($item) use ($count) {
+                    if (! is_array($item)) {
+                        return $item;
+                    }
+                    $key = (string) ($item['key'] ?? '');
+                    $link = (string) ($item['link'] ?? '');
+                    if ($key === 'pendingReceipts' || str_contains($link, 'pending-receipts')) {
+                        $item['badge_count'] = $count;
+                        $item['deep_link'] = PendingReceiptsService::DEEP_LINK;
+                        if ($link === '') {
+                            $item['link'] = PendingReceiptsService::DEEP_LINK;
+                        }
+                    }
+
+                    return $item;
+                }, $section['items']);
+            }
+
+            $out[] = $section;
+        }
+
+        $payload['sections'] = $out;
+
+        return $payload;
     }
 
     public function normalizeRole(?string $role, ?User $user = null): string
