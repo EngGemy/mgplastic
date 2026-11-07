@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Distributor;
 
 use App\Http\Controllers\Api\Concerns\ApiResponds;
 use App\Http\Controllers\Controller;
+use App\Models\ProductTag;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\RetailDistributionPosService;
@@ -31,6 +32,7 @@ class PosController extends Controller
             $items = $this->inventory
                 ->sortStockByTag($this->inventory->stockForWholesaler($request->user()), $sizeOrder)
                 ->values();
+            $items = ProductTag::decorateItemsWithGroupIconUrl($items);
 
             return [
                 'items' => $items,

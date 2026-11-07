@@ -100,7 +100,7 @@ class ProductTagImageResource extends Resource
                         ->openable()
                         ->downloadable()
                         ->nullable()
-                        ->helperText('صورة مربعة للتطبيق. عند الحفظ تُطبَّق على كل تاج بنفس الاسم.')
+                        ->helperText('صورة مربعة للتطبيق. عند الحفظ تُطبَّق على تاجات بنفس الاسم داخل نفس النظام فقط (أمريكي/أوروبي منفصلان).')
                         ->columnSpanFull(),
                 ]),
         ]);
@@ -199,7 +199,10 @@ class ProductTagImageResource extends Resource
         ];
     }
 
-    /** Copy image to every tag that shares the same name (case-insensitive). */
+    /**
+     * Copy image to same-name tags within the same system category tree only
+     * (American vs European «1 بوصه» keep separate images).
+     */
     public static function syncImageToSameNameTags(ProductTag $tag): int
     {
         $name = mb_strtolower(trim((string) $tag->name));
@@ -207,8 +210,26 @@ class ProductTagImageResource extends Resource
             return 0;
         }
 
+        $tag->loadMissing('category');
+        $systemId = (int) ($tag->category?->parent_id ?: $tag->product_category_id);
+        if ($systemId <= 0) {
+            return 0;
+        }
+
+        $scopeIds = ProductCategory::query()
+            ->whereKey($systemId)
+            ->orWhere('parent_id', $systemId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($scopeIds === []) {
+            return 0;
+        }
+
         return (int) ProductTag::query()
             ->whereRaw('LOWER(name) = ?', [$name])
+            ->whereIn('product_category_id', $scopeIds)
             ->where('id', '!=', $tag->id)
             ->update(['image' => $tag->image]);
     }

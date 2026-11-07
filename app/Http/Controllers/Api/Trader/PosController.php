@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Trader;
 
 use App\Http\Controllers\Api\Concerns\ApiResponds;
 use App\Http\Controllers\Controller;
+use App\Models\ProductTag;
 use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\PlumberDistributionPosService;
@@ -37,6 +38,7 @@ class PosController extends Controller
             $items = $this->inventory
                 ->sortStockByTag($stock->map(fn (array $row) => $this->mapOwnStockRow($row)), $sizeOrder)
                 ->values();
+            $items = ProductTag::decorateItemsWithGroupIconUrl($items);
 
             return [
                 'items' => $items,
@@ -103,6 +105,7 @@ class PosController extends Controller
                 ];
             }), $sizeOrder)
             ->values();
+        $items = ProductTag::decorateItemsWithGroupIconUrl($items);
 
         return $this->success([
             'wholesaler' => [
