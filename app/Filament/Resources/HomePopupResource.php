@@ -55,7 +55,7 @@ class HomePopupResource extends Resource
                 Forms\Components\Group::make()
                     ->schema([
                         Forms\Components\Section::make('محتوى الإعلان')
-                            ->description('الصورة والعنوان اللي تظهر في الـ popup أول ما يفتح المستخدم الرئيسية.')
+                            ->description('اعمل إعلاناً منفصلاً لكل جمهور (ضيف / سباك / قطاعي / جملة) عشان كل واحد يشوف محتوى وشكل مختلف.')
                             ->icon('heroicon-o-megaphone')
                             ->schema([
                                 Forms\Components\TextInput::make('title')
@@ -97,6 +97,26 @@ class HomePopupResource extends Resource
                                     ->inline()
                                     ->required()
                                     ->default('promo')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\ToggleButtons::make('layout')
+                                    ->label('شكل العرض في التطبيق')
+                                    ->options([
+                                        'hero' => 'صورة كاملة + زر',
+                                        'card' => 'بطاقة بصورة وعنوان',
+                                        'auth' => 'دعوة تسجيل (ضيف)',
+                                        'announce' => 'تنويه نصّي',
+                                    ])
+                                    ->icons([
+                                        'hero' => 'heroicon-o-photo',
+                                        'card' => 'heroicon-o-rectangle-group',
+                                        'auth' => 'heroicon-o-user-plus',
+                                        'announce' => 'heroicon-o-bell-alert',
+                                    ])
+                                    ->inline()
+                                    ->required()
+                                    ->default('hero')
+                                    ->helperText('كل جمهور يقدر ياخد شكل مختلف — مثلاً الضيف auth والسباك hero')
                                     ->columnSpanFull(),
                             ]),
 
@@ -247,7 +267,7 @@ class HomePopupResource extends Resource
                                 Forms\Components\CheckboxList::make('target_roles')
                                     ->label('يظهر لـ')
                                     ->options([
-                                        'guest' => 'زائر (بدون توكن)',
+                                        'guest' => 'زائر / ضيف (بدون توكن)',
                                         'plumber' => 'سباك',
                                         'retail_trader' => 'تاجر قطاعي',
                                         'wholesale_distributor' => 'موزع جملة',
@@ -255,7 +275,7 @@ class HomePopupResource extends Resource
                                     ->columns(1)
                                     ->required()
                                     ->default(['guest'])
-                                    ->helperText('لازم تختار دور واحد على الأقل'),
+                                    ->helperText('للمحتوى المختلف لكل دور: اعمل إعلاناً منفصلاً واختر دوراً واحداً فقط'),
 
                                 Forms\Components\ToggleButtons::make('frequency')
                                     ->label('تكرار العرض')
@@ -346,6 +366,17 @@ class HomePopupResource extends Resource
                         'feature' => 'مميز',
                         'auth' => 'تسجيل',
                         default => $state,
+                    }),
+
+                Tables\Columns\TextColumn::make('layout')
+                    ->label('الشكل')
+                    ->badge()
+                    ->color('gray')
+                    ->formatStateUsing(fn (?string $state) => match ($state) {
+                        'card' => 'بطاقة',
+                        'auth' => 'تسجيل',
+                        'announce' => 'تنويه',
+                        default => 'صورة كاملة',
                     }),
 
                 Tables\Columns\TextColumn::make('target_roles')

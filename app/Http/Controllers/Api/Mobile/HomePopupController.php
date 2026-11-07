@@ -29,6 +29,6 @@ class HomePopupController extends Controller
             return $this->success(null, 'لا يوجد إعلان');
         }
 
-        return $this->success($popup->toMobilePayload(), 'إعلان الرئيسية');
+        return $this->success($popup->toMobilePayload($role), 'إعلان الرئيسية');
     }
 }
