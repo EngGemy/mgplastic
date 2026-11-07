@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\OcrTermAliasResource\Pages;
 
 use App\Filament\Resources\OcrTermAliasResource;
+use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 
 class ListOcrTermAliases extends ListRecords
@@ -16,6 +17,15 @@ class ListOcrTermAliases extends ListRecords
 
     public function getSubheading(): ?string
     {
-        return 'اعتماد أو رفض مرادفات تعلّمها النظام من تصحيحات المستخدمين. المعلّقة تقترح فقط ولا تُقبل تلقائياً.';
+        return 'أضف كلمة أو مرادفاً يدوياً واربطه بمسار العائلة، أو اعتمد/ارفض ما تعلّمه النظام من تصحيحات المستخدمين. المعلّقة تقترح فقط ولا تُقبل تلقائياً.';
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Actions\CreateAction::make()
+                ->label('إضافة كلمة')
+                ->icon('heroicon-o-plus'),
+        ];
     }
 }
