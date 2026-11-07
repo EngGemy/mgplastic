@@ -165,22 +165,128 @@ class ProductTagGroupsSortApiTest extends TestCase
 
         \Illuminate\Support\Facades\Storage::fake('public');
         \Illuminate\Support\Facades\Storage::disk('public')->put('tags/one-inch.png', 'fake-image');
+        $this->makePublicStorageReachable('tags/one-inch.png', 'fake-image');
 
         $tag = ProductTag::query()->where('name', '1 بوصه')->firstOrFail();
         $tag->forceFill(['image' => 'tags/one-inch.png'])->save();
 
-        $groups = $this->getJson('/api/v1/mobile/trader/products?category_id='.$cat->id.'&grouped=1')
-            ->assertOk()
-            ->json('groups') ?? [];
+        $res = $this->getJson('/api/v1/mobile/trader/products?category_id='.$cat->id.'&grouped=1')
+            ->assertOk();
 
+        $groups = $res->json('groups') ?? [];
         $one = collect($groups)->firstWhere('tag', '1 بوصه');
         $this->assertNotNull($one);
         $this->assertArrayHasKey('icon_url', $one);
         $this->assertArrayHasKey('image_url', $one);
-        // With Storage::fake, PublicStorageUrl may still return null if /storage link check fails —
-        // at minimum the keys must exist so mobile can bind dynamically.
-        $this->assertTrue(array_key_exists('icon_url', $one));
+        $this->assertArrayHasKey('group_icon_url', $one);
         $this->assertSame($one['icon_url'], $one['image_url']);
+        $this->assertSame($one['icon_url'], $one['group_icon_url']);
+        $this->assertNotNull($one['icon_url']);
+        $this->assertStringStartsWith('https://', $one['icon_url']);
+
+        $item = collect($res->json('data.items') ?? $res->json('items') ?? [])
+            ->firstWhere('tag', '1 بوصه');
+        $this->assertNotNull($item);
+        $this->assertSame($one['group_icon_url'], $item['group_icon_url']);
+    }
+
+    public function test_group_icon_url_matches_tag_plus_system_category_not_name_alone(): void
+    {
+        $plumber = User::factory()->create([
+            'role' => 'plumber',
+            'is_approved' => true,
+            'is_active' => true,
+            'is_phone_verified' => true,
+        ]);
+        Sanctum::actingAs($plumber);
+
+        $american = ProductCategory::factory()->create();
+        $american->translateOrNew('ar')->name = 'حسب النظام الامريكي';
+        $american->save();
+
+        $european = ProductCategory::factory()->create();
+        $european->translateOrNew('ar')->name = 'حسب النظام الاوروبي';
+        $european->save();
+
+        $usProduct = Product::factory()->create([
+            'product_category_id' => $american->id,
+            'points_per_unit' => 1,
+        ]);
+        $usProduct->translateOrNew('ar')->name = 'ماسورة 1 بوصة امريكي';
+        $usProduct->save();
+        ProductTag::syncNamesOntoProduct($usProduct, ['1 بوصه']);
+
+        $euProduct = Product::factory()->create([
+            'product_category_id' => $european->id,
+            'points_per_unit' => 1,
+        ]);
+        $euProduct->translateOrNew('ar')->name = 'ماسورة 1 بوصة اوروبي';
+        $euProduct->save();
+        ProductTag::syncNamesOntoProduct($euProduct, ['1 بوصه']);
+
+        $noImageProduct = Product::factory()->create([
+            'product_category_id' => $american->id,
+            'points_per_unit' => 1,
+        ]);
+        $noImageProduct->translateOrNew('ar')->name = 'ماسورة 2 بوصة';
+        $noImageProduct->save();
+        ProductTag::syncNamesOntoProduct($noImageProduct, ['2 بوصه']);
+
+        \Illuminate\Support\Facades\Storage::fake('public');
+        \Illuminate\Support\Facades\Storage::disk('public')->put('tags/us-1.png', 'us');
+        \Illuminate\Support\Facades\Storage::disk('public')->put('tags/eu-1.png', 'eu');
+        $this->makePublicStorageReachable('tags/us-1.png', 'us');
+        $this->makePublicStorageReachable('tags/eu-1.png', 'eu');
+        \App\Support\PublicStorageUrl::flushCache();
+
+        ProductTag::query()
+            ->where('name', '1 بوصه')
+            ->where('product_category_id', $american->id)
+            ->update(['image' => 'tags/us-1.png']);
+        ProductTag::query()
+            ->where('name', '1 بوصه')
+            ->where('product_category_id', $european->id)
+            ->update(['image' => 'tags/eu-1.png']);
+
+        $usRes = $this->getJson(
+            '/api/v1/mobile/plumber/products?category_id='.$american->id.'&per_page=50'
+        )->assertOk();
+
+        $usItems = collect($usRes->json('data.items') ?? $usRes->json('items') ?? []);
+        $usOne = $usItems->firstWhere('id', $usProduct->id);
+        $usTwo = $usItems->firstWhere('id', $noImageProduct->id);
+
+        $this->assertNotNull($usOne);
+        $this->assertArrayHasKey('group_icon_url', $usOne);
+        $this->assertNotNull($usOne['group_icon_url']);
+        $this->assertStringStartsWith('https://', $usOne['group_icon_url']);
+        $this->assertStringContainsString('tags/us-1.png', $usOne['group_icon_url']);
+        $this->assertNotNull($usTwo);
+        $this->assertArrayHasKey('group_icon_url', $usTwo);
+        $this->assertNull($usTwo['group_icon_url']);
+
+        $euRes = $this->getJson(
+            '/api/v1/mobile/plumber/products?category_id='.$european->id.'&per_page=50'
+        )->assertOk();
+
+        $euOne = collect($euRes->json('data.items') ?? $euRes->json('items') ?? [])
+            ->firstWhere('id', $euProduct->id);
+
+        $this->assertNotNull($euOne);
+        $this->assertNotNull($euOne['group_icon_url']);
+        $this->assertStringContainsString('tags/eu-1.png', $euOne['group_icon_url']);
+        $this->assertNotSame($usOne['group_icon_url'], $euOne['group_icon_url']);
+    }
+
+    private function makePublicStorageReachable(string $relative, string $contents): void
+    {
+        $link = public_path('storage');
+        if (! is_link($link) && ! is_dir($link)) {
+            @mkdir($link, 0777, true);
+        }
+        $full = public_path('storage/'.$relative);
+        @mkdir(dirname($full), 0777, true);
+        @file_put_contents($full, $contents);
     }
 
     public function test_paginated_catalog_still_returns_full_sorted_groups(): void

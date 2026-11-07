@@ -34,14 +34,112 @@ class ProductTag extends Model
         return $this->belongsToMany(Product::class, 'product_tag');
     }
 
-    /** Absolute accordion icon URL, or null when missing. */
+    /** Absolute accordion icon URL (https), or null when missing. */
     public function resolvedImageUrl(): ?string
     {
-        return PublicStorageUrl::try($this->image);
+        return self::absoluteHttpsUrl(PublicStorageUrl::try($this->image));
     }
 
     /**
-     * Attach image_url / icon_url onto tag accordion groups (size sections).
+     * Attach group_icon_url onto flat catalog / POS items.
+     * Match by tag name + system category (product category, then parent) — never by tag name alone.
+     *
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>|list<array<string, mixed>>  $items
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    public static function decorateItemsWithGroupIconUrl(\Illuminate\Support\Collection|array $items): \Illuminate\Support\Collection
+    {
+        $items = collect($items);
+        if ($items->isEmpty()) {
+            return $items;
+        }
+
+        $names = [];
+        $categoryIds = [];
+        foreach ($items as $row) {
+            $n = trim((string) ($row['tag'] ?? $row['group_name'] ?? ''));
+            if ($n !== '') {
+                $names[mb_strtolower($n)] = $n;
+            }
+            foreach ([(int) ($row['category_id'] ?? 0), (int) ($row['parent_category_id'] ?? 0)] as $cid) {
+                if ($cid > 0) {
+                    $categoryIds[$cid] = $cid;
+                }
+            }
+        }
+
+        if ($names === []) {
+            return $items->map(static function (array $row) {
+                $row['group_icon_url'] = $row['group_icon_url'] ?? null;
+
+                return $row;
+            })->values();
+        }
+
+        $itemCatIds = $items
+            ->map(fn (array $r) => (int) ($r['category_id'] ?? 0))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $parentByCat = $itemCatIds === []
+            ? []
+            : ProductCategory::query()
+                ->whereIn('id', $itemCatIds)
+                ->pluck('parent_id', 'id')
+                ->map(fn ($id) => $id ? (int) $id : null)
+                ->all();
+
+        foreach ($parentByCat as $parentId) {
+            if ($parentId) {
+                $categoryIds[$parentId] = $parentId;
+            }
+        }
+
+        /** @var array<string, string> $byCatName categoryId:lowerName => url */
+        $byCatName = [];
+        if ($categoryIds !== []) {
+            $rows = static::query()
+                ->whereIn('name', array_values($names))
+                ->whereIn('product_category_id', array_values($categoryIds))
+                ->whereNotNull('image')
+                ->where('image', '!=', '')
+                ->get(['id', 'product_category_id', 'name', 'image']);
+
+            foreach ($rows as $tag) {
+                $url = $tag->resolvedImageUrl();
+                if (! $url) {
+                    continue;
+                }
+                $byCatName[((int) $tag->product_category_id).':'.mb_strtolower((string) $tag->name)] = $url;
+            }
+        }
+
+        return $items->map(static function (array $row) use ($byCatName, $parentByCat) {
+            $tagName = trim((string) ($row['tag'] ?? $row['group_name'] ?? ''));
+            $key = mb_strtolower($tagName);
+            $catId = (int) ($row['category_id'] ?? 0);
+            $parentId = (int) ($row['parent_category_id'] ?? ($parentByCat[$catId] ?? 0));
+
+            $url = null;
+            if ($key !== '') {
+                if ($catId > 0 && isset($byCatName[$catId.':'.$key])) {
+                    $url = $byCatName[$catId.':'.$key];
+                } elseif ($parentId > 0 && isset($byCatName[$parentId.':'.$key])) {
+                    $url = $byCatName[$parentId.':'.$key];
+                }
+            }
+
+            $row['group_icon_url'] = $url;
+
+            return $row;
+        })->values();
+    }
+
+    /**
+     * Attach image_url / icon_url / group_icon_url onto tag accordion groups (size sections).
+     * Resolved by tag name + category (or preferredCategoryId / parent) — not tag name alone.
      *
      * @param  list<array<string, mixed>>  $groups
      * @return list<array<string, mixed>>
@@ -53,10 +151,15 @@ class ProductTag extends Model
         }
 
         $names = [];
+        $categoryIds = [];
         foreach ($groups as $g) {
             $n = trim((string) ($g['tag'] ?? $g['name'] ?? ''));
             if ($n !== '') {
                 $names[mb_strtolower($n)] = $n;
+            }
+            $cid = (int) ($g['category_id'] ?? $preferredCategoryId ?? 0);
+            if ($cid > 0) {
+                $categoryIds[$cid] = $cid;
             }
         }
 
@@ -64,51 +167,95 @@ class ProductTag extends Model
             return array_map(static function (array $g) {
                 $g['image_url'] = $g['image_url'] ?? null;
                 $g['icon_url'] = $g['icon_url'] ?? ($g['image_url'] ?? null);
+                $g['group_icon_url'] = $g['group_icon_url'] ?? ($g['icon_url'] ?? null);
 
                 return $g;
             }, $groups);
         }
 
-        $rows = static::query()
-            ->whereIn('name', array_values($names))
-            ->get(['id', 'product_category_id', 'name', 'image']);
+        if ($preferredCategoryId) {
+            $categoryIds[$preferredCategoryId] = $preferredCategoryId;
+        }
+
+        $parentByCat = $categoryIds === []
+            ? []
+            : ProductCategory::query()
+                ->whereIn('id', array_values($categoryIds))
+                ->pluck('parent_id', 'id')
+                ->map(fn ($id) => $id ? (int) $id : null)
+                ->all();
+
+        foreach ($parentByCat as $parentId) {
+            if ($parentId) {
+                $categoryIds[$parentId] = $parentId;
+            }
+        }
 
         /** @var array<string, string> $byCatName categoryId:lowerName => url */
         $byCatName = [];
-        /** @var array<string, string> $byName lowerName => url (first with image wins) */
-        $byName = [];
+        $query = static::query()->whereIn('name', array_values($names));
+        if ($categoryIds !== []) {
+            $query->whereIn('product_category_id', array_values($categoryIds));
+        }
+        $rows = $query->get(['id', 'product_category_id', 'name', 'image']);
 
         foreach ($rows as $tag) {
             $url = $tag->resolvedImageUrl();
             if (! $url) {
                 continue;
             }
-            $key = mb_strtolower((string) $tag->name);
-            $byCatName[((int) $tag->product_category_id).':'.$key] = $url;
-            $byName[$key] ??= $url;
+            $byCatName[((int) $tag->product_category_id).':'.mb_strtolower((string) $tag->name)] = $url;
         }
 
-        return array_map(static function (array $g) use ($byCatName, $byName, $preferredCategoryId) {
+        return array_map(static function (array $g) use ($byCatName, $preferredCategoryId, $parentByCat) {
             $tagName = trim((string) ($g['tag'] ?? $g['name'] ?? ''));
             $key = mb_strtolower($tagName);
             $catId = (int) ($g['category_id'] ?? $preferredCategoryId ?? 0);
+            $parentId = (int) ($parentByCat[$catId] ?? 0);
 
             $url = null;
-            if ($catId > 0 && isset($byCatName[$catId.':'.$key])) {
-                $url = $byCatName[$catId.':'.$key];
-            } elseif ($key !== '' && isset($byName[$key])) {
-                $url = $byName[$key];
-            } elseif (! empty($g['image_url'])) {
-                $url = (string) $g['image_url'];
-            } elseif (! empty($g['items'][0]['image'])) {
-                $url = PublicStorageUrl::try((string) $g['items'][0]['image']);
+            if ($key !== '') {
+                if ($catId > 0 && isset($byCatName[$catId.':'.$key])) {
+                    $url = $byCatName[$catId.':'.$key];
+                } elseif ($parentId > 0 && isset($byCatName[$parentId.':'.$key])) {
+                    $url = $byCatName[$parentId.':'.$key];
+                } elseif ($preferredCategoryId && isset($byCatName[$preferredCategoryId.':'.$key])) {
+                    $url = $byCatName[$preferredCategoryId.':'.$key];
+                }
             }
 
             $g['image_url'] = $url;
             $g['icon_url'] = $url;
+            $g['group_icon_url'] = $url;
 
             return $g;
         }, $groups);
+    }
+
+    /** Force absolute https URLs for mobile clients. */
+    public static function absoluteHttpsUrl(?string $url): ?string
+    {
+        if (! filled($url)) {
+            return null;
+        }
+
+        $url = trim($url);
+        if (str_starts_with($url, '//')) {
+            return 'https:'.$url;
+        }
+        if (str_starts_with($url, 'http://')) {
+            return 'https://'.substr($url, strlen('http://'));
+        }
+        if (str_starts_with($url, 'https://')) {
+            return $url;
+        }
+
+        $absolute = url($url);
+        if (str_starts_with($absolute, 'http://')) {
+            return 'https://'.substr($absolute, strlen('http://'));
+        }
+
+        return $absolute;
     }
 
     /**

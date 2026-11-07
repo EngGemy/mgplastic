@@ -102,6 +102,7 @@ class ProductCatalogController extends Controller
                 ->map(fn (Product $product) => $mapProduct($product))
                 ->values();
             $items = $this->sortCatalogItems($items, $sizeOrder);
+            $items = ProductTag::decorateItemsWithGroupIconUrl($items);
             $trees = $inventory->groupCatalogBrowse($items, $sizeOrder);
 
             return [
@@ -133,6 +134,7 @@ class ProductCatalogController extends Controller
             ->map(fn (Product $product) => $mapProduct($product))
             ->values();
         $items = $this->sortCatalogItems($items, $sizeOrder);
+        $items = ProductTag::decorateItemsWithGroupIconUrl($items);
 
         // Meta trees (groups / size_groups / categories) only on page 1 — later pages are items + pagination.
         $trees = ['groups' => [], 'size_groups' => [], 'categories' => []];
@@ -162,6 +164,7 @@ class ProductCatalogController extends Controller
                 })->values();
 
                 $allMapped = $this->sortCatalogItems($allMapped, $sizeOrder);
+                $allMapped = ProductTag::decorateItemsWithGroupIconUrl($allMapped);
 
                 return $inventory->groupCatalogBrowse($allMapped, $sizeOrder);
             });
