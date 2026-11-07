@@ -13,6 +13,9 @@ class HomePopup extends Model
 {
     public const KINDS = ['promo', 'announcement', 'event', 'feature', 'auth'];
 
+    /** Visual templates the mobile app should render. */
+    public const LAYOUTS = ['hero', 'card', 'auth', 'announce'];
+
     public const FREQUENCIES = ['every_open', 'once', 'once_per_day'];
 
     public const LINK_TYPES = [
@@ -41,6 +44,7 @@ class HomePopup extends Model
         'subtitle',
         'image_path',
         'kind',
+        'layout',
         'cta_text',
         'link_type',
         'link_id',
@@ -128,11 +132,15 @@ class HomePopup extends Model
     }
 
     /** @return array<string, mixed> */
-    public function toMobilePayload(): array
+    public function toMobilePayload(?string $matchedRole = null): array
     {
+        $layout = in_array($this->layout, self::LAYOUTS, true) ? $this->layout : 'hero';
+
         return [
             'id' => $this->id,
+            'role' => $matchedRole,
             'kind' => $this->kind,
+            'layout' => $layout,
             'title' => $this->title,
             'subtitle' => $this->subtitle,
             'image_url' => $this->imageUrl(),

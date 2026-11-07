@@ -19,6 +19,7 @@ class HomePopupApiTest extends TestCase
             'subtitle' => 'وصف',
             'image_path' => 'home-popups/test.jpg',
             'kind' => 'promo',
+            'layout' => 'hero',
             'cta_text' => 'اضغط هنا',
             'link_type' => 'home',
             'target_roles' => ['guest'],
@@ -35,16 +36,86 @@ class HomePopupApiTest extends TestCase
             'cta_text' => 'سجّل عندنا',
             'link_type' => 'auth_register',
             'kind' => 'auth',
+            'layout' => 'auth',
             'target_roles' => ['guest'],
         ]);
 
         $this->getJson('/api/v1/mobile/home/popup')
             ->assertOk()
             ->assertJsonPath('status', true)
+            ->assertJsonPath('data.role', 'guest')
+            ->assertJsonPath('data.layout', 'auth')
             ->assertJsonPath('data.cta.text', 'سجّل عندنا')
             ->assertJsonPath('data.cta.link', 'mgplastic://auth/register')
             ->assertJsonPath('data.kind', 'auth')
             ->assertJsonPath('data.frequency', 'once');
+    }
+
+    public function test_each_role_can_get_different_content_and_layout(): void
+    {
+        $this->makePopup([
+            'title' => 'للضيف',
+            'cta_text' => 'سجّل عندنا',
+            'link_type' => 'auth_register',
+            'kind' => 'auth',
+            'layout' => 'auth',
+            'target_roles' => ['guest'],
+            'sort_order' => 10,
+        ]);
+
+        $this->makePopup([
+            'title' => 'للسباك',
+            'cta_text' => 'عرض السباك',
+            'link_type' => 'plumber',
+            'link_id' => 55,
+            'kind' => 'feature',
+            'layout' => 'hero',
+            'target_roles' => ['plumber'],
+            'sort_order' => 10,
+        ]);
+
+        $this->makePopup([
+            'title' => 'للقطاعي',
+            'cta_text' => 'زيارة المحل',
+            'link_type' => 'shop',
+            'link_id' => 90,
+            'kind' => 'feature',
+            'layout' => 'card',
+            'target_roles' => ['retail_trader'],
+            'sort_order' => 10,
+        ]);
+
+        $this->getJson('/api/v1/mobile/home/popup')
+            ->assertOk()
+            ->assertJsonPath('data.role', 'guest')
+            ->assertJsonPath('data.layout', 'auth')
+            ->assertJsonPath('data.cta.text', 'سجّل عندنا');
+
+        $plumber = User::factory()->create([
+            'role' => 'plumber',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($plumber);
+
+        $this->getJson('/api/v1/mobile/home/popup')
+            ->assertOk()
+            ->assertJsonPath('data.role', 'plumber')
+            ->assertJsonPath('data.layout', 'hero')
+            ->assertJsonPath('data.cta.link', 'mgplastic://plumber/55');
+
+        $trader = User::factory()->create([
+            'role' => 'retail_trader',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($trader);
+
+        $this->getJson('/api/v1/mobile/home/popup')
+            ->assertOk()
+            ->assertJsonPath('data.role', 'retail_trader')
+            ->assertJsonPath('data.layout', 'card')
+            ->assertJsonPath('data.cta.link', 'mgplastic://shop/90');
     }
 
     public function test_returns_null_when_no_active_popup(): void
