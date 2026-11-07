@@ -413,36 +413,50 @@ class HomePopupResource extends Resource
                     ->label('صورة')
                     ->disk('public')
                     ->square()
-                    ->size(64),
+                    ->size(64)
+                    ->getStateUsing(function (HomePopup $record): ?string {
+                        $path = $record->image_path;
+                        if (is_array($path)) {
+                            $path = $path[0] ?? null;
+                        }
+                        if (! is_string($path) || $path === '' || str_starts_with($path, '[')) {
+                            return null;
+                        }
+
+                        return $path;
+                    }),
                 Tables\Columns\TextColumn::make('title_ar')
                     ->label('العنوان')
                     ->placeholder('—')
                     ->searchable()
                     ->weight('bold')
-                    ->description(fn (HomePopup $r) => 'v'.((int) $r->version).' · '.$r->kind),
+                    ->description(fn (HomePopup $record): string => 'v'.((int) $record->version).' · '.((string) ($record->kind ?: 'announcement'))),
                 Tables\Columns\TextColumn::make('kind')
                     ->label('النوع')
                     ->badge()
-                    ->formatStateUsing(fn (string $s) => $s === 'poll' ? 'تصويت' : 'إعلان')
-                    ->color(fn (string $s) => $s === 'poll' ? 'warning' : 'primary'),
-                Tables\Columns\TextColumn::make('target_roles')
+                    ->formatStateUsing(fn ($state): string => ((string) $state) === 'poll' ? 'تصويت' : 'إعلان')
+                    ->color(fn ($state): string => ((string) $state) === 'poll' ? 'warning' : 'primary'),
+                // Virtual string column — avoid Filament exploding JSON array attrs (500 htmlspecialchars).
+                Tables\Columns\TextColumn::make('audience_label')
                     ->label('الجمهور')
-                    ->formatStateUsing(function ($state) {
+                    ->getStateUsing(function (HomePopup $record): string {
                         $labels = [
                             'guest' => 'زائر',
                             'plumber' => 'سباك',
                             'retail_trader' => 'قطاعي',
                             'wholesale_distributor' => 'جملة',
                         ];
+                        $roles = is_array($record->target_roles) ? $record->target_roles : [];
 
-                        return collect(is_array($state) ? $state : [])
-                            ->map(fn ($r) => $labels[$r] ?? $r)
+                        return collect($roles)
+                            ->map(fn ($r) => $labels[$r] ?? (string) $r)
+                            ->filter()
                             ->implode(' · ') ?: '—';
                     }),
                 Tables\Columns\TextColumn::make('show')
                     ->label('تكرار')
                     ->badge()
-                    ->formatStateUsing(fn (?string $s) => match ($s) {
+                    ->formatStateUsing(fn ($state): string => match ((string) $state) {
                         'daily' => 'يومياً',
                         'always' => 'كل فتح',
                         default => 'مرة',
