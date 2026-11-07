@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Services\Notifications\DomainEventNotifier;
 use Illuminate\Support\Facades\DB;
 
 class PlumberDistributionPosService
@@ -75,6 +76,15 @@ class PlumberDistributionPosService
                 );
 
                 $created[] = $distribution->fresh(['items', 'invoice', 'fromUser', 'toUser']);
+            }
+
+            $notifier = app(DomainEventNotifier::class);
+            foreach ($created as $distribution) {
+                $notifier->buyerReceiptPending(
+                    $plumber,
+                    $distribution->invoice,
+                    $distribution,
+                );
             }
 
             return [

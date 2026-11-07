@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Invoice;
 use App\Models\InvoiceDistribution;
 use App\Models\InvoiceItem;
+use App\Models\NotificationInbox;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\DistributionService;
@@ -49,8 +50,21 @@ class PendingReceiptsHomeLayoutTest extends TestCase
 
         $invoiceId = (int) $res->json('data.invoices.0.id');
 
+        $inbox = NotificationInbox::query()
+            ->where('user_id', $retail->id)
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($inbox);
+        $this->assertSame(PendingReceiptsService::SCREEN, $inbox->data['screen'] ?? null);
+        $this->assertSame(PendingReceiptsService::DEEP_LINK, $inbox->data['deep_link'] ?? null);
+
         Sanctum::actingAs($retail);
         app(HomeMobileLayoutService::class)->forgetCache();
+
+        $this->getJson('/api/v1/mobile/notifications')
+            ->assertOk()
+            ->assertJsonPath('data.items.0.screen', PendingReceiptsService::SCREEN)
+            ->assertJsonPath('data.items.0.deep_link', PendingReceiptsService::DEEP_LINK);
 
         $layout = $this->getJson('/api/v1/mobile/home/layout')
             ->assertOk()
