@@ -429,7 +429,7 @@ class HomeMobileLayoutService
             'collections' => $this->itemsCollections($limit),
             'featured_wholesalers' => $this->itemsFeaturedWholesalers($limit),
             'events' => $this->itemsEvents($limit),
-            'stores' => $this->itemsStores($limit),
+            'stores' => $this->itemsStores($limit, $role),
             'mg_banner' => $this->itemsMgBannerIcons($highlights),
             'promo_banners' => $this->itemsPromoBanners($limit),
             'testimonials' => $this->itemsTestimonials($limit),
@@ -723,15 +723,38 @@ class HomeMobileLayoutService
             ->all();
     }
 
-    /** @return list<array<string, mixed>> */
-    protected function itemsStores(?int $limit): array
+    /**
+     * Same directory rule as NetworkStoreController:
+     * plumber/guest → retail shops only (never wholesale / warehouse / factory).
+     * retail_trader → wholesale shops (exclude central warehouse).
+     * wholesale_distributor → retail shops.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function itemsStores(?int $limit, string $role = 'guest'): array
     {
-        return User::query()
-            ->whereIn('role', ['wholesale_distributor', 'retail_trader'])
+        $listedRole = match ($role) {
+            'retail_trader' => 'wholesale_distributor',
+            'wholesale_distributor' => 'retail_trader',
+            default => 'retail_trader', // plumber + guest
+        };
+
+        $query = User::query()
+            ->where('role', $listedRole)
             ->where('is_approved', true)
             ->where('is_active', true)
             ->with('city')
-            ->orderByDesc('id')
+            ->orderByDesc('id');
+
+        // مخزن الدعوة / نقاط المصنع ليست محلات طلب للسباك أو القطاعي في قسم المتاجر.
+        if ($listedRole === 'wholesale_distributor') {
+            $query->where(function ($q) {
+                $q->whereNull('is_central_warehouse')
+                    ->orWhere('is_central_warehouse', false);
+            });
+        }
+
+        return $query
             ->when($limit, fn ($q) => $q->limit($limit))
             ->get()
             ->map(fn (User $u) => [
@@ -740,6 +763,7 @@ class HomeMobileLayoutService
                 'subtitle' => $u->city?->name,
                 'image_url' => $u->storeBrandImageUrl(),
                 'phone' => $u->phone,
+                'role' => $u->role,
                 'link' => 'mgplastic://shop/'.$u->id,
             ])
             ->values()

@@ -90,4 +90,32 @@ class NetworkStoresDirectoryTest extends TestCase
             ->assertJsonPath('meta.listed_role', 'retail_trader')
             ->assertJsonPath('meta.total', 1);
     }
+
+    public function test_retail_trader_directory_excludes_central_warehouse(): void
+    {
+        $wholesale = User::factory()->create([
+            'role' => 'wholesale_distributor',
+            'is_approved' => true,
+            'is_active' => true,
+            'is_central_warehouse' => false,
+            'name' => 'جملة عادي',
+        ]);
+        User::factory()->create([
+            'role' => 'wholesale_distributor',
+            'is_approved' => true,
+            'is_active' => true,
+            'is_central_warehouse' => true,
+            'name' => 'مخزن الدعوة',
+        ]);
+
+        $trader = User::factory()->create(['role' => 'retail_trader', 'is_approved' => true, 'is_active' => true]);
+        Sanctum::actingAs($trader);
+
+        $response = $this->getJson('/api/v1/network-stores')
+            ->assertOk()
+            ->assertJsonPath('meta.listed_role', 'wholesale_distributor')
+            ->assertJsonPath('meta.total', 1);
+
+        $this->assertSame($wholesale->id, $response->json('data.0.id'));
+    }
 }

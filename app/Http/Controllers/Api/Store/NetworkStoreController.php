@@ -128,6 +128,14 @@ class NetworkStoreController extends Controller
             ->where('is_active', true)
             ->with(['city', 'country', 'storeMedia', 'socialLinks']);
 
+        // مخزن الدعوة ليس محل جملة قابل للاختيار في دليل المتاجر.
+        if ($role === 'wholesale_distributor') {
+            $query->where(function ($q) {
+                $q->whereNull('is_central_warehouse')
+                    ->orWhere('is_central_warehouse', false);
+            });
+        }
+
         if ($request->filled('city_id')) {
             $query->where('city_id', (int) $request->input('city_id'));
         }
@@ -232,6 +240,13 @@ class NetworkStoreController extends Controller
 
         $role = $this->directoryRoleFor($viewer);
         $query = User::query()->where('role', $role);
+
+        if ($role === 'wholesale_distributor') {
+            $query->where(function ($q) {
+                $q->whereNull('is_central_warehouse')
+                    ->orWhere('is_central_warehouse', false);
+            });
+        }
 
         if (ctype_digit($key)) {
             return (clone $query)->whereKey((int) $key)->first();
