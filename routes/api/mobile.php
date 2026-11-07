@@ -10,47 +10,49 @@
 use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\Distributor\DashboardController as DistributorDashboardController;
 use App\Http\Controllers\Api\Distributor\InvoiceReturnController as DistributorInvoiceReturnController;
+use App\Http\Controllers\Api\Distributor\JoinRequestController as DistributorJoinRequestController;
 use App\Http\Controllers\Api\Distributor\NetworkPlumberController as DistributorNetworkPlumberController;
 use App\Http\Controllers\Api\Distributor\OrderController as DistributorOrderController;
 use App\Http\Controllers\Api\Distributor\PosController as DistributorPosController;
-use App\Http\Controllers\Api\Distributor\JoinRequestController as DistributorJoinRequestController;
 use App\Http\Controllers\Api\Distributor\RetailTraderController;
-use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
 use App\Http\Controllers\Api\Mobile\BiometricController;
 use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
 use App\Http\Controllers\Api\Mobile\HomeHighlightsController;
+use App\Http\Controllers\Api\Mobile\InvoiceShareController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\OtaController;
-use App\Http\Controllers\Api\Mobile\PushTokenController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
 use App\Http\Controllers\Api\Mobile\ProductCollectionController;
 use App\Http\Controllers\Api\Mobile\ProductPromotionController;
-use App\Http\Controllers\Api\Mobile\PromoBannerController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
-use App\Http\Controllers\Api\Mobile\SettingsController;
-use App\Http\Controllers\Api\Mobile\SuggestController;
+use App\Http\Controllers\Api\Mobile\PromoBannerController;
+use App\Http\Controllers\Api\Mobile\PushTokenController;
 use App\Http\Controllers\Api\Mobile\Reputation\PlumberReputationController;
 use App\Http\Controllers\Api\Mobile\Reputation\PlumberWarrantyController;
-use App\Http\Controllers\Api\Mobile\InvoiceShareController;
+use App\Http\Controllers\Api\Mobile\SettingsController;
+use App\Http\Controllers\Api\Mobile\SuggestController;
 use App\Http\Controllers\Api\Mobile\TestimonialController;
 use App\Http\Controllers\Api\Plumber\DashboardController as PlumberDashboardController;
-use App\Http\Controllers\Api\Plumber\InvoiceReturnController as PlumberInvoiceReturnController;
 use App\Http\Controllers\Api\Plumber\DistributionReceiptController as PlumberDistributionReceiptController;
+use App\Http\Controllers\Api\Plumber\InvoiceReturnController as PlumberInvoiceReturnController;
 use App\Http\Controllers\Api\Plumber\OrderController as PlumberOrderController;
 use App\Http\Controllers\Api\Plumber\ProductCatalogController as PlumberProductCatalogController;
+use App\Http\Controllers\Api\Plumber\ShopDirectoryController as PlumberShopDirectoryController;
 use App\Http\Controllers\Api\Plumber\WalletApiController;
 use App\Http\Controllers\Api\Plumber\WalletController;
 use App\Http\Controllers\Api\Plumber\WithdrawalController;
+use App\Http\Controllers\Api\Store\FavoriteStoreController;
+use App\Http\Controllers\Api\Store\NetworkStoreController;
 use App\Http\Controllers\Api\Trader\DashboardController as TraderDashboardController;
 use App\Http\Controllers\Api\Trader\InvoiceReceiptController as TraderInvoiceReceiptController;
 use App\Http\Controllers\Api\Trader\InvoiceReturnController as TraderInvoiceReturnController;
 use App\Http\Controllers\Api\Trader\OrderController as TraderOrderController;
 use App\Http\Controllers\Api\Trader\PlumberController as TraderPlumberController;
 use App\Http\Controllers\Api\Trader\PosController as TraderPosController;
+use App\Http\Controllers\Api\Trader\ProductCatalogController as TraderProductCatalogController;
 use App\Http\Controllers\Api\Trader\WholesalerController as TraderWholesalerController;
 use App\Http\Controllers\Api\Trader\WholesalerJoinRequestController as TraderWholesalerJoinRequestController;
-use App\Http\Controllers\Api\Trader\ProductCatalogController as TraderProductCatalogController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/mobile')->group(function () {
@@ -169,6 +171,14 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('products', [PlumberProductCatalogController::class, 'index']);
         Route::get('products/types', [PlumberProductCatalogController::class, 'types']);
         Route::get('products/categories', [PlumberProductCatalogController::class, 'categories']);
+
+        // Retail shop directory: nearest / search / filters + favorites
+        Route::get('shops', [PlumberShopDirectoryController::class, 'index']);
+        Route::get('favorite-stores', [FavoriteStoreController::class, 'index']);
+        Route::post('favorite-stores/{store}', [FavoriteStoreController::class, 'store'])
+            ->where('store', '[A-Za-z0-9\-]+');
+        Route::delete('favorite-stores/{store}', [FavoriteStoreController::class, 'destroy'])
+            ->where('store', '[A-Za-z0-9\-]+');
 
         // Orders to retail trader
         Route::get('orders', [PlumberOrderController::class, 'index']);
@@ -292,6 +302,13 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('orders/{order}/reject', [TraderOrderController::class, 'reject']);
         Route::post('orders/{order}/receive', [TraderOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [TraderOrderController::class, 'cancel']);
+
+        // Favorite wholesale shops (same contract as plumber favorite-stores)
+        Route::get('favorite-stores', [FavoriteStoreController::class, 'index']);
+        Route::post('favorite-stores/{store}', [FavoriteStoreController::class, 'store'])
+            ->where('store', '[A-Za-z0-9\-]+');
+        Route::delete('favorite-stores/{store}', [FavoriteStoreController::class, 'destroy'])
+            ->where('store', '[A-Za-z0-9\-]+');
 
         // Pending wholesale POS invoices — retail must confirm receipt before stock settles
         Route::get('pending-receipts', [TraderInvoiceReceiptController::class, 'pending']);

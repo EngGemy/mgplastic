@@ -2,11 +2,6 @@
 
 namespace App\Models;
 
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Support\Facades\Storage;
 use App\Models\Concerns\HasStoreProfile;
 use App\Models\Concerns\HasWallet;
 use App\Support\StorePermissions;
@@ -14,15 +9,22 @@ use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements FilamentUser, HasAvatar
 {
-    use HasApiTokens, HasFactory, HasStoreProfile, Notifiable, HasWallet;
+    use HasApiTokens, HasFactory, HasStoreProfile, HasWallet, Notifiable;
+
     public const ROLE_PLUMBER = 'plumber';
-    public const ROLE_VENDOR  = 'vendor';
+
+    public const ROLE_VENDOR = 'vendor';
 
     protected $appends = ['profile_photo_url'];
 
@@ -60,7 +62,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         'store_description',
         'otp_expires_at',
         'is_phone_verified',
-        'is_approved','approved_at','is_active','deactivated_at',
+        'is_approved', 'approved_at', 'is_active', 'deactivated_at',
         'quiet_from',
         'quiet_to',
         'timezone',
@@ -100,7 +102,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
             'longitude' => 'float',
             'password' => 'hashed',
             'marsol_otp_expires_at' => 'datetime',
-            'otp_last_sent_at'      => 'datetime',
+            'otp_last_sent_at' => 'datetime',
             'approved_at' => 'datetime',
             'deactivated_at' => 'datetime',
             'is_approved' => 'boolean',
@@ -135,9 +137,6 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     /**
      * Plumber stores relationship.
      */
-  
-
-
     public function vendorStores()
     {
         return $this->hasMany(PlumberStore::class, 'vendor_id');
@@ -179,6 +178,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     {
         return $this->hasMany(NotificationPreference::class);
     }
+
     /**
      * Accessor: full absolute URL for profile photo.
      */
@@ -382,6 +382,17 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         )->withPivot(['linked_by', 'linked_at'])->withTimestamps();
     }
 
+    /** Favorite network shops (plumber → retail, retail → wholesale). */
+    public function favoriteStores(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            User::class,
+            'user_favorite_stores',
+            'user_id',
+            'store_user_id'
+        )->withTimestamps();
+    }
+
     /**
      * Plumbers in this retail shop's network (pivot + legacy parent_distributor_id).
      * Prefer linkedPlumbers() for attach/detach; this helper is for listing/counts.
@@ -438,8 +449,15 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     // --- Helpers (optional) ---
-    public function isVendor(): bool  { return $this->role === self::ROLE_VENDOR; }
-    public function isPlumber(): bool { return $this->role === self::ROLE_PLUMBER; }
+    public function isVendor(): bool
+    {
+        return $this->role === self::ROLE_VENDOR;
+    }
+
+    public function isPlumber(): bool
+    {
+        return $this->role === self::ROLE_PLUMBER;
+    }
 
     public function isWholesaleDistributor(): bool
     {
@@ -547,14 +565,24 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         return in_array($permission, $permissions, true);
     }
 
-    public function isApprovedAndActive(): bool { return $this->is_approved && $this->is_active; }
+    public function isApprovedAndActive(): bool
+    {
+        return $this->is_approved && $this->is_active;
+    }
 
     // Scopes
-    public function scopeApproved($q) { return $q->where('is_approved', true); }
-    public function scopeActive($q)   { return $q->where('is_active', true); }
+    public function scopeApproved($q)
+    {
+        return $q->where('is_approved', true);
+    }
+
+    public function scopeActive($q)
+    {
+        return $q->where('is_active', true);
+    }
+
     public function plumberWorkPhotos()
     {
         return $this->hasMany(\App\Models\PlumberWorkPhoto::class, 'plumber_id');
     }
-
 }
