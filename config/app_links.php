@@ -46,5 +46,6 @@ return [
         'shop',
         'plumber',
         'pending-receipts',
+        'auth',
     ],
 ];

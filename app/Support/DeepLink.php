@@ -33,6 +33,16 @@ class DeepLink
             return 'home';
         }
 
+        // Auth screens: mgplastic://auth/login|register|…
+        if ($type === 'auth') {
+            $screen = is_string($resolvedId) ? trim($resolvedId) : '';
+            if ($screen === '' || $screen === '0') {
+                return 'auth/login';
+            }
+
+            return 'auth/'.$screen;
+        }
+
         // List screens: omit trailing /0 when no entity id.
         if (in_array($type, ['pending-receipts'], true) && (string) $resolvedId === '0') {
             return $type;

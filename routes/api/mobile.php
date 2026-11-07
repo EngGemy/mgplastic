@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Ios\IosWalletVisibilityController;
 use App\Http\Controllers\Api\Mobile\BiometricController;
 use App\Http\Controllers\Api\Mobile\FeaturedWholesalerController;
 use App\Http\Controllers\Api\Mobile\HomeHighlightsController;
+use App\Http\Controllers\Api\Mobile\HomePopupController;
 use App\Http\Controllers\Api\Mobile\InvoiceShareController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\OtaController;
@@ -78,6 +79,8 @@ Route::prefix('v1/mobile')->group(function () {
     Route::get('home/highlights', [HomeHighlightsController::class, 'index']);
     // Editable home copy: green banner + section titles + product types snapshot
     Route::get('home/layout', \App\Http\Controllers\Api\Mobile\HomeLayoutController::class);
+    // Interstitial popup on home open (image + CTA) — auth optional, role-aware
+    Route::get('home/popup', HomePopupController::class);
 
     // Wallet visibility — apps read this to hide/show the wallet UI
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);
