@@ -143,8 +143,6 @@ class FcmPushService
 
     /**
      * Upsert by device_id; reassign token if it belonged to another user.
-     *
-     * @return PushToken
      */
     public function register(User $user, string $token, string $platform, string $deviceId): PushToken
     {
@@ -282,8 +280,14 @@ class FcmPushService
         $type = $this->resolveType($meta);
         $id = $this->resolveId($meta, $type);
 
+        $screen = strtolower(trim((string) ($meta['screen'] ?? '')));
+        if ($screen === '') {
+            $screen = $type === 'pending-receipts' ? PendingReceiptsService::SCREEN : $type;
+        }
+
         $data = [
             'type' => $type,
+            'screen' => $screen,
         ];
 
         if ($id !== null && $id !== '') {
@@ -302,7 +306,22 @@ class FcmPushService
             $data['order_status'] = (string) $meta['order_status'];
         }
 
+        $deepLink = $meta['deep_link'] ?? null;
+        if (! filled($deepLink)) {
+            if ($screen === PendingReceiptsService::SCREEN || $type === 'pending-receipts') {
+                $entityId = isset($meta['entity_id']) ? (int) $meta['entity_id'] : 0;
+                $deepLink = app(PendingReceiptsService::class)
+                    ->deepLink($entityId > 0 ? $entityId : null);
+            }
+        }
+        if (filled($deepLink)) {
+            $data['deep_link'] = (string) $deepLink;
+        }
+
         $link = $meta['link'] ?? null;
+        if (! filled($link) && filled($deepLink)) {
+            $link = $deepLink;
+        }
         if (! filled($link) && $type !== 'home' && $id !== null && $id !== '') {
             try {
                 $link = DeepLink::for($type, $id);
@@ -343,13 +362,15 @@ class FcmPushService
             'products' => 'product',
             'shops' => 'shop',
             'plumbers' => 'plumber',
+            'pending_receipts' => 'pending-receipts',
         ];
 
         $type = $aliases[$raw] ?? $raw;
 
         $allowed = [
             'order', 'invoice', 'supply', 'points', 'return', 'withdrawal',
-            'promotion', 'collection', 'event', 'product', 'shop', 'plumber', 'home',
+            'promotion', 'collection', 'event', 'product', 'shop', 'plumber',
+            'pending-receipts', 'home',
         ];
 
         return in_array($type, $allowed, true) ? $type : 'home';

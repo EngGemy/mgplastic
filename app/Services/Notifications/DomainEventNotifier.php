@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\WholesalerJoinRequest;
 use App\Models\WithdrawalRequest;
 use App\Notifications\Catalog\NotificationType;
+use App\Services\PendingReceiptsService;
 
 /**
  * Maps high-value domain events → catalog NotificationType + recipients.
@@ -201,6 +202,37 @@ class DomainEventNotifier
             'screen' => 'points',
         ], $meta), [
             'filament_status' => 'info',
+        ]);
+    }
+
+    /**
+     * Buyer must confirm receive (POS draft / pending_review) — open pending-receipts inbox.
+     */
+    public function buyerReceiptPending(User $buyer, ?Invoice $invoice = null, ?InvoiceDistribution $distribution = null): void
+    {
+        $number = (string) (
+            $invoice?->number
+            ?? $invoice?->serial_number
+            ?? ($invoice?->id ? '#'.$invoice->id : '')
+        );
+
+        $entityId = (int) ($invoice?->id ?: $distribution?->id ?: 0);
+
+        $this->notifyDomain($buyer, NotificationType::InvoiceSubmitted, [
+            'invoice_number' => $number !== '' ? $number : '—',
+            'invoice_id' => (int) ($invoice?->id ?? 0),
+            'entity_id' => $entityId,
+            'distribution_id' => $distribution?->id ? (int) $distribution->id : null,
+            'type' => 'pending-receipts',
+            'entity_type' => 'pending-receipts',
+            'screen' => PendingReceiptsService::SCREEN,
+            'deep_link' => PendingReceiptsService::DEEP_LINK,
+        ], [
+            'filament_status' => 'warning',
+            'title' => 'بضاعة بانتظار تأكيد الاستلام',
+            'body' => $number !== ''
+                ? "فاتورة {$number} بانتظار تأكيدك حتى يدخل المخزون والنقاط"
+                : 'لديك بضاعة بانتظار تأكيد الاستلام',
         ]);
     }
 

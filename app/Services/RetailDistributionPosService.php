@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Services\Notifications\DomainEventNotifier;
 use Illuminate\Support\Facades\DB;
 
 class RetailDistributionPosService
@@ -55,7 +56,7 @@ class RetailDistributionPosService
         // Wallet points are only settled at plumber (tier 3).
         $groups = $this->inventory->allocateFromStock($stock, $requested);
 
-        return DB::transaction(function () use ($groups, $wholesaler, $retailTrader, $issuedBy) {
+        return DB::transaction(function () use ($groups, $wholesaler, $retailTrader) {
             $outgoingInvoices = [];
 
             foreach ($groups as $group) {
@@ -78,6 +79,15 @@ class RetailDistributionPosService
                 if ($outgoing) {
                     $outgoingInvoices[] = $outgoing->fresh(['sourceDistribution']);
                 }
+            }
+
+            $notifier = app(DomainEventNotifier::class);
+            foreach ($outgoingInvoices as $outgoing) {
+                $notifier->buyerReceiptPending(
+                    $retailTrader,
+                    $outgoing,
+                    $outgoing->sourceDistribution,
+                );
             }
 
             return $outgoingInvoices;
