@@ -76,9 +76,9 @@ final class NotificationCatalog
                 'ar' => 'تم شحن طلبك',
                 'en' => 'Order shipped',
             ], [
-                'ar' => 'الطلب :order_number في الطريق إليك',
-                'en' => 'Order :order_number is on the way',
-            ], 'high', ['push', 'in_app'], 'order'),
+                'ar' => 'الطلب :order_number في الطريق إليك — أكّد الاستلام',
+                'en' => 'Order :order_number is on the way — confirm receipt',
+            ], 'high', ['push', 'in_app'], 'pending-receipts'),
 
             self::def(NotificationType::OrderDelivered, [
                 'ar' => 'تم استلام الطلب',

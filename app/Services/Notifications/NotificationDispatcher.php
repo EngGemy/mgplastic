@@ -97,12 +97,17 @@ class NotificationDispatcher
             }
         }
 
+        $screen = (string) ($data['screen'] ?? $def->screen);
         $payloadData = array_merge($data, [
             'type' => $type->value,
             'entity_id' => $entityId,
-            'screen' => $data['screen'] ?? $def->screen,
+            'screen' => $screen,
             'priority' => $def->priority,
         ]);
+
+        if (! filled($payloadData['deep_link'] ?? null) && $screen === \App\Services\PendingReceiptsService::SCREEN) {
+            $payloadData['deep_link'] = \App\Services\PendingReceiptsService::DEEP_LINK;
+        }
 
         $inbox = null;
 

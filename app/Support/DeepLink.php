@@ -29,7 +29,16 @@ class DeepLink
         $type = self::normalizeType($type);
         $resolvedId = self::resolveId($type, $id, $model);
 
-        return $type === 'home' ? 'home' : "{$type}/{$resolvedId}";
+        if ($type === 'home') {
+            return 'home';
+        }
+
+        // List screens: omit trailing /0 when no entity id.
+        if (in_array($type, ['pending-receipts'], true) && (string) $resolvedId === '0') {
+            return $type;
+        }
+
+        return "{$type}/{$resolvedId}";
     }
 
     public static function customScheme(string $type, int|string|null $id = null, ?Model $model = null): string

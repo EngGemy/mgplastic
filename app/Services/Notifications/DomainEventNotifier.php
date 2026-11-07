@@ -66,9 +66,17 @@ class DomainEventNotifier
         $order->loadMissing('requester');
         $tracking = $order->tracking_number ? " — رقم التتبّع: {$order->tracking_number}" : '';
 
-        $this->notifyDomain($order->requester, NotificationType::OrderShipped, $this->orderData($order), [
+        // Buyer must confirm receive — open pending-receipts, not a generic order guess.
+        $data = array_merge($this->orderData($order), [
+            'screen' => \App\Services\PendingReceiptsService::SCREEN,
+            'deep_link' => \App\Services\PendingReceiptsService::DEEP_LINK,
+            'type' => 'pending-receipts',
+            'entity_type' => 'pending-receipts',
+        ]);
+
+        $this->notifyDomain($order->requester, NotificationType::OrderShipped, $data, [
             'filament_status' => 'info',
-            'body' => "الطلب {$order->order_number} تم شحنه وهو في طريقه إليك{$tracking}",
+            'body' => "الطلب {$order->order_number} تم شحنه — أكّد الاستلام في التطبيق{$tracking}",
         ]);
     }
 

@@ -93,6 +93,10 @@ return [
     ],
 
     'default_settings' => [
+        'pending_receipts' => [
+            'link' => 'mgplastic://pending-receipts',
+            'deep_link' => 'mgplastic://pending-receipts',
+        ],
         'wallet' => ['button_text' => 'عرض المحفظة', 'button_link' => 'mgplastic://wallet'],
         'slider' => ['autoplay' => true, 'interval_ms' => 4000],
         'search' => ['placeholder' => 'ابحث عن المنتج أو المقاس أو الكود...'],

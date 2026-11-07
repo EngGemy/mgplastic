@@ -15,7 +15,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Kreait\Firebase\Exception\MessagingException;
 
 class SendPushJob implements ShouldBeUnique, ShouldQueue
 {
@@ -174,10 +173,11 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
     {
         $raw = (array) ($inbox->data ?? []);
 
+        $screen = (string) ($raw['screen'] ?? 'home');
         $data = [
             'type' => (string) ($raw['type'] ?? $inbox->type),
             'entity_id' => (string) ($raw['entity_id'] ?? $raw['id'] ?? ''),
-            'screen' => (string) ($raw['screen'] ?? 'home'),
+            'screen' => $screen,
             'inbox_id' => (string) $inbox->id,
         ];
 
@@ -190,6 +190,20 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
         }
         if (isset($raw['link'])) {
             $data['link'] = (string) $raw['link'];
+        }
+
+        $deepLink = $raw['deep_link'] ?? null;
+        if (! filled($deepLink)) {
+            if ($screen === \App\Services\PendingReceiptsService::SCREEN) {
+                $entityId = isset($raw['entity_id']) ? (int) $raw['entity_id'] : 0;
+                $deepLink = app(\App\Services\PendingReceiptsService::class)
+                    ->deepLink($entityId > 0 ? $entityId : null);
+            } elseif (isset($raw['link']) && is_string($raw['link']) && str_starts_with($raw['link'], 'mgplastic://')) {
+                $deepLink = $raw['link'];
+            }
+        }
+        if (filled($deepLink)) {
+            $data['deep_link'] = (string) $deepLink;
         }
 
         // Strip empty entity_id for cleaner payloads
