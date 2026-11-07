@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Concerns\HandlesStoreMedia;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\NetworkStoreResource;
 use App\Models\User;
+use App\Services\NetworkStoreDirectoryService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,6 +15,10 @@ use Illuminate\Support\Facades\Storage;
 class NetworkStoreController extends Controller
 {
     use HandlesStoreMedia;
+
+    public function __construct(
+        protected NetworkStoreDirectoryService $directory,
+    ) {}
 
     protected function resolveStoreMediaOwner(Request $request): Model
     {
@@ -110,67 +115,39 @@ class NetworkStoreController extends Controller
      * GET /api/v1/network-stores
      * GET /api/v1/vendors  (alias)
      *
-     * Directory depends on the logged-in role (send Bearer token):
-     *  - plumber (or guest) → approved + active retail traders (order from shops)
-     *  - retail_trader → approved + active wholesale distributors (order from wholesale)
-     *
-     * Query: city_id, country_id, q/search, per_page, page
+     * Query: q/search, city_id, country_id, sort=nearest|newest|name,
+     *        lat/lng (or latitude/longitude), favorites_only, has_location, per_page, page
      */
     public function publicIndex(Request $request): JsonResponse
     {
         $viewer = $this->optionalApiUser($request);
-        $role = $this->directoryRoleFor($viewer);
-        $perPage = max(1, min((int) $request->input('per_page', 15), 50));
-
-        $query = User::query()
-            ->where('role', $role)
-            ->where('is_approved', true)
-            ->where('is_active', true)
-            ->with(['city', 'country', 'storeMedia', 'socialLinks']);
-
-        // مخزن الدعوة ليس محل جملة قابل للاختيار في دليل المتاجر.
-        if ($role === 'wholesale_distributor') {
-            $query->where(function ($q) {
-                $q->whereNull('is_central_warehouse')
-                    ->orWhere('is_central_warehouse', false);
-            });
-        }
-
-        if ($request->filled('city_id')) {
-            $query->where('city_id', (int) $request->input('city_id'));
-        }
-
-        if ($request->filled('country_id')) {
-            $query->where('country_id', (int) $request->input('country_id'));
-        }
-
-        $search = trim((string) ($request->input('q') ?? $request->input('search') ?? ''));
-        if ($search !== '') {
-            $like = '%'.$search.'%';
-            $query->where(function ($q) use ($like) {
-                $q->where('name', 'like', $like)
-                    ->orWhere('brand_name', 'like', $like)
-                    ->orWhere('phone', 'like', $like)
-                    ->orWhere('network_code', 'like', $like)
-                    ->orWhere('address', 'like', $like);
-            });
-        }
-
-        $stores = $query->orderByDesc('id')->paginate($perPage);
+        $result = $this->directory->paginate($request, $viewer);
+        $paginator = $result['paginator'];
+        $listedRole = $result['listed_role'];
 
         return response()->json([
             'status' => true,
-            'message' => $role === 'wholesale_distributor'
+            'message' => $listedRole === 'wholesale_distributor'
                 ? 'قائمة محلات الجملة'
                 : 'قائمة محلات القطاعي',
-            'data' => NetworkStoreResource::collection($stores->items()),
+            'data' => NetworkStoreResource::collection($paginator->items())->resolve(),
             'meta' => [
-                'current_page' => $stores->currentPage(),
-                'per_page' => $stores->perPage(),
-                'total' => $stores->total(),
-                'last_page' => $stores->lastPage(),
-                'listed_role' => $role,
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'listed_role' => $listedRole,
                 'viewer_role' => $viewer?->role,
+                'sort' => $result['sort'],
+                'origin' => $result['origin'],
+                'filters' => [
+                    'sort' => NetworkStoreDirectoryService::SORTS,
+                    'q' => trim((string) ($request->input('q') ?? $request->input('search') ?? '')) ?: null,
+                    'city_id' => $request->filled('city_id') ? (int) $request->input('city_id') : null,
+                    'country_id' => $request->filled('country_id') ? (int) $request->input('country_id') : null,
+                    'favorites_only' => $request->boolean('favorites_only'),
+                    'has_location' => $request->boolean('has_location'),
+                ],
             ],
         ]);
     }
@@ -193,23 +170,14 @@ class NetworkStoreController extends Controller
         }
 
         $user->load(['city', 'country', 'storeMedia.product', 'socialLinks']);
+        $origin = $this->directory->resolveOrigin($request, $viewer);
+        $favoriteIds = $this->directory->favoriteStoreIds($viewer);
+        $this->directory->annotatePage(collect([$user]), $origin, $favoriteIds);
 
         return response()->json([
             'status' => true,
-            'data' => new NetworkStoreResource($user),
+            'data' => (new NetworkStoreResource($user))->resolve(),
         ]);
-    }
-
-    /**
-     * Plumber → retail shops. Retail trader → wholesale shops.
-     */
-    protected function directoryRoleFor(?User $viewer): string
-    {
-        if ($viewer?->isRetailTrader()) {
-            return 'wholesale_distributor';
-        }
-
-        return 'retail_trader';
     }
 
     protected function optionalApiUser(Request $request): ?User
@@ -238,7 +206,7 @@ class NetworkStoreController extends Controller
             return null;
         }
 
-        $role = $this->directoryRoleFor($viewer);
+        $role = $this->directory->directoryRoleFor($viewer);
         $query = User::query()->where('role', $role);
 
         if ($role === 'wholesale_distributor') {

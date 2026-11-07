@@ -43,6 +43,8 @@ class NetworkStoreResource extends JsonResource
             'latitude' => $this->latitude,
             'longitude' => $this->longitude,
             'map_url' => $this->mapUrl(),
+            'distance_km' => $this->distance_km !== null ? (float) $this->distance_km : null,
+            'is_favorite' => (bool) ($this->is_favorite ?? false),
             'city' => $this->whenLoaded('city', fn () => $this->city ? [
                 'id' => $this->city->id,
                 'name_ar' => $this->city->name_ar ?? null,
