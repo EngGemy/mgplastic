@@ -47,5 +47,7 @@ return [
         'plumber',
         'pending-receipts',
         'auth',
+        'register',
+        'login',
     ],
 ];

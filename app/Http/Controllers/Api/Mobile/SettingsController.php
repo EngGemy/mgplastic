@@ -101,6 +101,7 @@ class SettingsController extends Controller
             'home' => [
                 'layout' => url('/api/v1/mobile/home/layout'),
                 'popup' => url('/api/v1/mobile/home/popup'),
+                'popup_event' => url('/api/v1/mobile/home/popup/{id}/event'),
                 'highlights' => url('/api/v1/mobile/home/highlights'),
                 'product_types' => [
                     'trader' => url('/api/v1/mobile/trader/products/types'),

@@ -21,10 +21,22 @@ class HomeLayoutController extends Controller
         // Optional Bearer — Sanctum resolves token without forcing login.
         $user = auth('sanctum')->user() ?? $request->user();
         $roleHint = $request->query('role');
+        $locale = $this->localeFromRequest($request);
 
         return $this->success(
-            $layout->layoutPayload(is_string($roleHint) ? $roleHint : null, $user),
+            $layout->layoutPayload(
+                is_string($roleHint) ? $roleHint : null,
+                $user,
+                $locale
+            ),
             'تخطيط الرئيسية للتطبيق'
         );
+    }
+
+    protected function localeFromRequest(Request $request): string
+    {
+        $raw = strtolower(str_replace('_', '-', (string) $request->header('Accept-Language', 'ar')));
+
+        return str_starts_with($raw, 'en') ? 'en' : 'ar';
     }
 }

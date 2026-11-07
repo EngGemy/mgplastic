@@ -29,8 +29,8 @@ class DeepLink
         $type = self::normalizeType($type);
         $resolvedId = self::resolveId($type, $id, $model);
 
-        if ($type === 'home') {
-            return 'home';
+        if (in_array($type, ['home', 'register', 'login'], true)) {
+            return $type;
         }
 
         // Auth screens: mgplastic://auth/login|register|…

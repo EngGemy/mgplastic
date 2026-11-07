@@ -79,8 +79,11 @@ Route::prefix('v1/mobile')->group(function () {
     Route::get('home/highlights', [HomeHighlightsController::class, 'index']);
     // Editable home copy: green banner + section titles + product types snapshot
     Route::get('home/layout', \App\Http\Controllers\Api\Mobile\HomeLayoutController::class);
-    // Interstitial popup on home open (image + CTA) — auth optional, role-aware
-    Route::get('home/popup', HomePopupController::class);
+    // Home popup — also embedded as data.popup on home/layout (preferred)
+    Route::get('home/popup', [HomePopupController::class, 'show']);
+    Route::post('home/popup/{id}/event', [HomePopupController::class, 'event'])
+        ->whereNumber('id')
+        ->middleware('throttle:120,1');
 
     // Wallet visibility — apps read this to hide/show the wallet UI
     Route::get('wallet-visibility', [IosWalletVisibilityController::class, 'show']);
