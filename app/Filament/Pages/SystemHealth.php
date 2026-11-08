@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Http;
 
 class SystemHealth extends Page
 {
-    protected static ?string $navigationIcon = 'heroicon-o-heart';
+    protected static ?string $navigationIcon = 'heroicon-o-signal';
 
     protected static ?int $navigationSort = 90;
 
@@ -35,12 +35,40 @@ class SystemHealth extends Page
 
     public function getTitle(): string
     {
-        return 'صحة النظام والمراقبة';
+        return 'غرفة المراقبة';
     }
 
     public function getHeading(): string
     {
-        return 'صحة النظام';
+        return '';
+    }
+
+    /**
+     * @return array{verdict: string, label: string, critical: int, warning: int, ok: int}
+     */
+    public function getOverview(): array
+    {
+        $checks = $this->getChecks();
+        $critical = 0;
+        $warning = 0;
+        $ok = 0;
+
+        foreach ($checks as $check) {
+            match ($check['status'] ?? 'ok') {
+                'critical' => $critical++,
+                'warning' => $warning++,
+                default => $ok++,
+            };
+        }
+
+        $verdict = $critical > 0 ? 'critical' : ($warning > 0 ? 'warning' : 'ok');
+        $label = match ($verdict) {
+            'critical' => 'النظام يحتاج تدخّل الآن',
+            'warning' => 'يوجد تحذيرات تحتاج متابعة',
+            default => 'كل الفحوصات ضمن الحد الطبيعي',
+        };
+
+        return compact('verdict', 'label', 'critical', 'warning', 'ok');
     }
 
     public static function canAccess(): bool
