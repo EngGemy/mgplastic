@@ -17,6 +17,10 @@ Schedule::command('whatsapp:health')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+Schedule::command('monitor:health')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
 Schedule::command('whatsapp:prune-logs --days=60')->dailyAt('03:15')->withoutOverlapping();
 Schedule::command('whatsapp:prune-cards --days=7')->dailyAt('03:30')->withoutOverlapping();
 Schedule::command('queue:prune-failed --hours=168')->dailyAt('03:40')->withoutOverlapping();

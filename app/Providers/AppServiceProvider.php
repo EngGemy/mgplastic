@@ -5,18 +5,21 @@ namespace App\Providers;
 use App\Ai\AdminToolRegistry;
 use App\Models\InvoiceDistribution;
 use App\Policies\InvoiceDistributionPolicy;
+use App\Validation\ArabicValidator;
+use BezhanSalleh\FilamentLanguageSwitch\LanguageSwitch;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
-use App\Validation\ArabicValidator;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ServiceProvider;
-use BezhanSalleh\FilamentLanguageSwitch\LanguageSwitch;
 use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
@@ -118,5 +121,8 @@ class AppServiceProvider extends ServiceProvider
         \App\Models\Order::observe(\App\Observers\OrderObserver::class);
         \App\Models\InvoiceReturn::observe(\App\Observers\InvoiceReturnObserver::class);
         \App\Models\WithdrawalRequest::observe(\App\Observers\WithdrawalRequestObserver::class);
+
+        Event::listen(Looping::class, \App\Listeners\RecordQueueWorkerHeartbeat::class);
+        Event::listen(JobProcessed::class, \App\Listeners\RecordQueueWorkerHeartbeat::class);
     }
 }

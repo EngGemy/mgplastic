@@ -7,6 +7,7 @@ use App\Mail\WhatsAppLimitReachedMail;
 use App\Models\WhatsAppLog;
 use App\Support\WahaResult;
 use App\Support\WhatsAppMessage;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -159,6 +160,8 @@ class WhatsAppNotifier
             if (! $this->enabled() && $otpOnly) {
                 Log::warning('[WhatsAppNotifier] WHATSAPP_NOTIFY_ENABLED is false — attempting OTP anyway');
             }
+
+            $this->probeBreakerIfDue();
 
             if ($this->isBreakerOpen()) {
                 return WahaResult::failure(WahaResult::REASON_BREAKER_OPEN, null, 'circuit breaker open');
@@ -328,25 +331,157 @@ class WhatsAppNotifier
         return is_array($payload) ? ($payload['opened_at'] ?? null) : null;
     }
 
-    public function resetBreaker(): void
+    /** @return array<string, mixed>|null */
+    public function breakerPayload(): ?array
     {
+        $payload = Cache::get(self::BREAKER_CACHE_KEY);
+
+        return is_array($payload) ? $payload : null;
+    }
+
+    public function resetBreaker(?string $via = null): void
+    {
+        if (! $this->isBreakerOpen()) {
+            Cache::forget(self::BREAKER_CACHE_KEY);
+
+            return;
+        }
+
+        $previous = $this->breakerReason();
         Cache::forget(self::BREAKER_CACHE_KEY);
+        Log::info('WAHA breaker CLOSED', [
+            'via' => $via ?: 'manual',
+            'previous_reason' => $previous,
+        ]);
     }
 
     public function openBreaker(string $reason): void
     {
         $ttl = max(30, (int) config('services.waha.breaker_ttl', 300));
+        $lower = strtolower($reason);
+        $isAuth = str_contains($lower, 'unauthor')
+            || str_contains($lower, '401')
+            || str_contains($lower, '403')
+            || str_contains($lower, 'auth failed');
+
+        if ($isAuth) {
+            $ttl = max($ttl, (int) config('monitoring.waha_breaker_auth_ttl', 43200));
+        }
+
         $already = $this->isBreakerOpen();
+        $existing = $this->breakerPayload();
+        $openedAt = is_array($existing) && filled($existing['opened_at'] ?? null)
+            ? (string) $existing['opened_at']
+            : now()->toIso8601String();
+
+        $probeEvery = max(60, (int) config('monitoring.waha_breaker_probe_seconds', 300));
+        $nextProbe = is_array($existing) && filled($existing['next_probe_at'] ?? null) && $already
+            ? (string) $existing['next_probe_at']
+            : now()->addSeconds($probeEvery)->toIso8601String();
+
         Cache::put(self::BREAKER_CACHE_KEY, [
             'reason' => $reason,
-            'opened_at' => now()->toIso8601String(),
+            'opened_at' => $openedAt,
+            'next_probe_at' => $nextProbe,
+            'half_open' => false,
         ], $ttl);
 
         if (! $already) {
-            Log::error('WAHA DOWN: '.$reason, [
+            Log::error('WAHA DOWN: '.$reason.'; breaker open', [
+                'breaker_ttl' => $ttl,
+                'next_probe_at' => $nextProbe,
+            ]);
+            Log::error('WAHA breaker OPEN', [
+                'reason' => $reason,
                 'breaker_ttl' => $ttl,
             ]);
         }
+    }
+
+    /**
+     * Half-open probe while the breaker is open. Closes on HTTP 200.
+     * Returns true when the breaker was closed by this probe.
+     */
+    public function probeBreakerIfDue(bool $force = false): bool
+    {
+        if (! $this->isBreakerOpen()) {
+            return false;
+        }
+
+        $payload = $this->breakerPayload() ?? [];
+        $probeEvery = max(60, (int) config('monitoring.waha_breaker_probe_seconds', 300));
+
+        if (! $force) {
+            $nextProbeAt = isset($payload['next_probe_at'])
+                ? Carbon::parse((string) $payload['next_probe_at'])
+                : null;
+
+            if ($nextProbeAt && $nextProbeAt->isFuture()) {
+                return false;
+            }
+        }
+
+        $base = rtrim(trim((string) config('services.waha.url')), '/');
+        $session = $this->sessionName();
+        if ($base === '' || $session === '') {
+            $this->scheduleNextProbe($payload, $probeEvery);
+
+            return false;
+        }
+
+        Log::info('WAHA breaker HALF-OPEN: probing /api/sessions', [
+            'reason' => $payload['reason'] ?? null,
+            'opened_at' => $payload['opened_at'] ?? null,
+        ]);
+
+        $timeout = max(2, (int) config('monitoring.waha_session_timeout', 5));
+
+        try {
+            $response = Http::connectTimeout($timeout)
+                ->timeout($timeout)
+                ->withHeaders([
+                    'X-Api-Key' => (string) config('services.waha.key'),
+                    'Accept' => 'application/json',
+                ])
+                ->get("{$base}/api/sessions/{$session}");
+
+            if ($response->status() === 200) {
+                $this->resetBreaker('half_open_probe_http_200');
+
+                return true;
+            }
+
+            Log::warning('WAHA breaker probe failed — remaining OPEN', [
+                'http' => $response->status(),
+                'body' => mb_substr($response->body(), 0, 300),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('WAHA breaker probe exception — remaining OPEN', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $this->scheduleNextProbe($payload, $probeEvery);
+
+        return false;
+    }
+
+    /** @param  array<string, mixed>  $payload */
+    protected function scheduleNextProbe(array $payload, int $probeEvery): void
+    {
+        $ttl = max(30, (int) config('services.waha.breaker_ttl', 300));
+        $reason = (string) ($payload['reason'] ?? 'open');
+        $lower = strtolower($reason);
+        if (str_contains($lower, 'unauthor') || str_contains($lower, '401') || str_contains($lower, 'auth failed')) {
+            $ttl = max($ttl, (int) config('monitoring.waha_breaker_auth_ttl', 43200));
+        }
+
+        Cache::put(self::BREAKER_CACHE_KEY, [
+            'reason' => $reason,
+            'opened_at' => $payload['opened_at'] ?? now()->toIso8601String(),
+            'next_probe_at' => now()->addSeconds($probeEvery)->toIso8601String(),
+            'half_open' => false,
+        ], $ttl);
     }
 
     /** Cached health snapshot for admin UI /deep health (never calls WAHA live). */
@@ -702,6 +837,8 @@ class WhatsAppNotifier
         string $action,
         bool $isOtp = false,
     ): WahaResult {
+        $this->probeBreakerIfDue();
+
         if ($this->isBreakerOpen()) {
             return WahaResult::failure(WahaResult::REASON_BREAKER_OPEN, null, 'circuit breaker open');
         }

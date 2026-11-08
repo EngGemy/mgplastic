@@ -227,7 +227,8 @@ class WhatsAppNotifierTest extends TestCase
 
         Queue::assertPushedOn('whatsapp', SendWhatsAppNotification::class);
         Queue::assertPushed(SendWhatsAppNotification::class, function (SendWhatsAppNotification $job) {
-            $this->assertSame(3, $job->tries);
+            $this->assertSame(100, $job->tries);
+            $this->assertInstanceOf(\DateTimeInterface::class, $job->retryUntil());
             $phones = collect($job->messages)->pluck('phone')->unique()->values()->all();
             $this->assertContains('201012345678', $phones);
             $this->assertContains('201098765432', $phones);
