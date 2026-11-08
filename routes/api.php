@@ -243,18 +243,6 @@ Route::prefix('v1')->group(function () {
         Route::get('/invoices/{invoice}/items', function (Invoice $invoice) {
             $user = request()->user();
             if (! $user || ! $invoice->canBeViewedBy($user)) {
-                // #region agent log
-                @file_put_contents(base_path('.cursor/debug-c5ed3b.log'), json_encode([
-                    'sessionId' => 'c5ed3b',
-                    'hypothesisId' => 'H-idor',
-                    'location' => 'routes/api.php:invoice-items',
-                    'message' => 'invoice items access denied',
-                    'data' => ['invoice_id' => $invoice->id, 'user_id' => $user?->id, 'role' => $user?->role],
-                    'timestamp' => (int) (microtime(true) * 1000),
-                    'runId' => 'post-fix',
-                ], JSON_UNESCAPED_UNICODE)."\n", FILE_APPEND);
-                // #endregion
-
                 return response()->json(['status' => 403, 'message' => 'غير مصرح'], 403);
             }
 
@@ -270,18 +258,6 @@ Route::prefix('v1')->group(function () {
         ) {
             $user = request()->user();
             if (! $user || ! $invoice->canBeViewedBy($user)) {
-                // #region agent log
-                @file_put_contents(base_path('.cursor/debug-c5ed3b.log'), json_encode([
-                    'sessionId' => 'c5ed3b',
-                    'hypothesisId' => 'H-idor',
-                    'location' => 'routes/api.php:invoice-summary',
-                    'message' => 'invoice summary access denied',
-                    'data' => ['invoice_id' => $invoice->id, 'user_id' => $user?->id, 'role' => $user?->role],
-                    'timestamp' => (int) (microtime(true) * 1000),
-                    'runId' => 'post-fix',
-                ], JSON_UNESCAPED_UNICODE)."\n", FILE_APPEND);
-                // #endregion
-
                 return response()->json(['status' => 403, 'message' => 'غير مصرح'], 403);
             }
 

@@ -25,18 +25,6 @@ class ClaimController extends Controller
     {
         $user = $request->user();
         if (! $user || ! $user->isAdminUser()) {
-            // #region agent log
-            @file_put_contents(base_path('.cursor/debug-c5ed3b.log'), json_encode([
-                'sessionId' => 'c5ed3b',
-                'hypothesisId' => 'H-claims',
-                'location' => 'ClaimController::index',
-                'message' => 'claims list denied',
-                'data' => ['user_id' => $user?->id, 'role' => $user?->role],
-                'timestamp' => (int) (microtime(true) * 1000),
-                'runId' => 'post-fix',
-            ], JSON_UNESCAPED_UNICODE)."\n", FILE_APPEND);
-            // #endregion
-
             return response()->json(['status' => false, 'message' => 'غير مصرح'], 403);
         }
 
