@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Event;
 use App\Models\EventCategory;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class EventExhibitionLocationTest extends TestCase
@@ -44,6 +46,14 @@ class EventExhibitionLocationTest extends TestCase
 
     public function test_create_event_accepts_free_text_location(): void
     {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'is_active' => true,
+            'is_approved' => true,
+            'is_phone_verified' => true,
+        ]);
+        Sanctum::actingAs($admin);
+
         $category = EventCategory::query()->create([
             'name_en' => 'Exhibition',
             'name_ar' => 'معرض',
