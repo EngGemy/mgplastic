@@ -108,6 +108,7 @@ class WholesalerPointsSyncService
         }
 
         $distribution->load('items');
+        $changed = false;
 
         foreach ($invoice->items as $item) {
             $downstream = (int) InvoiceDistributionItem::query()
@@ -130,6 +131,7 @@ class WholesalerPointsSyncService
                     'quantity' => $target,
                     'points_value' => $points,
                 ]);
+                $changed = true;
 
                 continue;
             }
@@ -142,6 +144,12 @@ class WholesalerPointsSyncService
                 'quantity' => $target,
                 'points_value' => $points,
             ])->save();
+            $changed = true;
+        }
+
+        if ($changed && $distribution->to_user_id) {
+            app(NetworkInventoryService::class)
+                ->forgetWholesalerStockCache((int) $distribution->to_user_id);
         }
     }
 
@@ -150,8 +158,5 @@ class WholesalerPointsSyncService
      * tier 1 = تسجيل توزيع فقط — لا نقاط تتحرك للموزع
      * هذه الـ method تبقى للتوافق لكن لا تفعل شيئاً
      */
-    public function ensureTierOneWalletCredit(InvoiceDistribution $distribution): void
-    {
-        return;
-    }
+    public function ensureTierOneWalletCredit(InvoiceDistribution $distribution): void {}
 }

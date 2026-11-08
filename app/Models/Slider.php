@@ -23,6 +23,16 @@ class Slider extends Model
 
     protected static function booted(): void
     {
+        static::updating(function (self $slider) {
+            if (! $slider->isDirty('image')) {
+                return;
+            }
+            $old = $slider->getOriginal('image');
+            if (filled($old) && $old !== $slider->image) {
+                Storage::disk('public')->delete($old);
+            }
+        });
+
         static::deleting(function (self $slider) {
             if ($slider->image) {
                 Storage::disk('public')->delete($slider->image);

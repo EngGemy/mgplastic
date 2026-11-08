@@ -69,6 +69,11 @@ class HomeMobileLayoutService
         }
         Cache::forget('home_mobile:layout');
         self::$tableExistsCache = [];
+        try {
+            app(ProductTypeService::class)->forgetHomeCountsCache();
+        } catch (\Throwable) {
+            Cache::forget(ProductTypeService::HOME_COUNTS_CACHE_KEY);
+        }
     }
 
     protected function tableExists(string $table): bool

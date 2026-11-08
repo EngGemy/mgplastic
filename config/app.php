@@ -47,6 +47,11 @@ return [
     'slow_query_ms' => (int) env('SLOW_QUERY_MS', 500),
 
     /*
+    | API request duration (ms) logged to the performance channel.
+    */
+    'api_slow_ms' => (int) env('API_SLOW_MS', 1000),
+
+    /*
     |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------
@@ -82,7 +87,6 @@ return [
     | set to any locale for which you plan to have translation strings.
     |
     */
-
 
     'locales' => ['ar', 'en'],
 

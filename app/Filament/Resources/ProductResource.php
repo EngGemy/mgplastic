@@ -54,12 +54,12 @@ class ProductResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
+        // Skip gallery `images` on list — count filter uses exists(); view page loads them.
         return parent::getEloquentQuery()
             ->with([
                 'translations',
                 'category.parent',
                 'category.translations',
-                'images',
                 'tags',
             ]);
     }
@@ -90,12 +90,15 @@ class ProductResource extends Resource
                     ->url(fn () => static::getUrl('create')),
             ])
             ->columns([
-                Tables\Columns\ImageColumn::make('main_image')
+                Tables\Columns\ImageColumn::make('image_thumb')
                     ->label('الصورة')
-                    ->getStateUsing(fn (Product $record) => $record->main_image ?: $record->catalog_image_path)
+                    ->getStateUsing(fn (Product $record) => $record->image_thumb
+                        ?: $record->main_image
+                        ?: $record->catalog_image_path)
                     ->disk('public')
                     ->square()
-                    ->size(52),
+                    ->size(52)
+                    ->extraImgAttributes(['loading' => 'lazy', 'decoding' => 'async']),
 
                 Tables\Columns\TextColumn::make('id')
                     ->label('#')

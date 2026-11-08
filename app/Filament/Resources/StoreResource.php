@@ -3,8 +3,8 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AdminOnlyResource;
-use App\Filament\Concerns\HasStoreLocationForm;
 use App\Filament\Concerns\HasNetworkInfolist;
+use App\Filament\Concerns\HasStoreLocationForm;
 use App\Filament\Resources\StoreResource\Pages;
 use App\Filament\Resources\StoreResource\RelationManagers;
 use App\Models\SystemLabel;
@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Services\StoreApprovalService;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -23,8 +22,8 @@ use Illuminate\Database\Eloquent\Builder;
 class StoreResource extends Resource
 {
     use AdminOnlyResource;
-    use HasStoreLocationForm;
     use HasNetworkInfolist;
+    use HasStoreLocationForm;
 
     protected static ?string $model = User::class;
 
@@ -125,8 +124,10 @@ class StoreResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('profile_photo')
                     ->label('')
+                    ->disk('public')
                     ->circular()
-                    ->size(40),
+                    ->size(40)
+                    ->extraImgAttributes(['loading' => 'lazy', 'decoding' => 'async']),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('المتجر')

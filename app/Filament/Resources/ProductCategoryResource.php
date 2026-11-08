@@ -134,11 +134,13 @@ class ProductCategoryResource extends Resource
             ->recordTitleAttribute('slug')
             ->heading(__('Product Categories'))
             ->columns([
-                Tables\Columns\ImageColumn::make('image')
+                Tables\Columns\ImageColumn::make('image_thumb')
                     ->label(__('Image'))
+                    ->getStateUsing(fn ($record) => $record->image_thumb ?: $record->image)
                     ->disk('public')
                     ->square()
-                    ->size(56),
+                    ->size(56)
+                    ->extraImgAttributes(['loading' => 'lazy', 'decoding' => 'async']),
 
                 Tables\Columns\TextColumn::make('slug')
                     ->label(__('Slug'))

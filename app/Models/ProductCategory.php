@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -33,17 +34,40 @@ class ProductCategory extends Model
         });
 
         static::saved(function (ProductCategory $category): void {
-            if (! $category->wasChanged('image') || ! filled($category->image)) {
+            if (! $category->wasChanged('image')) {
                 return;
             }
+
+            $old = $category->getOriginal('image');
+            if (filled($old) && $old !== $category->image) {
+                Storage::disk('public')->delete($old);
+            }
+
+            if (! filled($category->image)) {
+                return;
+            }
+
             try {
                 $thumb = app(\App\Services\ImageThumbnailService::class)
                     ->makeCategoryThumb((string) $category->image, 400);
                 if ($thumb && $thumb !== $category->image_thumb) {
+                    $oldThumb = $category->image_thumb;
                     $category->forceFill(['image_thumb' => $thumb])->saveQuietly();
+                    if (filled($oldThumb) && $oldThumb !== $thumb) {
+                        Storage::disk('public')->delete($oldThumb);
+                    }
                 }
             } catch (\Throwable) {
                 // Thumbnail generation is best-effort; full image still serves.
+            }
+        });
+
+        static::deleting(function (ProductCategory $category): void {
+            foreach (['image', 'image_thumb'] as $field) {
+                $path = $category->getAttribute($field);
+                if (filled($path)) {
+                    Storage::disk('public')->delete($path);
+                }
             }
         });
     }

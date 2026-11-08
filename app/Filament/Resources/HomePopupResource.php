@@ -414,6 +414,7 @@ class HomePopupResource extends Resource
                     ->disk('public')
                     ->square()
                     ->size(64)
+                    ->extraImgAttributes(['loading' => 'lazy', 'decoding' => 'async'])
                     ->getStateUsing(function (HomePopup $record): ?string {
                         $path = $record->image_path;
                         if (is_array($path)) {

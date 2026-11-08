@@ -153,7 +153,8 @@ class SliderResource extends Resource
                     ->label('صورة')
                     ->disk('public')
                     ->square()
-                    ->size(72),
+                    ->size(72)
+                    ->extraImgAttributes(['loading' => 'lazy', 'decoding' => 'async']),
                 Tables\Columns\TextColumn::make('type')
                     ->label('المكان')
                     ->badge()

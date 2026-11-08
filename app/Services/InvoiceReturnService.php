@@ -124,7 +124,7 @@ class InvoiceReturnService
         $distribution->loadMissing(['items.invoiceItem.product', 'fromUser', 'toUser']);
         $this->assertNotWarehouseToWholesaleSupply($distribution, $actor);
 
-        return DB::transaction(function () use ($return, $actor, $note, $distribution) {
+        $fresh = DB::transaction(function () use ($return, $actor, $note, $distribution) {
             $lockedReturn = InvoiceReturn::query()
                 ->whereKey($return->id)
                 ->lockForUpdate()
@@ -175,16 +175,21 @@ class InvoiceReturnService
                 $this->syncOutgoingInvoiceTotals($lockedReturn->invoice->fresh(['sourceDistribution.items', 'returns']));
             }
 
-            $fresh = $lockedReturn->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
-            if ((int) $fresh->tier === 3 && $fresh->from_user_id) {
+            $approved = $lockedReturn->fresh(['items.product.translations', 'fromUser', 'toUser', 'decidedBy']);
+            if ((int) $approved->tier === 3 && $approved->from_user_id) {
                 try {
-                    \App\Jobs\Reputation\RecomputeScoreJob::dispatch((int) $fresh->from_user_id, 'return_approved', (int) $fresh->id);
+                    \App\Jobs\Reputation\RecomputeScoreJob::dispatch((int) $approved->from_user_id, 'return_approved', (int) $approved->id);
                 } catch (\Throwable) {
                 }
             }
 
-            return $fresh;
+            return $approved;
         });
+
+        // Stock math changed via returned_quantity — bust POS/catalog caches after commit.
+        app(NetworkInventoryService::class)->bustCachesForDistribution($distribution);
+
+        return $fresh;
     }
 
     /** Reject pending return — no stock/points changes. */

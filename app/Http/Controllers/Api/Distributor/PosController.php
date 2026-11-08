@@ -26,7 +26,7 @@ class PosController extends Controller
     {
         $sizeOrder = ProductSizeSorter::normalizeOrder($request->query('size_order', $request->query('sort')));
         $userId = (int) $request->user()->id;
-        $cacheKey = "pos_stock:distributor:{$userId}:{$sizeOrder}";
+        $cacheKey = $this->inventory->posStockCacheKey('distributor', $userId, $sizeOrder);
 
         $payload = \Illuminate\Support\Facades\Cache::remember($cacheKey, 60, function () use ($request, $sizeOrder) {
             $items = $this->inventory
