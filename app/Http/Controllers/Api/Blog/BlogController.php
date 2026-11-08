@@ -3,22 +3,31 @@
 namespace App\Http\Controllers\Api\Blog;
 
 use App\Http\Controllers\Controller;
+use App\Models\Blog;
+use App\Models\BlogComment;
+use App\Models\BlogLike;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Models\Blog;
-use App\Models\BlogLike;
-use App\Models\BlogComment;
 
 class BlogController extends Controller
 {
     // Create Blog (Plumber or Admin) - status pending if plumber
     public function store(Request $request)
     {
+        $user = Auth::user();
+        if (! $user) {
+            return response()->json(['status' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        if (! in_array($user->role, ['admin', 'super_admin', 'plumber'], true)) {
+            return response()->json(['status' => false, 'message' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'category_id' => 'required|exists:blog_categories,id',
-            'title'       => 'required|string|max:255',
+            'title' => 'required|string|max:255',
             'description' => 'required|string',
-            'image'       => 'nullable|image|max:2048'
+            'image' => 'nullable|image|max:2048',
         ]);
 
         $imagePath = null;
@@ -26,15 +35,15 @@ class BlogController extends Controller
             $imagePath = $request->file('image')->store('blogs', 'public');
         }
 
-        $status = Auth::user()->role === 'admin' ? 'approved' : 'pending';
+        $status = $user->isAdminUser() ? 'approved' : 'pending';
 
         $blog = Blog::create([
             'category_id' => $request->category_id,
-            'user_id'     => Auth::id(),
-            'title'       => $request->title,
+            'user_id' => $user->id,
+            'title' => $request->title,
             'description' => $request->description,
-            'image'       => $imagePath,
-            'status'      => $status
+            'image' => $imagePath,
+            'status' => $status,
         ]);
 
         return response()->json([
@@ -48,7 +57,8 @@ class BlogController extends Controller
     public function approve($id)
     {
         $blog = Blog::findOrFail($id);
-        if (Auth::user()->role !== 'admin') {
+        $user = Auth::user();
+        if (! $user || ! $user->isAdminUser()) {
             return response()->json(['status' => false, 'message' => 'Unauthorized'], 403);
         }
         $blog->status = 'approved';
@@ -96,9 +106,11 @@ class BlogController extends Controller
 
         if ($like) {
             $like->delete();
+
             return response()->json(['status' => true, 'message' => 'Like removed']);
         } else {
             BlogLike::create(['blog_id' => $id, 'user_id' => Auth::id()]);
+
             return response()->json(['status' => true, 'message' => 'Blog liked']);
         }
     }
@@ -112,7 +124,7 @@ class BlogController extends Controller
         $comment = BlogComment::create([
             'blog_id' => $blog->id,
             'user_id' => Auth::id(),
-            'comment' => $request->comment
+            'comment' => $request->comment,
         ]);
 
         return response()->json(['status' => true, 'message' => 'Comment added', 'data' => $comment]);

@@ -81,6 +81,13 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     protected $hidden = [
         'password',
         'remember_token',
+        'otp_code',
+        'otp_expires_at',
+        'otp_attempts',
+        'otp_last_sent_at',
+        'marsol_otp_request_id',
+        'marsol_otp_resend_token',
+        'marsol_otp_expires_at',
     ];
 
     /**

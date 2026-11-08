@@ -98,6 +98,30 @@ class Invoice extends Model
         return $this->hasMany(InvoiceItem::class);
     }
 
+    /** Whether the actor may read invoice items / distribution summary over the API. */
+    public function canBeViewedBy(User $user): bool
+    {
+        if ($user->isAdminUser()) {
+            return true;
+        }
+
+        $id = (int) $user->id;
+        if (in_array($id, array_filter([
+            (int) $this->wholesale_distributor_id,
+            (int) $this->counterparty_user_id,
+            (int) $this->plumber_id,
+            (int) $this->issued_by,
+        ]), true)) {
+            return true;
+        }
+
+        return $this->distributions()
+            ->where(fn ($q) => $q
+                ->where('from_user_id', $id)
+                ->orWhere('to_user_id', $id))
+            ->exists();
+    }
+
     public function distributions(): HasMany
     {
         return $this->hasMany(InvoiceDistribution::class);

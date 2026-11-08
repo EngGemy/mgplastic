@@ -46,9 +46,9 @@ class SliderController extends Controller
             ->values();
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Slider list',
-            'data'    => $sliders,
+            'data' => $sliders,
         ]);
     }
 
@@ -63,9 +63,9 @@ class SliderController extends Controller
             ->values();
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Home sliders',
-            'data'    => $sliders,
+            'data' => $sliders,
         ]);
     }
 
@@ -80,31 +80,48 @@ class SliderController extends Controller
             ->values();
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Store sliders',
-            'data'    => $sliders,
+            'data' => $sliders,
         ]);
     }
 
-    /** POST /api/sliders  (multipart/form-data: image, type=home|store) */
+    /** POST /api/sliders  (multipart/form-data: image, type=home|store) — admin only */
     public function store(Request $request)
     {
+        $user = $request->user();
+        if (! $user || ! $user->isAdminUser()) {
+            // #region agent log
+            @file_put_contents(base_path('.cursor/debug-c5ed3b.log'), json_encode([
+                'sessionId' => 'c5ed3b',
+                'hypothesisId' => 'H-slider',
+                'location' => 'SliderController::store',
+                'message' => 'slider write denied',
+                'data' => ['user_id' => $user?->id, 'role' => $user?->role],
+                'timestamp' => (int) (microtime(true) * 1000),
+                'runId' => 'post-fix',
+            ], JSON_UNESCAPED_UNICODE)."\n", FILE_APPEND);
+            // #endregion
+
+            return response()->json(['status' => false, 'message' => 'غير مصرح'], 403);
+        }
+
         $request->validate([
             'image' => ['required', 'image', 'max:2048'],
-            'type'  => ['required', Rule::in(['home', 'store'])],
+            'type' => ['required', Rule::in(['home', 'store'])],
         ]);
 
         $path = $request->file('image')->store('sliders', 'public');
 
         $slider = Slider::create([
             'image' => $path,
-            'type'  => $request->string('type'),
+            'type' => $request->string('type'),
         ]);
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Slider added successfully',
-            'data'    => $this->format($slider),
+            'data' => $this->format($slider),
         ], 201);
     }
 }

@@ -155,9 +155,14 @@ class PasswordResetByPhoneController extends Controller
             return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
 
-        if (! app(PhoneOtpService::class)->matches($user, (string) $request->otp)) {
-            if ($user->otp_code) {
-                $user->increment('otp_attempts');
+        $otpService = app(PhoneOtpService::class);
+        if ($otpService->isLockedOut($user)) {
+            return response()->json($otpService->lockoutResponse(), 429);
+        }
+
+        if (! $otpService->matches($user, (string) $request->otp)) {
+            if ($user->otp_code || $user->marsol_otp_request_id || $user->otp_expires_at) {
+                $otpService->registerFailedVerify($user);
             }
 
             return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
@@ -184,9 +189,14 @@ class PasswordResetByPhoneController extends Controller
             return response()->json(['status' => false, 'message' => 'المستخدم غير موجود'], 404);
         }
 
-        if (! app(PhoneOtpService::class)->matches($user, (string) $request->otp)) {
-            if ($user->otp_code) {
-                $user->increment('otp_attempts');
+        $otpService = app(PhoneOtpService::class);
+        if ($otpService->isLockedOut($user)) {
+            return response()->json($otpService->lockoutResponse(), 429);
+        }
+
+        if (! $otpService->matches($user, (string) $request->otp)) {
+            if ($user->otp_code || $user->marsol_otp_request_id || $user->otp_expires_at) {
+                $otpService->registerFailedVerify($user);
             }
 
             return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
