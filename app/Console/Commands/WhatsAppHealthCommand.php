@@ -68,7 +68,7 @@ class WhatsAppHealthCommand extends Command
                     $reasons[] = 'session '.$status;
                     $notifier->openBreaker('session_down: '.$status);
                 } else {
-                    $notifier->resetBreaker();
+                    $notifier->resetBreaker('whatsapp:health');
                 }
             }
         } catch (\Throwable $e) {

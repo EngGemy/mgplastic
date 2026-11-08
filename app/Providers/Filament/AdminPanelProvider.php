@@ -5,8 +5,9 @@ namespace App\Providers\Filament;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\DecisionReports;
 use App\Filament\Pages\ProductsReport;
-use Filament\FontProviders\GoogleFontProvider;
 use App\Http\Middleware\AuthenticatePanel;
+use App\Support\AdminPanelPath;
+use Filament\FontProviders\GoogleFontProvider;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -19,7 +20,6 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use App\Support\AdminPanelPath;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -75,6 +75,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->renderHook('panels::head.end', fn () => view('filament.hooks.admin-styles'))
+            ->renderHook('panels::body.start', fn () => view('filament.hooks.system-health-banner'))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
