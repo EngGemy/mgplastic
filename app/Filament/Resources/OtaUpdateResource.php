@@ -22,11 +22,11 @@ class OtaUpdateResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-path';
 
-    protected static ?int $navigationSort = 95;
+    protected static ?int $navigationSort = 90;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'النظام';
+        return 'الإعدادات';
     }
 
     public static function getNavigationLabel(): string

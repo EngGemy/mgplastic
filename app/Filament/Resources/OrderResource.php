@@ -23,12 +23,27 @@ class OrderResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?int $navigationSort = 15;
+    protected static ?int $navigationSort = 10;
 
-    public static function getNavigationGroup(): ?string { return 'الطلبيات'; }
-    public static function getNavigationLabel(): string { return 'الطلبيات'; }
-    public static function getModelLabel(): string { return 'طلبية'; }
-    public static function getPluralModelLabel(): string { return 'الطلبيات'; }
+    public static function getNavigationGroup(): ?string
+    {
+        return 'التشغيل اليومي';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return 'الطلبيات';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'طلبية';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'الطلبيات';
+    }
 
     public static function getNavigationBadge(): ?string
     {

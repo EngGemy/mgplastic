@@ -56,14 +56,14 @@ class AdminPanelProvider extends PanelProvider
             ->globalSearch()
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
             ->navigationGroups([
-                'صناعة القرار',
-                'أسعار نقاط المنتجات',
-                'الطلبيات',
-                'نظام النقاط',
-                'المنتجات',
-                'المستخدمون',
-                'رئيسية التطبيق',
-                'المحتوى',
+                'التشغيل اليومي',
+                'التقارير والقرارات',
+                'النقاط والمكافآت',
+                'المنتجات والأسعار',
+                'الشبكة التجارية',
+                'التطبيق',
+                'التواصل',
+                'الموقع والمحتوى',
                 'الإعدادات',
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')

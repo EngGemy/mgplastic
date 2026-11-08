@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources;
 
-use App\Filament\Concerns\HasStoreLocationForm;
 use App\Filament\Concerns\HasNetworkInfolist;
+use App\Filament\Concerns\HasStoreLocationForm;
 use App\Filament\Resources\RetailTraderResource\Pages;
 use App\Filament\Resources\RetailTraderResource\RelationManagers;
 use App\Models\SystemLabel;
@@ -22,8 +22,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class RetailTraderResource extends Resource
 {
-    use HasStoreLocationForm;
     use HasNetworkInfolist;
+    use HasStoreLocationForm;
 
     protected static ?string $model = User::class;
 
@@ -31,7 +31,7 @@ class RetailTraderResource extends Resource
 
     protected static ?string $slug = 'retail-traders';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 30;
 
     public static function getNavigationGroup(): ?string
     {

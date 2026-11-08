@@ -17,7 +17,7 @@ class ManageMobileHomeTraders extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 20;
 
     protected static string $view = 'filament.pages.manage-mobile-home-audience';
 

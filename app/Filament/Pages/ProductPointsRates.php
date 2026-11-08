@@ -26,7 +26,7 @@ class ProductPointsRates extends Page implements HasForms, HasTable
 
     protected static string $view = 'filament.pages.product-points-rates';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 10;
 
     /** @var array<string, mixed>|null */
     public ?array $data = [];
@@ -36,7 +36,7 @@ class ProductPointsRates extends Page implements HasForms, HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'أسعار نقاط المنتجات';
+        return 'النقاط والمكافآت';
     }
 
     public static function getNavigationLabel(): string

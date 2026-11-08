@@ -19,9 +19,9 @@ class FactoryCustomerResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
 
-    protected static ?string $navigationGroup = 'قوائم الأسعار';
+    protected static ?string $navigationGroup = 'المنتجات والأسعار';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 60;
 
     protected static ?string $modelLabel = 'عميل مصنع';
 

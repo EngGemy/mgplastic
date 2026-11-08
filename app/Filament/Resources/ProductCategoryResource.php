@@ -26,22 +26,22 @@ class ProductCategoryResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المنتجات';
+        return 'المنتجات والأسعار';
     }
 
     public static function getNavigationLabel(): string
     {
-        return __('Product Categories');
+        return 'تصنيفات المنتجات';
     }
 
     public static function getModelLabel(): string
     {
-        return __('Product Category');
+        return 'تصنيف منتج';
     }
 
     public static function getPluralModelLabel(): string
     {
-        return __('Product Categories');
+        return 'تصنيفات المنتجات';
     }
 
     public static function form(Form $form): Form

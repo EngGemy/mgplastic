@@ -23,7 +23,7 @@ class ReputationWarrantySettings extends Page implements HasForms
 
     protected static string $view = 'filament.pages.reputation-warranty-settings';
 
-    protected static ?int $navigationSort = 41;
+    protected static ?int $navigationSort = 80;
 
     public ?array $data = [];
 
@@ -45,7 +45,7 @@ class ReputationWarrantySettings extends Page implements HasForms
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'الإعدادات';
     }
 
     public static function getNavigationLabel(): string

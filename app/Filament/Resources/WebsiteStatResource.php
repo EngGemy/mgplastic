@@ -19,11 +19,11 @@ class WebsiteStatResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
-    protected static ?int $navigationSort = 41;
+    protected static ?int $navigationSort = 60;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المحتوى';
+        return 'الموقع والمحتوى';
     }
 
     public static function getNavigationLabel(): string

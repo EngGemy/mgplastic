@@ -28,7 +28,7 @@ class ProductResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
 
-    protected static ?string $navigationGroup = 'المنتجات';
+    protected static ?string $navigationGroup = 'المنتجات والأسعار';
 
     protected static ?int $navigationSort = 10;
 
@@ -49,7 +49,7 @@ class ProductResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المنتجات';
+        return 'المنتجات والأسعار';
     }
 
     public static function getEloquentQuery(): Builder

@@ -5,8 +5,8 @@ namespace App\Filament\Resources;
 use App\Filament\Concerns\AdminOnlyResource;
 use App\Filament\Resources\WithdrawalRequestResource\Pages;
 use App\Filament\Support\WithdrawalPaymentForm;
-use App\Models\WithdrawalRequest;
 use App\Models\SystemLabel;
+use App\Models\WithdrawalRequest;
 use Filament\Forms;
 use Filament\Infolists;
 use Filament\Resources\Resource;
@@ -23,11 +23,11 @@ class WithdrawalRequestResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 40;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'التشغيل اليومي';
     }
 
     public static function getNavigationLabel(): string

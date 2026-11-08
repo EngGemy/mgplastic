@@ -12,7 +12,7 @@ class DecisionReports extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-light-bulb';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 10;
 
     protected static string $view = 'filament.pages.decision-reports';
 
@@ -30,7 +30,7 @@ class DecisionReports extends Page
 
     public static function getNavigationGroup(): ?string
     {
-        return 'صناعة القرار';
+        return 'التقارير والقرارات';
     }
 
     public static function getNavigationLabel(): string

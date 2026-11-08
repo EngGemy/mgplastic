@@ -19,11 +19,11 @@ class WebsiteServiceResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-wrench-screwdriver';
 
-    protected static ?int $navigationSort = 42;
+    protected static ?int $navigationSort = 90;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المحتوى';
+        return 'الموقع والمحتوى';
     }
 
     public static function getNavigationLabel(): string

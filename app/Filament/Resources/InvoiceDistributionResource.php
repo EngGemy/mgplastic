@@ -24,11 +24,11 @@ class InvoiceDistributionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrows-pointing-out';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 30;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'التشغيل اليومي';
     }
 
     public static function getNavigationLabel(): string

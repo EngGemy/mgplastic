@@ -3,7 +3,6 @@
 namespace App\Filament\Pages;
 
 use App\Models\City;
-use App\Models\NotificationBroadcast;
 use App\Models\PushToken;
 use App\Models\User;
 use App\Services\AdminNotificationService;
@@ -25,7 +24,7 @@ class SendNotification extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-paper-airplane';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 10;
 
     protected static string $view = 'filament.pages.send-notification';
 
@@ -42,7 +41,7 @@ class SendNotification extends Page implements HasForms
 
     public static function getNavigationGroup(): ?string
     {
-        return 'الإشعارات';
+        return 'التواصل';
     }
 
     public static function getNavigationLabel(): string

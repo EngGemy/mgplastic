@@ -21,7 +21,7 @@ class ProductPointsChangesReport extends Page
 
     protected static string $view = 'filament.pages.product-points-changes-report';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 40;
 
     public string $search = '';
 
@@ -34,7 +34,7 @@ class ProductPointsChangesReport extends Page
 
     public static function getNavigationGroup(): ?string
     {
-        return 'أسعار نقاط المنتجات';
+        return 'التقارير والقرارات';
     }
 
     public static function getNavigationLabel(): string

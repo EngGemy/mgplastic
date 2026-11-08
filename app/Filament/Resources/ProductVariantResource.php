@@ -4,8 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AdminOnlyResource;
 use App\Filament\Resources\ProductVariantResource\Pages;
-use App\Models\ProductVariant;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -18,13 +18,30 @@ class ProductVariantResource extends Resource
     use AdminOnlyResource;
 
     protected static ?string $model = ProductVariant::class;
-    protected static ?string $navigationIcon  = 'heroicon-o-adjustments-horizontal';
-    protected static ?int $navigationSort = 30;
 
-    public static function getNavigationGroup(): ?string { return 'المنتجات'; }
-    public static function getNavigationLabel(): string { return __('Product Variants'); }
-    public static function getModelLabel(): string { return __('Product Variant'); }
-    public static function getPluralModelLabel(): string { return __('Product Variants'); }
+    protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
+
+    protected static ?int $navigationSort = 40;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'المنتجات والأسعار';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return 'متغيرات المنتج';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'متغير منتج';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'متغيرات المنتج';
+    }
 
     /** Eager-load product + translations for fast, null-safe lookups */
     public static function getEloquentQuery(): Builder
@@ -47,6 +64,7 @@ class ProductVariantResource extends Resource
                         ->required()
                         ->options(function () {
                             $locale = app()->getLocale();
+
                             return Product::with('translations')
                                 ->latest('id')
                                 ->limit(50)
@@ -55,13 +73,17 @@ class ProductVariantResource extends Resource
                                     $name = optional($p->translate($locale))->name
                                         ?? optional($p->translate('en'))->name
                                         ?? "Product #{$p->id}";
+
                                     return [$p->id => $name];
                                 })->toArray();
                         })
                         ->getOptionLabelUsing(function ($value) {
-                            if (!$value) return null;
+                            if (! $value) {
+                                return null;
+                            }
                             $locale = app()->getLocale();
                             $p = Product::with('translations')->find($value);
+
                             return $p
                                 ? (optional($p->translate($locale))->name
                                     ?? optional($p->translate('en'))->name
@@ -71,8 +93,7 @@ class ProductVariantResource extends Resource
                         ->getSearchResultsUsing(function (string $search) {
                             $locale = app()->getLocale();
                             $products = Product::with('translations')
-                                ->whereHas('translations', fn ($q) =>
-                                $q->where('name', 'like', "%{$search}%"))
+                                ->whereHas('translations', fn ($q) => $q->where('name', 'like', "%{$search}%"))
                                 ->limit(50)
                                 ->get();
 
@@ -80,6 +101,7 @@ class ProductVariantResource extends Resource
                                 $name = optional($p->translate($locale))->name
                                     ?? optional($p->translate('en'))->name
                                     ?? "Product #{$p->id}";
+
                                 return [$p->id => $name];
                             })->toArray();
                         })
@@ -147,6 +169,7 @@ class ProductVariantResource extends Resource
                     ->label(__('Product'))
                     ->state(function ($record) {
                         $locale = app()->getLocale();
+
                         return optional($record?->product?->translate($locale))->name
                             ?? optional($record?->product?->translate('en'))->name
                             ?? "Product #{$record?->product_id}";
@@ -188,9 +211,9 @@ class ProductVariantResource extends Resource
                     ->label(__('PN'))
                     ->colors([
                         'primary',
-                        'success' => fn ($state) => in_array($state, ['Pn16','Pn20']),
-                        'warning' => fn ($state) => in_array($state, ['Pn10','Pn12.5']),
-                        'gray'    => fn ($state) => in_array($state, ['Pn4','Pn6', null, '']),
+                        'success' => fn ($state) => in_array($state, ['Pn16', 'Pn20']),
+                        'warning' => fn ($state) => in_array($state, ['Pn10', 'Pn12.5']),
+                        'gray' => fn ($state) => in_array($state, ['Pn4', 'Pn6', null, '']),
                     ])
                     ->sortable()
                     ->toggleable(),
@@ -207,6 +230,7 @@ class ProductVariantResource extends Resource
                     ->label(__('Product'))
                     ->options(function () {
                         $locale = app()->getLocale();
+
                         return Product::with('translations')
                             ->latest('id')
                             ->limit(200)
@@ -215,6 +239,7 @@ class ProductVariantResource extends Resource
                                 $name = optional($p->translate($locale))->name
                                     ?? optional($p->translate('en'))->name
                                     ?? "Product #{$p->id}";
+
                                 return [$p->id => $name];
                             })->toArray();
                     })
@@ -223,8 +248,8 @@ class ProductVariantResource extends Resource
                 Tables\Filters\SelectFilter::make('pressure_class')
                     ->label(__('PN'))
                     ->options([
-                        'Pn4' => 'Pn4','Pn6' => 'Pn6','Pn10' => 'Pn10',
-                        'Pn12.5' => 'Pn12.5','Pn16' => 'Pn16','Pn20' => 'Pn20',
+                        'Pn4' => 'Pn4', 'Pn6' => 'Pn6', 'Pn10' => 'Pn10',
+                        'Pn12.5' => 'Pn12.5', 'Pn16' => 'Pn16', 'Pn20' => 'Pn20',
                     ]),
 
                 Tables\Filters\Filter::make('diameter_range')
@@ -233,8 +258,7 @@ class ProductVariantResource extends Resource
                         Forms\Components\TextInput::make('min_od')->numeric()->label(__('Min Ø (mm)')),
                         Forms\Components\TextInput::make('max_od')->numeric()->label(__('Max Ø (mm)')),
                     ])
-                    ->query(fn ($query, array $data) =>
-                    $query
+                    ->query(fn ($query, array $data) => $query
                         ->when($data['min_od'] ?? null, fn ($q, $v) => $q->where('outer_diameter_mm', '>=', $v))
                         ->when($data['max_od'] ?? null, fn ($q, $v) => $q->where('outer_diameter_mm', '<=', $v))
                     ),
@@ -253,9 +277,9 @@ class ProductVariantResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListProductVariants::route('/'),
+            'index' => Pages\ListProductVariants::route('/'),
             'create' => Pages\CreateProductVariant::route('/create'),
-            'edit'   => Pages\EditProductVariant::route('/{record}/edit'),
+            'edit' => Pages\EditProductVariant::route('/{record}/edit'),
         ];
     }
 }

@@ -21,18 +21,18 @@ class ProductTagImageResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-photo';
 
-    protected static ?int $navigationSort = 21;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $slug = 'tag-images';
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المنتجات';
+        return 'المنتجات والأسعار';
     }
 
     public static function getNavigationLabel(): string
     {
-        return 'صوره التاجات';
+        return 'صور التاجات';
     }
 
     public static function getModelLabel(): string
@@ -42,7 +42,7 @@ class ProductTagImageResource extends Resource
 
     public static function getPluralModelLabel(): string
     {
-        return 'صوره التاجات';
+        return 'صور التاجات';
     }
 
     public static function form(Form $form): Form

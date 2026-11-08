@@ -4,10 +4,10 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\HasStoreLocationForm;
 use App\Filament\Resources\UserResource\Pages;
-use App\Models\User;
-use App\Models\SystemLabel;
-use App\Models\Country;
 use App\Models\City;
+use App\Models\Country;
+use App\Models\SystemLabel;
+use App\Models\User;
 use App\Support\AdminPermissions;
 use App\Support\UserRoles;
 use Filament\Forms;
@@ -24,13 +24,30 @@ class UserResource extends Resource
     use HasStoreLocationForm;
 
     protected static ?string $model = User::class;
-    protected static ?string $navigationIcon  = 'heroicon-o-users';
+
+    protected static ?string $navigationIcon = 'heroicon-o-users';
+
     protected static ?int $navigationSort = 10;
 
-    public static function getNavigationGroup(): ?string { return 'المستخدمون'; }
-    public static function getNavigationLabel(): string { return SystemLabel::get('users', 'المستخدمون'); }
-    public static function getModelLabel(): string { return SystemLabel::get('users', 'مستخدم'); }
-    public static function getPluralModelLabel(): string { return SystemLabel::get('users', 'المستخدمون'); }
+    public static function getNavigationGroup(): ?string
+    {
+        return 'الشبكة التجارية';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return SystemLabel::get('users', 'المستخدمون');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return SystemLabel::get('users', 'مستخدم');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return SystemLabel::get('users', 'المستخدمون');
+    }
 
     /** Eager-load for table speed */
     public static function getEloquentQuery(): Builder
@@ -158,8 +175,7 @@ class UserResource extends Resource
                             ->schema([
                                 Forms\Components\Select::make('country_id')
                                     ->label('الدولة')
-                                    ->options(fn () =>
-                                    Country::query()
+                                    ->options(fn () => Country::query()
                                         ->orderBy('name_en')
                                         ->get()
                                         ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
@@ -174,8 +190,7 @@ class UserResource extends Resource
 
                                 Forms\Components\Select::make('city_id')
                                     ->label('المدينة')
-                                    ->options(fn (Get $get) =>
-                                    City::query()
+                                    ->options(fn (Get $get) => City::query()
                                         ->when($get('country_id'), fn ($q, $cid) => $q->where('country_id', $cid))
                                         ->orderBy('name_en')
                                         ->get()
@@ -411,8 +426,7 @@ class UserResource extends Resource
                 // Locale-aware display, still sorts consistently by EN
                 Tables\Columns\TextColumn::make('country.name_en')
                     ->label('الدولة')
-                    ->formatStateUsing(fn ($state, $record) =>
-                    app()->getLocale() === 'ar'
+                    ->formatStateUsing(fn ($state, $record) => app()->getLocale() === 'ar'
                         ? ($record?->country?->name_ar ?? $state)
                         : $state
                     )
@@ -420,8 +434,7 @@ class UserResource extends Resource
 
                 Tables\Columns\TextColumn::make('city.name_en')
                     ->label('المدينة')
-                    ->formatStateUsing(fn ($state, $record) =>
-                    app()->getLocale() === 'ar'
+                    ->formatStateUsing(fn ($state, $record) => app()->getLocale() === 'ar'
                         ? ($record?->city?->name_ar ?? $state)
                         : $state
                     )
@@ -466,8 +479,7 @@ class UserResource extends Resource
 
                 Tables\Filters\SelectFilter::make('country_id')
                     ->label('الدولة')
-                    ->options(fn () =>
-                    Country::query()
+                    ->options(fn () => Country::query()
                         ->orderBy('name_en')
                         ->get()
                         ->pluck(app()->getLocale() === 'ar' ? 'name_ar' : 'name_en', 'id')
@@ -509,8 +521,7 @@ class UserResource extends Resource
                     ->color('success')
                     ->visible(fn ($record) => ! (bool) $record?->is_active)
                     ->requiresConfirmation()
-                    ->action(fn ($record) =>
-                    $record->forceFill(['is_active' => true, 'deactivated_at' => null])->save()
+                    ->action(fn ($record) => $record->forceFill(['is_active' => true, 'deactivated_at' => null])->save()
                     ),
 
                 \App\Filament\Support\UserForceLogoutActions::tableAction(),
@@ -525,22 +536,19 @@ class UserResource extends Resource
                     Tables\Actions\BulkAction::make('bulkApprove')
                         ->label('اعتماد المحدد')
                         ->icon('heroicon-o-check-circle')
-                        ->action(fn ($records) =>
-                        $records->each->forceFill(['is_approved' => true, 'approved_at' => now()])->each->save()
+                        ->action(fn ($records) => $records->each->forceFill(['is_approved' => true, 'approved_at' => now()])->each->save()
                         ),
                     Tables\Actions\BulkAction::make('bulkDeactivate')
                         ->label('إيقاف المحدد')
                         ->icon('heroicon-o-no-symbol')
                         ->color('danger')
-                        ->action(fn ($records) =>
-                        $records->each->forceFill(['is_active' => false, 'deactivated_at' => now()])->each->save()
+                        ->action(fn ($records) => $records->each->forceFill(['is_active' => false, 'deactivated_at' => now()])->each->save()
                         ),
                     Tables\Actions\BulkAction::make('bulkActivate')
                         ->label('تفعيل المحدد')
                         ->icon('heroicon-o-bolt')
                         ->color('success')
-                        ->action(fn ($records) =>
-                        $records->each->forceFill(['is_active' => true, 'deactivated_at' => null])->each->save()
+                        ->action(fn ($records) => $records->each->forceFill(['is_active' => true, 'deactivated_at' => null])->each->save()
                         ),
                     \App\Filament\Support\UserNotificationActions::bulkAction(),
                     Tables\Actions\DeleteBulkAction::make(),
@@ -560,10 +568,10 @@ class UserResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListUsers::route('/'),
+            'index' => Pages\ListUsers::route('/'),
             'create' => Pages\CreateUser::route('/create'),
-            'view'   => Pages\ViewUser::route('/{record}'),
-            'edit'   => Pages\EditUser::route('/{record}/edit'),
+            'view' => Pages\ViewUser::route('/{record}'),
+            'edit' => Pages\EditUser::route('/{record}/edit'),
         ];
     }
 }

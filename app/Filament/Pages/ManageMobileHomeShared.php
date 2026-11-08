@@ -17,7 +17,7 @@ class ManageMobileHomeShared extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-squares-plus';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 30;
 
     protected static string $view = 'filament.pages.manage-mobile-home-audience';
 

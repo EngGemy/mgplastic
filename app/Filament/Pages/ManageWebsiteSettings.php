@@ -17,7 +17,7 @@ class ManageWebsiteSettings extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-globe-alt';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 50;
 
     protected static string $view = 'filament.pages.manage-website-settings';
 
@@ -33,7 +33,7 @@ class ManageWebsiteSettings extends Page implements HasForms
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المحتوى';
+        return 'الموقع والمحتوى';
     }
 
     public static function getNavigationLabel(): string

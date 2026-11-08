@@ -14,14 +14,32 @@ use Filament\Tables\Table;
 class SocialMediaResource extends Resource
 {
     use AdminOnlyResource;
-    protected static ?string $model = SocialMedia::class;
-    protected static ?string $navigationIcon = 'heroicon-o-share';
-    protected static ?int $navigationSort = 60;
 
-    public static function getNavigationGroup(): ?string { return 'الإعدادات'; }
-    public static function getNavigationLabel(): string { return 'وسائل التواصل'; }
-    public static function getModelLabel(): string { return 'وسائل التواصل'; }
-    public static function getPluralModelLabel(): string { return 'وسائل التواصل'; }
+    protected static ?string $model = SocialMedia::class;
+
+    protected static ?string $navigationIcon = 'heroicon-o-share';
+
+    protected static ?int $navigationSort = 70;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'الإعدادات';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return 'وسائل التواصل';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'وسائل التواصل';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'وسائل التواصل';
+    }
 
     public static function form(Form $form): Form
     {
@@ -124,9 +142,9 @@ class SocialMediaResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListSocialMedia::route('/'),
+            'index' => Pages\ListSocialMedia::route('/'),
             'create' => Pages\CreateSocialMedia::route('/create'),
-            'edit'   => Pages\EditSocialMedia::route('/{record}/edit'),
+            'edit' => Pages\EditSocialMedia::route('/{record}/edit'),
         ];
     }
 }

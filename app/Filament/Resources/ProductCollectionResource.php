@@ -21,11 +21,11 @@ class ProductCollectionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-group';
 
-    protected static ?int $navigationSort = 42;
+    protected static ?int $navigationSort = 70;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المحتوى';
+        return 'الموقع والمحتوى';
     }
 
     public static function getNavigationLabel(): string

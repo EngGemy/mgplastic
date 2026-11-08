@@ -19,11 +19,11 @@ class NotificationBroadcastResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-archive-box';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 20;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'الإشعارات';
+        return 'التواصل';
     }
 
     public static function getNavigationLabel(): string

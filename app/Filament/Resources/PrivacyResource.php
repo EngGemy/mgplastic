@@ -14,9 +14,12 @@ use Filament\Tables\Table;
 class PrivacyResource extends Resource
 {
     use AdminOnlyResource;
+
     protected static ?string $model = Privacy::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
-    protected static ?int $navigationSort = 50;
+
+    protected static ?int $navigationSort = 60;
 
     public static function getNavigationGroup(): ?string
     {
@@ -120,9 +123,9 @@ class PrivacyResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListPrivacies::route('/'),
+            'index' => Pages\ListPrivacies::route('/'),
             'create' => Pages\CreatePrivacy::route('/create'),
-            'edit'   => Pages\EditPrivacy::route('/{record}/edit'),
+            'edit' => Pages\EditPrivacy::route('/{record}/edit'),
         ];
     }
 }

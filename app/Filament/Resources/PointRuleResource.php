@@ -18,24 +18,42 @@ class PointRuleResource extends Resource
     use AdminOnlyResource;
 
     protected static ?string $model = PointRule::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-sparkles';
-    protected static ?int $navigationSort = 60;
+
+    protected static ?int $navigationSort = 80;
 
     public static function shouldRegisterNavigation(): bool
     {
         return false;
     }
 
-    public static function getNavigationGroup(): ?string { return 'نظام النقاط'; }
-    public static function getNavigationLabel(): string { return SystemLabel::get('point_rules', 'قواعد النقاط'); }
-    public static function getPluralModelLabel(): string { return SystemLabel::get('point_rules', 'قواعد النقاط'); }
-    public static function getModelLabel(): string { return SystemLabel::get('point_rules', 'قاعدة نقاط'); }
+    public static function getNavigationGroup(): ?string
+    {
+        return 'النقاط والمكافآت';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return SystemLabel::get('point_rules', 'قواعد النقاط');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return SystemLabel::get('point_rules', 'قواعد النقاط');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return SystemLabel::get('point_rules', 'قاعدة نقاط');
+    }
 
     public static function form(Form $form): Form
     {
         // Locale-aware vendor store select (translatable name)
         $optionsFn = function () {
             $locale = app()->getLocale();
+
             return PlumberStore::query()
                 ->join('plumber_store_translations as pst', 'pst.plumber_store_id', '=', 'plumber_stores.id')
                 ->where('pst.locale', $locale)
@@ -47,6 +65,7 @@ class PointRuleResource extends Resource
 
         $searchFn = function (string $search) {
             $locale = app()->getLocale();
+
             return PlumberStore::query()
                 ->join('plumber_store_translations as pst', 'pst.plumber_store_id', '=', 'plumber_stores.id')
                 ->where('pst.locale', $locale)
@@ -58,8 +77,11 @@ class PointRuleResource extends Resource
         };
 
         $labelFn = function ($value) {
-            if (!$value) return null;
+            if (! $value) {
+                return null;
+            }
             $locale = app()->getLocale();
+
             return PlumberStore::query()
                 ->join('plumber_store_translations as pst', 'pst.plumber_store_id', '=', 'plumber_stores.id')
                 ->where('plumber_stores.id', $value)
@@ -161,9 +183,9 @@ class PointRuleResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListPointRules::route('/'),
+            'index' => Pages\ListPointRules::route('/'),
             'create' => Pages\CreatePointRule::route('/create'),
-            'edit'   => Pages\EditPointRule::route('/{record}/edit'),
+            'edit' => Pages\EditPointRule::route('/{record}/edit'),
         ];
     }
 }

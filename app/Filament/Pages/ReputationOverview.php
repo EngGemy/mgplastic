@@ -29,7 +29,7 @@ class ReputationOverview extends Page implements HasForms, HasTable
 
     protected static string $view = 'filament.pages.reputation-overview';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 30;
 
     public string $badgesUrl = '';
 
@@ -39,7 +39,7 @@ class ReputationOverview extends Page implements HasForms, HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'النقاط والمكافآت';
     }
 
     public static function getNavigationLabel(): string

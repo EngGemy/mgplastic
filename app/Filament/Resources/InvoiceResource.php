@@ -31,11 +31,11 @@ class InvoiceResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 20;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'التشغيل اليومي';
     }
 
     public static function getNavigationLabel(): string
