@@ -21,6 +21,7 @@ class MobilePosOcrTest extends TestCase
     {
         parent::setUp();
         Storage::fake('public');
+        Storage::fake('local');
         config([
             'services.gemini.key' => 'fake-key',
             'services.gemini.model' => 'gemini-2.0-flash',
@@ -28,6 +29,7 @@ class MobilePosOcrTest extends TestCase
             'services.gemini.daily_limit' => 300,
             'services.gemini.ocr_thinking_budget' => null,
             'queue.default' => 'sync',
+            'ocr_uploads.disk' => 'local',
             'ocr_resilience.primary_model' => 'gemini-2.0-flash',
             'ocr_resilience.fallback_model' => null,
             'ocr_resilience.retry_delays' => [0, 0, 0],
@@ -143,27 +145,32 @@ class MobilePosOcrTest extends TestCase
         $apply = $this->postJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId.'/apply');
         $apply->assertOk()
             ->assertJsonPath('status', true)
-            ->assertJsonPath('data.approved_count', 1);
+            ->assertJsonPath('data.approved_count', 1)
+            ->assertJsonPath('message_code', 'ocr_apply_ok');
 
-        $cartLines = $apply->json('data.cart_lines');
-        $this->assertIsArray($cartLines);
-        $this->assertSame($product->id, (int) $cartLines[0]['product_id']);
-        $this->assertSame(4, (int) $cartLines[0]['quantity']);
+        $cartLines = $apply->json('data.cart_lines') ?? [];
+        $unavailable = $apply->json('data.unavailable_lines') ?? [];
+        $this->assertSame(1, count($cartLines) + count($unavailable));
+        $recovered = $cartLines[0] ?? $unavailable[0];
+        $this->assertSame($product->id, (int) $recovered['product_id']);
+        $this->assertSame(4, (int) $recovered['quantity']);
+        $this->assertArrayHasKey('available_qty', $recovered);
+        $this->assertArrayHasKey('qty_unit', $recovered);
 
-        $this->assertArrayHasKey('available_qty', $cartLines[0]);
-
-        // Idempotent — second apply blocked but returns recoverable cart_lines
+        // Idempotent — second apply blocked but returns recoverable lines
         $again = $this->postJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId.'/apply');
         $again->assertStatus(409)
             ->assertJsonPath('error_code', 'OCR_ALREADY_APPLIED')
-            ->assertJsonPath('errors.cart_lines.0.product_id', $product->id);
+            ->assertJsonPath('message_code', 'OCR_ALREADY_APPLIED');
 
-        // GET recovers cart_lines after apply
-        $this->getJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId)
-            ->assertOk()
-            ->assertJsonPath('data.batch.step', 'added')
-            ->assertJsonPath('data.batch.cart_lines.0.product_id', $product->id)
-            ->assertJsonPath('data.batch.cart_lines.0.quantity', 4);
+        // GET recovers partition after apply
+        $showAfter = $this->getJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId);
+        $showAfter->assertOk()->assertJsonPath('data.batch.step', 'added');
+        $all = array_merge(
+            $showAfter->json('data.batch.cart_lines') ?? [],
+            $showAfter->json('data.batch.unavailable_lines') ?? [],
+        );
+        $this->assertSame($product->id, (int) $all[0]['product_id']);
 
         $this->assertDatabaseHas('ocr_image_lines', [
             'id' => $lineId,
@@ -239,6 +246,7 @@ class MobilePosOcrTest extends TestCase
             ->json('data.batch.batch_id');
 
         // Seed a ready auto line without going through Gemini
+        Storage::disk('local')->put('ocr-uploads/test.jpg', 'x');
         $batch = \App\Models\OcrBatch::findOrFail($batchId);
         $image = \App\Models\OcrImage::query()->create([
             'batch_id' => $batch->id,
@@ -281,8 +289,12 @@ class MobilePosOcrTest extends TestCase
         $this->assertArrayHasKey('available_qty', $draftLine);
         $this->assertArrayHasKey('in_stock', $draftLine);
         $this->assertArrayHasKey('qty_exceeds_stock', $draftLine);
+        $this->assertArrayHasKey('qty_unit', $draftLine);
+        $this->assertArrayHasKey('ui_action', $draftLine);
         $this->assertNotEmpty($show->json('data.batch.lexicon_families'));
-        $this->assertNotNull($show->json('data.batch.images.0.preview_signed_url'));
+        $this->assertSame('seller_pos', $show->json('data.batch.stock_source'));
+        $this->assertNotNull($show->json('data.batch.images.0.preview_url'));
+        $this->assertArrayNotHasKey('preview_signed_url', $show->json('data.batch.images.0'));
     }
 
     public function test_duplicate_image_returns_distinct_error_code(): void
@@ -313,7 +325,8 @@ class MobilePosOcrTest extends TestCase
 
     public function test_signed_preview_route_serves_image(): void
     {
-        Storage::disk('public')->put('ocr-uploads/preview-test.jpg', 'fake-jpeg-bytes');
+        Storage::fake('local');
+        Storage::disk('local')->put('ocr-uploads/preview-test.jpg', 'fake-jpeg-bytes');
         $user = $this->distributor();
         $batch = \App\Models\OcrBatch::query()->create([
             'user_id' => $user->id,
@@ -334,5 +347,92 @@ class MobilePosOcrTest extends TestCase
         );
 
         $this->get($url)->assertOk();
+    }
+
+    public function test_set_unit_clears_unit_assumed(): void
+    {
+        $user = $this->distributor();
+        Sanctum::actingAs($user);
+        $product = $this->seedElbowProduct();
+        $product->pieces_per_box = 10;
+        $product->save();
+
+        $batchId = (int) $this->postJson('/api/v1/mobile/distributor/pos/ocr/batches')
+            ->json('data.batch.batch_id');
+        $batch = \App\Models\OcrBatch::findOrFail($batchId);
+        $image = \App\Models\OcrImage::query()->create([
+            'batch_id' => $batch->id,
+            'position' => 1,
+            'path' => 'ocr-uploads/u.jpg',
+            'sha256' => hash('sha256', 'u'),
+            'status' => 'done',
+            'read_version' => 1,
+            'lines_count' => 1,
+        ]);
+        $line = OcrImageLine::query()->create([
+            'image_id' => $image->id,
+            'line_no' => 1,
+            'raw_fragment' => 'كوع 90 MG',
+            'resolved_product_id' => $product->id,
+            'qty' => 2,
+            'review_status' => 'ready',
+            'version' => 1,
+            'payload' => [
+                'raw_text' => 'كوع 90 MG',
+                'qty' => 2,
+                'matched_product_id' => $product->id,
+                'pieces_per_box' => 10,
+                'match_decision' => 'auto',
+                'needs_review' => ['unit_assumed'],
+                'qty_unit' => 'box',
+                'qty_unit_source' => 'default',
+            ],
+        ]);
+
+        $this->patchJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId.'/lines/'.$line->id, [
+            'action' => 'set_unit',
+            'qty_unit' => 'piece',
+        ])->assertOk()
+            ->assertJsonPath('data.line.qty_unit', 'piece')
+            ->assertJsonPath('data.line.qty_unit_source', 'paper');
+
+        $flags = $this->getJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId)
+            ->json('data.batch.draft.lines.0.needs_review') ?? [];
+        $this->assertNotContains('unit_assumed', $flags);
+    }
+
+    public function test_prefs_locked_after_apply(): void
+    {
+        $user = $this->distributor();
+        Sanctum::actingAs($user);
+        $batch = \App\Models\OcrBatch::query()->create([
+            'user_id' => $user->id,
+            'status' => 'added',
+            'cart_added_at' => now(),
+            'idempotency_token' => (string) \Illuminate\Support\Str::uuid(),
+        ]);
+
+        $this->patchJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batch->id.'/prefs', [
+            'system_default' => 'us',
+            'reenrich' => true,
+        ])->assertStatus(409)
+            ->assertJsonPath('error_code', 'OCR_BATCH_LOCKED');
+    }
+
+    public function test_qty_unit_resolver_detects_paper_words(): void
+    {
+        $resolver = app(\App\Services\Ocr\OcrQtyUnitResolver::class);
+        $box = $resolver->apply(['raw_text' => 'ماسورة 4 صندوق MG', 'qty' => 2, 'pieces_per_box' => 10]);
+        $this->assertSame('box', $box['qty_unit']);
+        $this->assertSame('paper', $box['qty_unit_source']);
+
+        $piece = $resolver->apply(['raw_text' => 'كوع قطعة MG', 'qty' => 3, 'pieces_per_box' => 10]);
+        $this->assertSame('piece', $piece['qty_unit']);
+        $this->assertSame('paper', $piece['qty_unit_source']);
+
+        $assumed = $resolver->apply(['raw_text' => 'كوع MG', 'qty' => 2, 'pieces_per_box' => 10]);
+        $this->assertSame('box', $assumed['qty_unit']);
+        $this->assertSame('default', $assumed['qty_unit_source']);
+        $this->assertContains('unit_assumed', $assumed['needs_review']);
     }
 }

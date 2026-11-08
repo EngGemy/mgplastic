@@ -17,7 +17,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class ProcessOcrImageJob implements ShouldQueue
 {
@@ -101,7 +100,7 @@ class ProcessOcrImageJob implements ShouldQueue
             ? $gemini->resolveOcrFallbackModel($gemini->model())
             : $gemini->model();
 
-        $absolute = Storage::disk('public')->path($image->path);
+        $absolute = app(\App\Services\Ocr\OcrStorage::class)->absolutePath($image->path);
         $started = microtime(true);
 
         if ($this->isPasteText || str_ends_with(strtolower($image->path), '.txt')) {

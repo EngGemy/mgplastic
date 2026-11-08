@@ -15,6 +15,8 @@ class OcrBatchService
 {
     public function __construct(
         protected InvoiceImagePreprocessor $preprocessor,
+        protected OcrStorage $ocrStorage,
+        protected OcrQtyUnitResolver $qtyUnits,
     ) {}
 
     public function findResumableDraft(User $user): ?OcrBatch
@@ -55,13 +57,14 @@ class OcrBatchService
             return ['ok' => false, 'image' => null, 'duplicate' => false, 'error' => 'الحد الأقصى '.$max.' صور لكل دفعة'];
         }
 
+        $diskName = (string) config('ocr_uploads.disk', OcrStorage::DISK_PRIVATE);
         if ($file instanceof UploadedFile) {
-            $stored = $file->store('ocr-uploads/'.date('Y/m/d'), 'public');
+            $stored = $file->store('ocr-uploads/'.date('Y/m/d'), $diskName);
         } else {
             $stored = $file;
         }
 
-        $absolute = Storage::disk('public')->path($stored);
+        $absolute = Storage::disk($diskName)->path($stored);
         try {
             $prepared = $this->preprocessor->prepare($absolute);
         } catch (\Throwable $e) {
@@ -74,8 +77,10 @@ class OcrBatchService
             return ['ok' => false, 'image' => $existing, 'duplicate' => true, 'error' => 'already uploaded'];
         }
 
+        // Persist prepared JPEG onto the private OCR disk (preprocessor may write ocr-tmp).
+        $relative = $this->persistPreparedToDisk($prepared['path'], $stored, $diskName);
+
         $position = (int) $batch->images()->max('position') + 1;
-        $relative = $this->relativePublicPath($prepared['path'], $stored);
 
         $image = OcrImage::query()->create([
             'batch_id' => $batch->id,
@@ -207,6 +212,11 @@ class OcrBatchService
                 $review = 'ready';
             }
 
+            $line = $this->qtyUnits->apply(
+                $line,
+                isset($line['pieces_per_box']) ? (int) $line['pieces_per_box'] : null,
+            );
+
             OcrImageLine::query()->create([
                 'image_id' => $image->id,
                 'line_no' => $lineNo,
@@ -289,6 +299,9 @@ class OcrBatchService
                 $payload['approved'] = $row->review_status === 'approved' || $row->review_status === 'added';
                 if ($row->review_status === 'added') {
                     $payload['added'] = true;
+                }
+                if (! isset($payload['qty_unit'])) {
+                    $payload = $this->qtyUnits->apply($payload, isset($payload['pieces_per_box']) ? (int) $payload['pieces_per_box'] : null);
                 }
 
                 $read++;
@@ -376,7 +389,7 @@ class OcrBatchService
     {
         $sha = hash('sha256', 'paste:'.Str::lower(trim($text)));
         $path = 'ocr-uploads/'.date('Y/m/d').'/paste_'.$batch->id.'_'.Str::random(8).'.txt';
-        Storage::disk('public')->put($path, $text);
+        Storage::disk((string) config('ocr_uploads.disk', OcrStorage::DISK_PRIVATE))->put($path, $text);
 
         $image = OcrImage::query()->create([
             'batch_id' => $batch->id,
@@ -449,13 +462,30 @@ class OcrBatchService
         return ['ok' => (bool) $totals['ok'], 'per_image' => $perImage, 'batch' => $totals];
     }
 
-    protected function relativePublicPath(string $preparedAbsolute, string $fallbackRelative): string
+    /**
+     * Copy prepared absolute file into the OCR disk under the stored relative path.
+     */
+    protected function persistPreparedToDisk(string $preparedAbsolute, string $fallbackRelative, string $diskName): string
     {
-        $publicRoot = rtrim(Storage::disk('public')->path(''), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
-        if (str_starts_with($preparedAbsolute, $publicRoot)) {
-            return str_replace('\\', '/', substr($preparedAbsolute, strlen($publicRoot)));
+        $disk = Storage::disk($diskName);
+        $diskRoot = rtrim($disk->path(''), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+        $preparedAbsolute = str_replace('\\', '/', $preparedAbsolute);
+
+        if (str_starts_with(str_replace('\\', '/', $preparedAbsolute), str_replace('\\', '/', $diskRoot))) {
+            return str_replace('\\', '/', substr($preparedAbsolute, strlen($diskRoot)));
         }
 
-        return $fallbackRelative;
+        // Preprocessor wrote to ocr-tmp — move bytes onto the OCR disk.
+        $relative = preg_replace('/\.[^.]+$/', '.jpg', $fallbackRelative) ?: $fallbackRelative;
+        $bytes = @file_get_contents($preparedAbsolute);
+        if ($bytes === false) {
+            return $fallbackRelative;
+        }
+        $disk->put($relative, $bytes);
+        if (is_file($preparedAbsolute) && str_contains($preparedAbsolute, 'ocr-tmp')) {
+            @unlink($preparedAbsolute);
+        }
+
+        return $relative;
     }
 }

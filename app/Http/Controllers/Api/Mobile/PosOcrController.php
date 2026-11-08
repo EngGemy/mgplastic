@@ -257,6 +257,17 @@ class PosOcrController extends Controller
             return $this->error('الدفعة غير موجودة', 404);
         }
 
+        // After apply the draft is locked — prefs/reenrich would rewrite matched lines.
+        if ($owned->status === 'added' || $owned->cart_added_at) {
+            return $this->error(
+                'الدفعة مُقفلة بعد الإضافة للسلة',
+                409,
+                ['batch' => $this->presenter->present($owned, $request->user())],
+                'OCR_BATCH_LOCKED',
+                'ocr_batch_locked',
+            );
+        }
+
         $v = Validator::make($request->all(), [
             'system_default' => ['sometimes', 'nullable', 'in:ask,us,eu'],
             'customer_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
@@ -301,15 +312,26 @@ class PosOcrController extends Controller
             return $this->error('الدفعة غير موجودة', 404);
         }
 
+        if ($owned->status === 'added' || $owned->cart_added_at) {
+            return $this->error(
+                'الدفعة مُقفلة بعد الإضافة للسلة',
+                409,
+                ['batch' => $this->presenter->present($owned, $request->user())],
+                'OCR_BATCH_LOCKED',
+                'ocr_batch_locked',
+            );
+        }
+
         $row = $this->ownedLine($owned, $line);
         if (! $row) {
             return $this->error('البند غير موجود', 404);
         }
 
         $v = Validator::make($request->all(), [
-            'action' => ['required', 'in:approve,unapprove,select_product,set_qty,choose_system,choose_family,confirm_understanding'],
+            'action' => ['required', 'in:approve,unapprove,select_product,set_qty,set_unit,choose_system,choose_family,confirm_understanding'],
             'product_id' => ['required_if:action,select_product', 'nullable', 'integer', 'exists:products,id'],
             'qty' => ['required_if:action,set_qty', 'nullable', 'numeric', 'min:1'],
+            'qty_unit' => ['required_if:action,set_unit', 'nullable', 'in:box,piece'],
             'system' => ['required_if:action,choose_system', 'nullable', 'in:us,eu'],
             'lexicon_family' => ['required_if:action,choose_family', 'nullable', 'string', 'max:64'],
         ]);
@@ -357,6 +379,17 @@ class PosOcrController extends Controller
                 $qty = (float) $request->input('qty');
                 $row->qty = $qty;
                 $payload['qty'] = $qty;
+                break;
+
+            case 'set_unit':
+                $unit = (string) $request->input('qty_unit');
+                $payload['qty_unit'] = $unit;
+                $payload['qty_unit_source'] = 'paper'; // user explicit choice
+                $flags = array_values(array_filter(
+                    (array) ($payload['needs_review'] ?? []),
+                    fn ($f) => $f !== 'unit_assumed'
+                ));
+                $payload['needs_review'] = $flags;
                 break;
 
             case 'choose_system':
@@ -486,6 +519,7 @@ class PosOcrController extends Controller
             return $this->error('تم تطبيق هذه الدفعة مسبقاً — لن تُكرَّر البنود', 409, [
                 'batch' => $presented,
                 'cart_lines' => $presented['cart_lines'] ?? [],
+                'unavailable_lines' => $presented['unavailable_lines'] ?? [],
                 'idempotency_token' => $owned->idempotency_token,
             ], 'OCR_ALREADY_APPLIED');
         }
@@ -541,9 +575,11 @@ class PosOcrController extends Controller
         }
 
         $stock = $this->presenter->stockQtyByProduct($request->user());
-        $cartLines = $this->presenter->buildCartLinesFromApproved($approvedForCart, $stock);
+        $partition = $this->presenter->buildCartPartitionFromApproved($approvedForCart, $stock);
+        $cartLines = $partition['cart_lines'];
+        $unavailable = $partition['unavailable_lines'];
 
-        if ($cartLines === []) {
+        if ($cartLines === [] && $unavailable === []) {
             return $this->error(
                 'لا بنود معتمدة — اعتمد البنود ثم طبّق على السلة',
                 422,
@@ -563,13 +599,15 @@ class PosOcrController extends Controller
 
         return $this->success([
             'cart_lines' => $cartLines,
+            'unavailable_lines' => $unavailable,
             'approved_count' => $approvedCount,
             'idempotency_token' => $token,
             'batch' => $this->presenter->present($owned->fresh(), $request->user()),
             'next' => [
                 'merge_into_local_cart' => true,
                 'checkout' => 'POST …/pos/checkout بنفس شكل lines (product_id + boxes|quantity)',
-                'send_idempotency_token_on_checkout' => false,
+                'checkout_idempotency_header' => 'Idempotency-Key',
+                'send_ocr_idempotency_token_on_checkout' => false,
             ],
         ], 'تم تجهيز '.$approvedCount.' منتج للسلة');
     }
