@@ -5,10 +5,13 @@ namespace App\Services;
 use App\Models\Product;
 use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class ProductTypeService
 {
+    public const HOME_COUNTS_CACHE_KEY = 'catalog:home_product_type_counts';
+
     /** @var list<array{key: string, name: string, subtitle: string, icon: string, image: ?string, image_url: ?string, keywords: list<string>, exclude_keywords: list<string>}>|null */
     private ?array $definitionsMemo = null;
 
@@ -84,6 +87,19 @@ class ProductTypeService
      * @return list<array{key: string, name: string, subtitle: string, icon: string, image_url: ?string, products_count: int}>
      */
     public function catalogForHome(): array
+    {
+        return Cache::remember(self::HOME_COUNTS_CACHE_KEY, 600, fn () => $this->buildCatalogForHome());
+    }
+
+    public function forgetHomeCountsCache(): void
+    {
+        Cache::forget(self::HOME_COUNTS_CACHE_KEY);
+    }
+
+    /**
+     * @return list<array{key: string, name: string, subtitle: string, icon: string, image_url: ?string, products_count: int}>
+     */
+    protected function buildCatalogForHome(): array
     {
         $counts = [];
         foreach ($this->definitions() as $def) {

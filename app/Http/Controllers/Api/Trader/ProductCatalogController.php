@@ -265,8 +265,9 @@ class ProductCatalogController extends Controller
 
     protected function catalogQuery(Request $request, bool $applyOrderUnit = true): Builder
     {
+        // List mapper does not use variants — skip to cut ORM/hydration cost (same JSON).
         $query = Product::query()
-            ->with(['translations', 'images', 'tags', 'sizes', 'variants', 'category.translations', 'category.parent.translations']);
+            ->with(['translations', 'images', 'tags', 'sizes', 'category.translations', 'category.parent.translations']);
 
         if ($request->filled('category_id')) {
             $catId = (int) $request->query('category_id');

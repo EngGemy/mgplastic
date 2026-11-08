@@ -44,6 +44,20 @@ class HomePopup extends Model
 
     protected static function booted(): void
     {
+        static::updating(function (self $popup) {
+            if (! $popup->isDirty('image_path')) {
+                return;
+            }
+            $old = $popup->getOriginal('image_path');
+            $new = $popup->image_path;
+            if (is_array($old)) {
+                $old = $old[0] ?? null;
+            }
+            if (filled($old) && $old !== $new) {
+                Storage::disk('public')->delete($old);
+            }
+        });
+
         static::saved(function () {
             try {
                 app(HomeMobileLayoutService::class)->forgetCache();
@@ -52,7 +66,10 @@ class HomePopup extends Model
             }
         });
 
-        static::deleted(function () {
+        static::deleted(function (self $popup) {
+            if (filled($popup->image_path) && is_string($popup->image_path)) {
+                Storage::disk('public')->delete($popup->image_path);
+            }
             try {
                 app(HomeMobileLayoutService::class)->forgetCache();
             } catch (\Throwable) {

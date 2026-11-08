@@ -75,22 +75,7 @@ class DistributionService
 
     protected function bustStockCaches(InvoiceDistribution $distribution): void
     {
-        $inventory = app(NetworkInventoryService::class);
-        $tier = (int) $distribution->tier;
-
-        if ($tier === 2 && $distribution->from_user_id) {
-            $inventory->forgetWholesalerStockCache((int) $distribution->from_user_id);
-        }
-        if ($tier === 1 && $distribution->to_user_id) {
-            $inventory->forgetWholesalerStockCache((int) $distribution->to_user_id);
-        }
-        // Retail POS + plumber catalog (?retail_trader_id=) read retail stock.
-        if ($tier === 2 && $distribution->to_user_id) {
-            $inventory->forgetRetailStockCache((int) $distribution->to_user_id);
-        }
-        if ($tier === 3 && $distribution->from_user_id) {
-            $inventory->forgetRetailStockCache((int) $distribution->from_user_id);
-        }
+        app(NetworkInventoryService::class)->bustCachesForDistribution($distribution);
     }
 
     private function validateTierRoles(int $tier, User $from, User $to): void

@@ -31,6 +31,9 @@ class NetworkInventoryService
     public function forgetWholesalerStockCache(int|User $wholesaler): void
     {
         $id = $wholesaler instanceof User ? (int) $wholesaler->id : (int) $wholesaler;
+        $this->bumpStockVersion('wholesaler', $id);
+
+        // Legacy unversioned keys (one deploy cycle).
         Cache::forget('net_inv:wholesaler:'.$id);
         Cache::store('array')->forget('net_inv:wholesaler:'.$id);
         foreach (['asc', 'desc'] as $order) {
@@ -41,6 +44,9 @@ class NetworkInventoryService
     public function forgetRetailStockCache(int|User $retailTrader): void
     {
         $id = $retailTrader instanceof User ? (int) $retailTrader->id : (int) $retailTrader;
+        $this->bumpStockVersion('retail', $id);
+
+        // Legacy unversioned keys (one deploy cycle).
         Cache::forget('net_inv:retail:'.$id);
         Cache::forget('net_inv:retail_qty:'.$id);
         Cache::store('array')->forget('net_inv:retail:'.$id);
@@ -50,13 +56,76 @@ class NetworkInventoryService
         }
     }
 
+    /**
+     * Invalidate stock/POS caches for both sides of a distribution (create/confirm/return).
+     */
+    public function bustCachesForDistribution(InvoiceDistribution $distribution): void
+    {
+        $tier = (int) $distribution->tier;
+
+        if ($tier === 2 && $distribution->from_user_id) {
+            $this->forgetWholesalerStockCache((int) $distribution->from_user_id);
+        }
+        if ($tier === 1 && $distribution->to_user_id) {
+            $this->forgetWholesalerStockCache((int) $distribution->to_user_id);
+        }
+        if ($tier === 2 && $distribution->to_user_id) {
+            $this->forgetRetailStockCache((int) $distribution->to_user_id);
+        }
+        if ($tier === 3 && $distribution->from_user_id) {
+            $this->forgetRetailStockCache((int) $distribution->from_user_id);
+        }
+    }
+
+    public function wholesalerStockCacheKey(int $wholesalerId): string
+    {
+        return 'net_inv:wholesaler:'.$wholesalerId.':v'.$this->stockVersion('wholesaler', $wholesalerId);
+    }
+
+    public function retailStockCacheKey(int $retailTraderId): string
+    {
+        return 'net_inv:retail:'.$retailTraderId.':v'.$this->stockVersion('retail', $retailTraderId);
+    }
+
+    public function retailQtyCacheKey(int $retailTraderId): string
+    {
+        return 'net_inv:retail_qty:'.$retailTraderId.':v'.$this->stockVersion('retail', $retailTraderId);
+    }
+
+    public function posStockCacheKey(string $role, int $userId, string $sizeOrder): string
+    {
+        $kind = $role === 'distributor' ? 'wholesaler' : 'retail';
+
+        return "pos_stock:{$role}:{$userId}:{$sizeOrder}:v".$this->stockVersion($kind, $userId);
+    }
+
+    protected function stockVersion(string $kind, int $id): int
+    {
+        return max(1, (int) Cache::get($this->stockVersionKey($kind, $id), 1));
+    }
+
+    protected function bumpStockVersion(string $kind, int $id): int
+    {
+        $key = $this->stockVersionKey($kind, $id);
+        $next = $this->stockVersion($kind, $id) + 1;
+        Cache::forever($key, $next);
+        Cache::store('array')->forever($key, $next);
+
+        return $next;
+    }
+
+    protected function stockVersionKey(string $kind, int $id): string
+    {
+        return "stock_ver:{$kind}:{$id}";
+    }
+
     public function stockForWholesaler(User $wholesaler): Collection
     {
         if (! $wholesaler->isWholesaleDistributor()) {
             return collect();
         }
 
-        $cacheKey = 'net_inv:wholesaler:'.$wholesaler->id;
+        $cacheKey = $this->wholesalerStockCacheKey((int) $wholesaler->id);
 
         // Persistent cache — do NOT sync-on-read (that was blocking POS >25s).
         return Cache::remember($cacheKey, 90, function () use ($wholesaler) {
@@ -86,7 +155,7 @@ class NetworkInventoryService
             return collect();
         }
 
-        $cacheKey = 'net_inv:retail:'.$retailTrader->id;
+        $cacheKey = $this->retailStockCacheKey((int) $retailTrader->id);
 
         return Cache::remember($cacheKey, 90, function () use ($retailTrader) {
             return $this->buildStockFromParentTier(
@@ -108,7 +177,7 @@ class NetworkInventoryService
             return collect();
         }
 
-        $cacheKey = 'net_inv:retail_qty:'.$retailTrader->id;
+        $cacheKey = $this->retailQtyCacheKey((int) $retailTrader->id);
 
         return Cache::remember($cacheKey, 90, function () use ($retailTrader) {
             $rows = $this->aggregateAvailableQtyByProduct(
@@ -293,6 +362,7 @@ class NetworkInventoryService
             $parent = $parentNets->get($key);
             if (! $parent) {
                 $out[$key] = 0;
+
                 continue;
             }
             $parentNet = (int) $parent->quantity - (int) ($parent->returned_quantity ?? 0);

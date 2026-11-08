@@ -3,8 +3,8 @@
 namespace App\Filament\RelationManagers;
 
 use App\Models\Product;
-use App\Models\SocialLink;
 use App\Models\StoreMedia;
+use App\Services\ImageThumbnailService;
 use App\Services\VideoThumbnailService;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -92,7 +92,8 @@ class StoreMediaRelationManager extends RelationManager
                     ->disk('public')
                     ->defaultImageUrl(fn (StoreMedia $record) => $record->kind === 'video' ? null : $record->url)
                     ->getStateUsing(fn (StoreMedia $record) => $record->thumbnail_path ?: ($record->kind !== 'video' ? $record->file_path : null))
-                    ->size(56),
+                    ->size(56)
+                    ->extraImgAttributes(['loading' => 'lazy', 'decoding' => 'async']),
 
                 Tables\Columns\TextColumn::make('kind')
                     ->label('النوع')
@@ -133,14 +134,26 @@ class StoreMediaRelationManager extends RelationManager
                 Tables\Actions\CreateAction::make()
                     ->label('إضافة وسائط')
                     ->after(function (StoreMedia $record) {
-                        if ($record->kind === 'video' && $record->file_path && ! $record->thumbnail_path) {
+                        if (! $record->file_path || $record->thumbnail_path) {
+                            return;
+                        }
+
+                        if ($record->kind === 'video') {
                             $thumb = app(VideoThumbnailService::class)->generate(
                                 $record->file_path,
                                 'store_media/thumbnails'
                             );
-                            if ($thumb) {
-                                $record->update(['thumbnail_path' => $thumb]);
-                            }
+                        } else {
+                            $thumb = app(ImageThumbnailService::class)->makeThumbnail(
+                                $record->file_path,
+                                'store_media/thumbnails',
+                                240,
+                                72
+                            );
+                        }
+
+                        if ($thumb) {
+                            $record->update(['thumbnail_path' => $thumb]);
                         }
                     }),
             ])
