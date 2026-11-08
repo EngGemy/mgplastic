@@ -75,7 +75,8 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->renderHook('panels::head.end', fn () => view('filament.hooks.admin-styles'))
-            ->renderHook('panels::body.start', fn () => view('filament.hooks.system-health-banner'))
+            // Authenticated content shell only — never on the login page.
+            ->renderHook('panels::content.start', fn () => view('filament.hooks.system-health-banner'))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
