@@ -17,9 +17,30 @@ class PhoneOtpService
 {
     use SendsMarsolSmsOtp;
 
+    public const MAX_VERIFY_ATTEMPTS = 5;
+
     public function __construct(
         protected WhatsAppNotifier $whatsapp,
     ) {}
+
+    public function isLockedOut(User $user): bool
+    {
+        return (int) $user->otp_attempts >= self::MAX_VERIFY_ATTEMPTS;
+    }
+
+    public function registerFailedVerify(User $user): void
+    {
+        $user->increment('otp_attempts');
+    }
+
+    public function lockoutResponse(): array
+    {
+        return [
+            'status' => false,
+            'message' => 'تم تجاوز عدد محاولات رمز التحقق — اطلب رمزاً جديداً',
+            'code' => 'otp_locked',
+        ];
+    }
 
     /**
      * Issue a 6-digit OTP and deliver via ONE chosen channel (whatsapp|sms).

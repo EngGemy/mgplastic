@@ -75,20 +75,22 @@ Route::middleware('api')->prefix('v1')->group(function () {
 // CLAIM ROUTES
 // =========================
 Route::middleware('api')->prefix('v1')->group(function () {
-    Route::post('claims', [ClaimController::class, 'store']); // Submit new claim
-    Route::get('claims', [ClaimController::class, 'index']);  // View all claims
+    Route::post('claims', [ClaimController::class, 'store']); // Public contact form
+    Route::get('claims', [ClaimController::class, 'index'])
+        ->middleware('auth:sanctum'); // Admin-only list (enforced in controller)
 });
 
 Route::middleware('api')->prefix('v1')->group(function () {
-    // General sliders (optional filter ?type=home|store)
+    // General sliders (optional filter ?type=home|store) — guest-readable
     Route::get('sliders', [SliderController::class, 'index']);
 
     // Specific endpoints
     Route::get('sliders/home', [SliderController::class, 'home']);
     Route::get('sliders/store', [SliderController::class, 'storeOnly']);
 
-    // Add new slider (admin)
-    Route::post('sliders', [SliderController::class, 'store']);
+    // Add new slider (admin only)
+    Route::post('sliders', [SliderController::class, 'store'])
+        ->middleware('auth:sanctum');
 });
 
 Route::prefix('v1/plumber-stores')->group(function () {
@@ -152,12 +154,12 @@ Route::get('v1/vendors/{store}', [NetworkStoreController::class, 'publicShow'])
     ->where('store', '[A-Za-z0-9\-]+');
 
 Route::middleware('api')->prefix('v1/events')->group(function () {
-    Route::get('/', [EventController::class, 'index']);
+    Route::get('/', [EventController::class, 'index']); // guest-readable
     Route::get('/{id}', [EventController::class, 'show']);
-    Route::post('/', [EventController::class, 'store']);
+    Route::post('/', [EventController::class, 'store'])->middleware('auth:sanctum'); // admin only
 });
 
-Route::middleware(['api', 'auth:sanctum'])->prefix('v1/plumber')->group(function () {
+Route::middleware(['api', 'auth:sanctum', 'role.api:plumber'])->prefix('v1/plumber')->group(function () {
     Route::post('/update-profile', [PlumberProfileController::class, 'updateProfile']);
     Route::post('/work-photos', [PlumberProfileController::class, 'addWorkMedia']);
     Route::get('/work-photos', [PlumberProfileController::class, 'listWorkPhotos']);
@@ -169,10 +171,10 @@ Route::middleware(['api', 'auth:sanctum'])->prefix('v1/plumber')->group(function
 });
 
 Route::prefix('v1/blogs')->group(function () {
-    Route::post('/', [BlogController::class, 'store']);
-    Route::post('/{id}/approve', [BlogController::class, 'approve']);
-    Route::get('/', [BlogController::class, 'index']);
+    Route::get('/', [BlogController::class, 'index']); // guest-readable (approved only)
     Route::get('/{id}', [BlogController::class, 'show']);
+    Route::post('/', [BlogController::class, 'store'])->middleware('auth:sanctum');
+    Route::post('/{id}/approve', [BlogController::class, 'approve'])->middleware('auth:sanctum');
     Route::post('/{id}/like', [BlogController::class, 'like'])->middleware('auth:sanctum');
     Route::post('/{id}/comment', [BlogController::class, 'comment'])->middleware('auth:sanctum');
 });
@@ -239,6 +241,23 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::get('/invoices/{invoice}/items', function (Invoice $invoice) {
+            $user = request()->user();
+            if (! $user || ! $invoice->canBeViewedBy($user)) {
+                // #region agent log
+                @file_put_contents(base_path('.cursor/debug-c5ed3b.log'), json_encode([
+                    'sessionId' => 'c5ed3b',
+                    'hypothesisId' => 'H-idor',
+                    'location' => 'routes/api.php:invoice-items',
+                    'message' => 'invoice items access denied',
+                    'data' => ['invoice_id' => $invoice->id, 'user_id' => $user?->id, 'role' => $user?->role],
+                    'timestamp' => (int) (microtime(true) * 1000),
+                    'runId' => 'post-fix',
+                ], JSON_UNESCAPED_UNICODE)."\n", FILE_APPEND);
+                // #endregion
+
+                return response()->json(['status' => 403, 'message' => 'غير مصرح'], 403);
+            }
+
             return response()->json([
                 'status' => 200,
                 'data' => $invoice->items()->with('product')->get(),
@@ -249,6 +268,23 @@ Route::prefix('v1')->group(function () {
             Invoice $invoice,
             DistributionService $service
         ) {
+            $user = request()->user();
+            if (! $user || ! $invoice->canBeViewedBy($user)) {
+                // #region agent log
+                @file_put_contents(base_path('.cursor/debug-c5ed3b.log'), json_encode([
+                    'sessionId' => 'c5ed3b',
+                    'hypothesisId' => 'H-idor',
+                    'location' => 'routes/api.php:invoice-summary',
+                    'message' => 'invoice summary access denied',
+                    'data' => ['invoice_id' => $invoice->id, 'user_id' => $user?->id, 'role' => $user?->role],
+                    'timestamp' => (int) (microtime(true) * 1000),
+                    'runId' => 'post-fix',
+                ], JSON_UNESCAPED_UNICODE)."\n", FILE_APPEND);
+                // #endregion
+
+                return response()->json(['status' => 403, 'message' => 'غير مصرح'], 403);
+            }
+
             return response()->json([
                 'status' => 200,
                 'data' => $service->getDistributionSummary($invoice),
@@ -256,8 +292,8 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::prefix('plumber')
+            ->middleware('role.api:plumber')
             ->group(function () {
-
                 /** Invoices — uploaded by plumber */
                 Route::get('invoices/received', [PlumberInvoiceController::class, 'received']);
                 Route::get('invoices/{distribution}/detail', [PlumberInvoiceController::class, 'distributionDetail'])

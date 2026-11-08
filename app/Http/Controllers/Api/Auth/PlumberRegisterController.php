@@ -3,42 +3,41 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Http\Request;
-use App\Models\User;
 use App\Models\City;
+use App\Models\User;
 use App\Services\OtpTicketService;
 use App\Services\PhoneOtpService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 
 class PlumberRegisterController extends Controller
 {
-
     public function register(Request $request)
     {
-        // Normalize role
+        // Plumber-only endpoint — vendors/stores must use register-store / register-retail.
         $request->merge([
-            'role' => strtolower($request->input('role', $request->input('type', 'plumber')))
+            'role' => 'plumber',
         ]);
 
         // Validate input
         $validator = Validator::make($request->all(), [
-            'name'          => 'required|string|max:255',
-            'phone'         => 'required|string|unique:users,phone',
-            'country_id'    => 'required|exists:countries,id',
-            'city_id'       => 'required|exists:cities,id',
-            'password'      => 'required|string|min:6|confirmed',
+            'name' => 'required|string|max:255',
+            'phone' => 'required|string|unique:users,phone',
+            'country_id' => 'required|exists:countries,id',
+            'city_id' => 'required|exists:cities,id',
+            'password' => 'required|string|min:6|confirmed',
             'profile_photo' => 'nullable|image|max:2048',
-            'role'          => 'required|in:plumber,vendor',
+            'role' => 'required|in:plumber',
         ], [
-            'role.in' => 'الدور يجب أن يكون سباكاً أو مورّداً.',
+            'role.in' => 'هذا المسار لتسجيل السباك فقط — سجّل المتجر عبر register-store أو register-retail.',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'status'  => false,
-                'message' => $validator->errors()->first()
+                'status' => false,
+                'message' => $validator->errors()->first(),
             ], 422);
         }
 
@@ -49,8 +48,8 @@ class PlumberRegisterController extends Controller
 
         if (! $city) {
             return response()->json([
-                'status'  => false,
-                'message' => 'المدينة لا تتبع الدولة المختارة'
+                'status' => false,
+                'message' => 'المدينة لا تتبع الدولة المختارة',
             ], 422);
         }
 
@@ -83,7 +82,6 @@ class PlumberRegisterController extends Controller
         $user->load(['country:id,name_en,name_ar', 'city:id,country_id,name_en,name_ar']);
         $nameCol = app()->getLocale() === 'ar' ? 'name_ar' : 'name_en';
 
-        $roleLabel = $request->role === 'plumber' ? 'السباك' : 'البائع';
         $otp = app(PhoneOtpService::class);
         $ticket = app(OtpTicketService::class)->issue($user);
         $channels = $otp->channelOptions();
@@ -95,7 +93,7 @@ class PlumberRegisterController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => "تم تسجيل {$roleLabel} — اختر طريقة إرسال رمز التحقق",
+            'message' => 'تم تسجيل السباك — اختر طريقة إرسال رمز التحقق',
             'code' => 'otp_required',
             'requires_otp' => true,
             'otp_sent' => false,

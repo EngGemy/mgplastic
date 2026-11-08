@@ -141,9 +141,27 @@ class VerifyOtpController extends Controller
             ], 403);
         }
 
-        if (! app(PhoneOtpService::class)->matches($user, (string) $request->otp)) {
-            if ($user->otp_code || $user->marsol_otp_request_id) {
-                $user->increment('otp_attempts');
+        $otpService = app(PhoneOtpService::class);
+
+        if ($otpService->isLockedOut($user)) {
+            // #region agent log
+            @file_put_contents(base_path('.cursor/debug-c5ed3b.log'), json_encode([
+                'sessionId' => 'c5ed3b',
+                'hypothesisId' => 'H-otp',
+                'location' => 'VerifyOtpController::verify',
+                'message' => 'otp lockout enforced',
+                'data' => ['user_id' => $user->id, 'attempts' => (int) $user->otp_attempts],
+                'timestamp' => (int) (microtime(true) * 1000),
+                'runId' => 'post-fix',
+            ], JSON_UNESCAPED_UNICODE)."\n", FILE_APPEND);
+            // #endregion
+
+            return response()->json($otpService->lockoutResponse(), 429);
+        }
+
+        if (! $otpService->matches($user, (string) $request->otp)) {
+            if ($user->otp_code || $user->marsol_otp_request_id || $user->otp_expires_at) {
+                $otpService->registerFailedVerify($user);
             }
 
             return response()->json(['status' => false, 'message' => 'رمز التحقق غير صحيح أو منتهي'], 422);
