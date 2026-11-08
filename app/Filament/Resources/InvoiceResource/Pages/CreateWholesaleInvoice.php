@@ -21,7 +21,6 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Js;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
@@ -439,7 +438,7 @@ class CreateWholesaleInvoice extends Page
 
         /** @var OcrImage $image */
         $image = $result['image'];
-        $this->ocrPreviewUrl = Storage::disk('public')->url($image->path);
+        $this->ocrPreviewUrl = app(\App\Services\Ocr\OcrStorage::class)->signedPreviewUrl($image);
         $this->ocrImageSha = $image->sha256;
         $this->ocrReading = true;
         $this->ocrStep = 'polling';
@@ -526,7 +525,7 @@ class CreateWholesaleInvoice extends Page
                 'status' => $img->status,
                 'lines_count' => $img->lines_count,
                 'error' => $img->last_error_code,
-                'preview' => Storage::disk('public')->url($img->path),
+                'preview' => app(\App\Services\Ocr\OcrStorage::class)->signedPreviewUrl($img),
                 'countdown' => $countdown,
                 'quality_warning' => (bool) $img->quality_warning,
                 'attempts' => $img->attempts,

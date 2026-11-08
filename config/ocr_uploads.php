@@ -12,4 +12,7 @@ return [
     /** Signed preview URL lifetime (minutes). */
     'signed_preview_minutes' => (int) env('OCR_SIGNED_PREVIEW_MINUTES', 30),
 
+    /** Disk for new OCR uploads (Laravel filesystem disk name). */
+    'disk' => env('OCR_UPLOAD_DISK', 'local'),
+
 ];

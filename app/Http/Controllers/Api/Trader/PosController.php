@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\NetworkInventoryService;
 use App\Services\PlumberDistributionPosService;
 use App\Services\Points\PointsRateHintBuilder;
+use App\Services\PosCheckoutIdempotency;
 use App\Services\RetailNetworkLinkService;
 use App\Support\PointsVisibility;
 use App\Support\ProductSizeSorter;
@@ -24,6 +25,7 @@ class PosController extends Controller
         protected NetworkInventoryService $inventory,
         protected PlumberDistributionPosService $pos,
         protected RetailNetworkLinkService $links,
+        protected PosCheckoutIdempotency $idempotency,
     ) {}
 
     /** Own retail stock — categories → tags → products (ملحقات), size-ordered. */
@@ -178,72 +180,74 @@ class PosController extends Controller
 
     public function checkout(Request $request): JsonResponse
     {
-        $v = Validator::make($request->all(), [
-            'plumber_id' => ['required', 'exists:users,id'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
-            'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
-        ]);
+        return $this->idempotency->handle($request, function () use ($request) {
+            $v = Validator::make($request->all(), [
+                'plumber_id' => ['required', 'exists:users,id'],
+                'lines' => ['required', 'array', 'min:1'],
+                'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
+                'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
+                'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
+            ]);
 
-        $v->after(function ($validator) use ($request) {
-            foreach ($request->input('lines', []) as $i => $line) {
-                $boxes = $line['boxes'] ?? null;
-                $qty = $line['quantity'] ?? null;
-                if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
-                    $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+            $v->after(function ($validator) use ($request) {
+                foreach ($request->input('lines', []) as $i => $line) {
+                    $boxes = $line['boxes'] ?? null;
+                    $qty = $line['quantity'] ?? null;
+                    if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
+                        $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+                    }
                 }
+            });
+
+            if ($v->fails()) {
+                return $this->error('بيانات غير صالحة', 422, $v->errors());
+            }
+
+            $plumber = User::findOrFail($request->integer('plumber_id'));
+
+            try {
+                $pack = $this->pos->issueToPlumber(
+                    $request->user(),
+                    $plumber,
+                    $request->input('lines'),
+                    $request->user(),
+                );
+                $distributions = $pack['distributions'] ?? $pack;
+                $reputation = $pack['reputation'] ?? ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false];
+
+                $plumber->refresh();
+                $balancePoints = (int) ($plumber->wallet('LYD')->balance_points ?? 0);
+
+                $share = null;
+                $firstDist = collect($distributions)->first();
+                if ($firstDist) {
+                    try {
+                        $share = app(\App\Services\InvoiceWhatsAppShareService::class)
+                            ->forDistribution($firstDist, $request->user());
+                    } catch (\Throwable) {
+                        $share = null;
+                    }
+                }
+
+                return $this->created([
+                    'distributions' => $distributions,
+                    'pending_receipt' => true,
+                    'total_points' => collect($distributions)->sum(fn ($d) => $d->total_points ?? (int) $d->items?->sum('points_value')),
+                    'plumber_id' => $plumber->id,
+                    'plumber_name' => $plumber->name,
+                    // Points settle only after plumber confirms receipt.
+                    'plumber_balance_points' => $balancePoints,
+                    'balance_points' => $balancePoints,
+                    'new_badges' => $reputation['new_badges'] ?? [],
+                    'score_delta' => (int) ($reputation['score_delta'] ?? 0),
+                    'level_changed' => (bool) ($reputation['level_changed'] ?? false),
+                    'whatsapp_share' => $share,
+                    'share_url' => $share['share_url'] ?? null,
+                    'whatsapp_url' => $share['whatsapp_url'] ?? null,
+                ], 'تم إصدار الفاتورة — بانتظار تأكيد استلام السباك');
+            } catch (\DomainException $e) {
+                return $this->error($e->getMessage(), 422);
             }
         });
-
-        if ($v->fails()) {
-            return $this->error('بيانات غير صالحة', 422, $v->errors());
-        }
-
-        $plumber = User::findOrFail($request->integer('plumber_id'));
-
-        try {
-            $pack = $this->pos->issueToPlumber(
-                $request->user(),
-                $plumber,
-                $request->input('lines'),
-                $request->user(),
-            );
-            $distributions = $pack['distributions'] ?? $pack;
-            $reputation = $pack['reputation'] ?? ['new_badges' => [], 'score_delta' => 0, 'level_changed' => false];
-
-            $plumber->refresh();
-            $balancePoints = (int) ($plumber->wallet('LYD')->balance_points ?? 0);
-
-            $share = null;
-            $firstDist = collect($distributions)->first();
-            if ($firstDist) {
-                try {
-                    $share = app(\App\Services\InvoiceWhatsAppShareService::class)
-                        ->forDistribution($firstDist, $request->user());
-                } catch (\Throwable) {
-                    $share = null;
-                }
-            }
-
-            return $this->created([
-                'distributions' => $distributions,
-                'pending_receipt' => true,
-                'total_points' => collect($distributions)->sum(fn ($d) => $d->total_points ?? (int) $d->items?->sum('points_value')),
-                'plumber_id' => $plumber->id,
-                'plumber_name' => $plumber->name,
-                // Points settle only after plumber confirms receipt.
-                'plumber_balance_points' => $balancePoints,
-                'balance_points' => $balancePoints,
-                'new_badges' => $reputation['new_badges'] ?? [],
-                'score_delta' => (int) ($reputation['score_delta'] ?? 0),
-                'level_changed' => (bool) ($reputation['level_changed'] ?? false),
-                'whatsapp_share' => $share,
-                'share_url' => $share['share_url'] ?? null,
-                'whatsapp_url' => $share['whatsapp_url'] ?? null,
-            ], 'تم إصدار الفاتورة — بانتظار تأكيد استلام السباك');
-        } catch (\DomainException $e) {
-            return $this->error($e->getMessage(), 422);
-        }
     }
 }

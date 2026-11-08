@@ -4,30 +4,34 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\OcrImage;
+use App\Services\Ocr\OcrStorage;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Temporary signed access to an OCR upload (no app token required; signature is the gate).
+ * Temporary signed access to an OCR upload (signature is the gate).
  */
 class OcrImagePreviewController extends Controller
 {
+    public function __construct(protected OcrStorage $ocrStorage) {}
+
     public function show(Request $request, OcrImage $image): Response
     {
         if (! $request->hasValidSignature()) {
             abort(403, 'رابط المعاينة منتهٍ أو غير صالح');
         }
 
-        $disk = Storage::disk('public');
-        if ($image->path === '' || ! $disk->exists($image->path)) {
+        if ($image->path === '' || ! $this->ocrStorage->exists($image->path)) {
             abort(404, 'الصورة غير موجودة');
         }
 
-        $mime = $disk->mimeType($image->path) ?: 'image/jpeg';
+        $bytes = $this->ocrStorage->get($image->path);
+        if ($bytes === null) {
+            abort(404, 'الصورة غير موجودة');
+        }
 
-        return response($disk->get($image->path), 200, [
-            'Content-Type' => $mime,
+        return response($bytes, 200, [
+            'Content-Type' => $this->ocrStorage->mimeType($image->path),
             'Cache-Control' => 'private, max-age=60',
         ]);
     }

@@ -4,8 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\OcrBatch;
 use App\Models\OcrImage;
+use App\Services\Ocr\OcrStorage;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Storage;
 
 class OcrPruneUploadsCommand extends Command
 {
@@ -13,12 +13,11 @@ class OcrPruneUploadsCommand extends Command
 
     protected $description = 'Delete OCR upload files for finished batches older than retention';
 
-    public function handle(): int
+    public function handle(OcrStorage $ocrStorage): int
     {
         $days = max(1, (int) ($this->option('days') ?: config('ocr_uploads.retention_days', 30)));
         $dry = (bool) $this->option('dry-run');
         $cutoff = now()->subDays($days);
-        $disk = Storage::disk('public');
 
         $batchIds = OcrBatch::query()
             ->whereIn('status', ['added', 'abandoned'])
@@ -40,11 +39,11 @@ class OcrPruneUploadsCommand extends Command
 
         foreach ($images as $image) {
             $path = (string) $image->path;
-            if ($path !== '' && $disk->exists($path)) {
+            if ($path !== '' && $ocrStorage->exists($path)) {
                 if ($dry) {
                     $this->line("[dry] {$path}");
                 } else {
-                    $disk->delete($path);
+                    $ocrStorage->delete($path);
                 }
                 $deletedFiles++;
             }
