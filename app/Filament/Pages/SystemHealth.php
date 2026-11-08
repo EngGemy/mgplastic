@@ -8,7 +8,6 @@ use App\Services\WhatsAppNotifier;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
@@ -54,7 +53,20 @@ class SystemHealth extends Page
     /** @return list<array<string, mixed>> */
     public function getChecks(): array
     {
-        return app(SystemHealthService::class)->checksAsArrays(liveWahaSession: true);
+        $snapshot = app(SystemHealthService::class)->cachedSnapshot();
+        if (is_array($snapshot['checks'] ?? null) && $snapshot['checks'] !== []) {
+            return $snapshot['checks'];
+        }
+
+        // First visit with no snapshot yet — DB-only checks (no WAHA HTTP).
+        return app(SystemHealthService::class)->checksAsArrays(liveWahaSession: false);
+    }
+
+    public function getSnapshotCheckedAt(): ?string
+    {
+        $snapshot = app(SystemHealthService::class)->cachedSnapshot();
+
+        return is_string($snapshot['checked_at'] ?? null) ? $snapshot['checked_at'] : null;
     }
 
     /** @return list<array<string, mixed>> */
@@ -65,9 +77,12 @@ class SystemHealth extends Page
 
     public function refreshChecks(): void
     {
-        Cache::forget('monitoring:waha_session_check');
-        app(SystemHealthService::class)->forgetBannerCache();
-        Notification::make()->success()->title('تم تحديث الفحوصات')->send();
+        app(SystemHealthService::class)->refreshAndStoreSnapshot();
+        Notification::make()
+            ->success()
+            ->title('تم التحديث المباشر')
+            ->body('يشمل فحص جلسة WAHA')
+            ->send();
     }
 
     public function resetWhatsAppBreaker(): void
@@ -84,7 +99,8 @@ class SystemHealth extends Page
             ['was_open' => $wasOpen, 'previous_reason' => $reason]
         );
 
-        app(SystemHealthService::class)->forgetBannerCache();
+        $health = app(SystemHealthService::class);
+        $health->storeSnapshot($health->checks(liveWahaSession: false));
 
         Notification::make()
             ->success()

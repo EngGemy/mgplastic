@@ -55,12 +55,15 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
         }
 
         if (! $fcm->enabled()) {
-            NotificationLog::query()->create([
-                'notification_id' => $inbox->id,
-                'status' => NotificationLog::STATUS_FAILED,
-                'error' => 'FCM disabled or credentials missing',
-                'attempts' => $this->attempts(),
-            ]);
+            $this->finalizeQueuedLog(
+                notificationId: $inbox->id,
+                deviceTokenId: null,
+                status: NotificationLog::STATUS_FAILED,
+                attrs: [
+                    'error' => 'FCM disabled or credentials missing',
+                    'attempts' => $this->attempts(),
+                ],
+            );
 
             return;
         }
@@ -76,12 +79,15 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
                 'user_id' => $user->id,
                 'inbox_id' => $inbox->id,
             ]);
-            NotificationLog::query()->create([
-                'notification_id' => $inbox->id,
-                'status' => NotificationLog::STATUS_FAILED,
-                'error' => 'No active device tokens — app must POST /mobile/devices/push-token after login',
-                'attempts' => $this->attempts(),
-            ]);
+            $this->finalizeQueuedLog(
+                notificationId: $inbox->id,
+                deviceTokenId: null,
+                status: NotificationLog::STATUS_FAILED,
+                attrs: [
+                    'error' => 'No active device tokens — app must POST /mobile/devices/push-token after login',
+                    'attempts' => $this->attempts(),
+                ],
+            );
 
             return;
         }
@@ -122,14 +128,17 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
 
         foreach ($report['successes'] as $token => $messageId) {
             $device = $tokenByValue->get($token);
-            NotificationLog::query()->create([
-                'notification_id' => $inbox->id,
-                'device_token_id' => $device?->id,
-                'status' => NotificationLog::STATUS_SENT,
-                'fcm_message_id' => $messageId,
-                'attempts' => $this->attempts(),
-                'sent_at' => now(),
-            ]);
+            $this->finalizeQueuedLog(
+                notificationId: $inbox->id,
+                deviceTokenId: $device?->id,
+                status: NotificationLog::STATUS_SENT,
+                attrs: [
+                    'fcm_message_id' => $messageId,
+                    'attempts' => $this->attempts(),
+                    'sent_at' => now(),
+                    'error' => null,
+                ],
+            );
             $anySent = true;
         }
 
@@ -141,15 +150,17 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
                 $device->forceFill(['is_active' => false])->save();
             }
 
-            NotificationLog::query()->create([
-                'notification_id' => $inbox->id,
-                'device_token_id' => $device?->id,
-                'status' => $isUnregistered
+            $this->finalizeQueuedLog(
+                notificationId: $inbox->id,
+                deviceTokenId: $device?->id,
+                status: $isUnregistered
                     ? NotificationLog::STATUS_UNREGISTERED
                     : NotificationLog::STATUS_FAILED,
-                'error' => mb_substr($error, 0, 2000),
-                'attempts' => $this->attempts(),
-            ]);
+                attrs: [
+                    'error' => mb_substr($error, 0, 2000),
+                    'attempts' => $this->attempts(),
+                ],
+            );
         }
 
         if ($anySent && $inbox->priority !== 'high') {
@@ -164,6 +175,47 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
         if (! $anySent && $retryableFailures !== [] && $this->attempts() < $this->tries) {
             throw new \RuntimeException('FCM multicast: all tokens failed');
         }
+    }
+
+    /**
+     * Prefer updating an existing queued row (same notification + device) over inserting.
+     *
+     * @param  array<string, mixed>  $attrs
+     */
+    protected function finalizeQueuedLog(int $notificationId, ?int $deviceTokenId, string $status, array $attrs = []): void
+    {
+        $payload = array_merge($attrs, [
+            'status' => $status,
+            'device_token_id' => $deviceTokenId,
+        ]);
+
+        $queued = NotificationLog::query()
+            ->where('notification_id', $notificationId)
+            ->where('status', NotificationLog::STATUS_QUEUED)
+            ->when(
+                $deviceTokenId !== null,
+                fn ($q) => $q->where(function ($inner) use ($deviceTokenId) {
+                    $inner->where('device_token_id', $deviceTokenId)
+                        ->orWhereNull('device_token_id');
+                }),
+                fn ($q) => $q->whereNull('device_token_id')
+            )
+            ->orderByRaw('case when device_token_id is null then 1 else 0 end')
+            ->orderBy('id')
+            ->first();
+
+        if ($queued) {
+            $queued->fill($payload)->save();
+
+            return;
+        }
+
+        NotificationLog::query()->create(array_merge([
+            'notification_id' => $notificationId,
+            'device_token_id' => $deviceTokenId,
+            'status' => $status,
+            'attempts' => $attrs['attempts'] ?? 0,
+        ], $attrs));
     }
 
     /**

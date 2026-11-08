@@ -8,8 +8,11 @@
     <div class="space-y-6" dir="rtl">
         <div class="flex flex-wrap items-center gap-3">
             <x-filament::button wire:click="refreshChecks" color="gray" icon="heroicon-o-arrow-path">
-                تحديث
+                تحديث مباشر (يشمل WAHA)
             </x-filament::button>
+            @if($checkedAt = $this->getSnapshotCheckedAt())
+                <span class="text-xs text-gray-500">آخر لقطة: {{ $checkedAt }}</span>
+            @endif
 
             <x-filament::button
                 wire:click="resetWhatsAppBreaker"

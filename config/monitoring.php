@@ -47,4 +47,22 @@ return [
     'alert_state_cache_ttl_days' => max(1, (int) env('MONITOR_ALERT_STATE_TTL_DAYS', 14)),
 
     'health_banner_cache_seconds' => max(5, (int) env('MONITOR_BANNER_CACHE', 30)),
+
+    'health_snapshot_key' => 'monitoring:health_snapshot',
+
+    'health_snapshot_ttl_minutes' => max(10, (int) env('MONITOR_SNAPSHOT_TTL', 120)),
+
+    /*
+    | Max age before a queued WhatsApp message is dropped as stale (seconds),
+    | or the special value "end_of_day" (reminder_daily → 23:59 same calendar day).
+    */
+    'whatsapp_message_max_age' => [
+        'otp' => max(60, (int) env('MONITOR_WA_MAX_AGE_OTP', 300)),
+        'otp_card' => max(60, (int) env('MONITOR_WA_MAX_AGE_OTP', 300)),
+        'invoice_created' => max(60, (int) env('MONITOR_WA_MAX_AGE_INVOICE', 43200)),
+        'welcome' => max(60, (int) env('MONITOR_WA_MAX_AGE_WELCOME', 43200)),
+        'reminder_daily' => env('MONITOR_WA_MAX_AGE_REMINDER_DAILY', 'end_of_day'),
+        'reminder_weekly' => max(60, (int) env('MONITOR_WA_MAX_AGE_REMINDER_WEEKLY', 86400)),
+        'default' => max(60, (int) env('MONITOR_WA_MAX_AGE_DEFAULT', 43200)),
+    ],
 ];
