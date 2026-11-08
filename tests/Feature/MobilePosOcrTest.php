@@ -150,14 +150,37 @@ class MobilePosOcrTest extends TestCase
         $this->assertSame($product->id, (int) $cartLines[0]['product_id']);
         $this->assertSame(4, (int) $cartLines[0]['quantity']);
 
-        // Idempotent — second apply blocked
-        $this->postJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId.'/apply')
-            ->assertStatus(409);
+        $this->assertArrayHasKey('available_qty', $cartLines[0]);
+
+        // Idempotent — second apply blocked but returns recoverable cart_lines
+        $again = $this->postJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId.'/apply');
+        $again->assertStatus(409)
+            ->assertJsonPath('error_code', 'OCR_ALREADY_APPLIED')
+            ->assertJsonPath('errors.cart_lines.0.product_id', $product->id);
+
+        // GET recovers cart_lines after apply
+        $this->getJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId)
+            ->assertOk()
+            ->assertJsonPath('data.batch.step', 'added')
+            ->assertJsonPath('data.batch.cart_lines.0.product_id', $product->id)
+            ->assertJsonPath('data.batch.cart_lines.0.quantity', 4);
 
         $this->assertDatabaseHas('ocr_image_lines', [
             'id' => $lineId,
             'review_status' => 'added',
         ]);
+    }
+
+    public function test_current_returns_gemini_enabled_when_batch_null(): void
+    {
+        $user = $this->distributor();
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/mobile/distributor/pos/ocr/current')
+            ->assertOk()
+            ->assertJsonPath('data.resumable', false)
+            ->assertJsonPath('data.batch', null)
+            ->assertJsonPath('data.gemini_enabled', true);
     }
 
     public function test_current_returns_resumable_batch(): void
@@ -251,5 +274,65 @@ class MobilePosOcrTest extends TestCase
             'id' => $line->id,
             'review_status' => 'approved',
         ]);
+
+        $show = $this->getJson('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId);
+        $show->assertOk();
+        $draftLine = $show->json('data.batch.draft.lines.0');
+        $this->assertArrayHasKey('available_qty', $draftLine);
+        $this->assertArrayHasKey('in_stock', $draftLine);
+        $this->assertArrayHasKey('qty_exceeds_stock', $draftLine);
+        $this->assertNotEmpty($show->json('data.batch.lexicon_families'));
+        $this->assertNotNull($show->json('data.batch.images.0.preview_signed_url'));
+    }
+
+    public function test_duplicate_image_returns_distinct_error_code(): void
+    {
+        config(['queue.default' => 'sync']);
+        $user = $this->distributor();
+        Sanctum::actingAs($user);
+        $this->fakeGemini([
+            ['raw_text' => 'كوع MG', 'name' => 'كوع MG', 'qty' => 1, 'confidence' => 0.9],
+        ]);
+
+        $batchId = (int) $this->postJson('/api/v1/mobile/distributor/pos/ocr/batches')
+            ->json('data.batch.batch_id');
+
+        $file = UploadedFile::fake()->image('same.jpg', 400, 400);
+        $this->post('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId.'/images', [
+            'image' => $file,
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        // Same binary content → duplicate sha
+        $dup = UploadedFile::fake()->image('same.jpg', 400, 400);
+        $this->post('/api/v1/mobile/distributor/pos/ocr/batches/'.$batchId.'/images', [
+            'image' => $dup,
+        ], ['Accept' => 'application/json'])
+            ->assertStatus(409)
+            ->assertJsonPath('error_code', 'OCR_DUPLICATE_IMAGE');
+    }
+
+    public function test_signed_preview_route_serves_image(): void
+    {
+        Storage::disk('public')->put('ocr-uploads/preview-test.jpg', 'fake-jpeg-bytes');
+        $user = $this->distributor();
+        $batch = \App\Models\OcrBatch::query()->create([
+            'user_id' => $user->id,
+            'status' => 'draft',
+        ]);
+        $image = \App\Models\OcrImage::query()->create([
+            'batch_id' => $batch->id,
+            'position' => 1,
+            'path' => 'ocr-uploads/preview-test.jpg',
+            'sha256' => hash('sha256', 'preview'),
+            'status' => 'done',
+        ]);
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'ocr.images.preview',
+            now()->addMinutes(5),
+            ['image' => $image->id],
+        );
+
+        $this->get($url)->assertOk();
     }
 }

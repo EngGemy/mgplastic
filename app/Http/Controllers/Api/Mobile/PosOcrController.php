@@ -9,7 +9,6 @@ use App\Models\OcrImage;
 use App\Models\OcrImageLine;
 use App\Models\Product;
 use App\Services\Ai\GeminiClient;
-use App\Services\InvoiceCartSheetService;
 use App\Services\Ocr\InvoiceOcrCatalogMatcher;
 use App\Services\Ocr\InvoiceOcrLearningService;
 use App\Services\Ocr\InvoiceOcrPipeline;
@@ -34,7 +33,6 @@ class PosOcrController extends Controller
         protected OcrBatchService $batches,
         protected MobileOcrPresenter $presenter,
         protected InvoiceOcrCatalogMatcher $matcher,
-        protected InvoiceCartSheetService $cartSheet,
         protected InvoiceOcrLearningService $learning,
         protected GeminiClient $gemini,
     ) {}
@@ -52,7 +50,7 @@ class PosOcrController extends Controller
         }
 
         return $this->success([
-            'batch' => $this->presenter->present($batch),
+            'batch' => $this->presenter->present($batch, $request->user()),
             'resumable' => true,
             'gemini_enabled' => $this->gemini->enabled(),
         ], 'دفعة OCR معلّقة');
@@ -85,7 +83,7 @@ class PosOcrController extends Controller
         ]);
 
         return $this->created([
-            'batch' => $this->presenter->present($batch->fresh()),
+            'batch' => $this->presenter->present($batch->fresh(), $request->user()),
         ], 'دفعة OCR جاهزة');
     }
 
@@ -98,7 +96,7 @@ class PosOcrController extends Controller
         }
 
         return $this->success([
-            'batch' => $this->presenter->present($owned),
+            'batch' => $this->presenter->present($owned, $request->user()),
         ]);
     }
 
@@ -137,8 +135,8 @@ class PosOcrController extends Controller
         if ($result['duplicate'] ?? false) {
             return $this->error('الصورة مرفوعة مسبقاً في نفس الدفعة', 409, [
                 'image' => $result['image'] ? $this->presenter->presentImage($result['image']) : null,
-                'batch' => $this->presenter->present($owned->fresh()),
-            ]);
+                'batch' => $this->presenter->present($owned->fresh(), $request->user()),
+            ], 'OCR_DUPLICATE_IMAGE');
         }
 
         if (! ($result['ok'] ?? false) || ! $result['image']) {
@@ -147,7 +145,7 @@ class PosOcrController extends Controller
 
         return $this->created([
             'image' => $this->presenter->presentImage($result['image']),
-            'batch' => $this->presenter->present($owned->fresh()),
+            'batch' => $this->presenter->present($owned->fresh(), $request->user()),
         ], 'بدأت قراءة الصورة');
     }
 
@@ -170,7 +168,7 @@ class PosOcrController extends Controller
 
         return $this->created([
             'image' => $this->presenter->presentImage($image),
-            'batch' => $this->presenter->present($owned->fresh()),
+            'batch' => $this->presenter->present($owned->fresh(), $request->user()),
         ], 'بدأت تحليل النص');
     }
 
@@ -185,7 +183,7 @@ class PosOcrController extends Controller
         $this->batches->retryNow($ownedImage);
 
         return $this->success([
-            'batch' => $this->presenter->present($ownedImage->batch->fresh()),
+            'batch' => $this->presenter->present($ownedImage->batch->fresh(), $request->user()),
         ], 'أُعيدت المحاولة');
     }
 
@@ -200,7 +198,7 @@ class PosOcrController extends Controller
         $this->batches->cancelImage($ownedImage);
 
         return $this->success([
-            'batch' => $this->presenter->present($ownedImage->batch->fresh()),
+            'batch' => $this->presenter->present($ownedImage->batch->fresh(), $request->user()),
         ], 'أُلغيت الصورة');
     }
 
@@ -229,7 +227,7 @@ class PosOcrController extends Controller
         $owned->save();
 
         return $this->success([
-            'batch' => $this->presenter->present($owned->fresh()),
+            'batch' => $this->presenter->present($owned->fresh(), $request->user()),
         ], 'بدأت إعادة القراءة');
     }
 
@@ -286,7 +284,7 @@ class PosOcrController extends Controller
         }
 
         return $this->success([
-            'batch' => $this->presenter->present($owned->fresh()),
+            'batch' => $this->presenter->present($owned->fresh(), $request->user()),
         ], 'تم تحديث الإعدادات');
     }
 
@@ -421,7 +419,7 @@ class PosOcrController extends Controller
 
         return $this->success([
             'line' => $this->presentLine($row->fresh()),
-            'batch' => $this->presenter->present($owned->fresh()),
+            'batch' => $this->presenter->present($owned->fresh(), $request->user()),
         ], 'تم تحديث البند');
     }
 
@@ -465,7 +463,7 @@ class PosOcrController extends Controller
 
         return $this->success([
             'approved_count' => $count,
-            'batch' => $this->presenter->present($owned->fresh()),
+            'batch' => $this->presenter->present($owned->fresh(), $request->user()),
         ], 'تم اعتماد البنود الجاهزة');
     }
 
@@ -483,18 +481,22 @@ class PosOcrController extends Controller
         }
 
         if ($owned->cart_added_at && $owned->idempotency_token) {
+            $presented = $this->presenter->present($owned, $request->user());
+
             return $this->error('تم تطبيق هذه الدفعة مسبقاً — لن تُكرَّر البنود', 409, [
-                'batch' => $this->presenter->present($owned),
-            ]);
+                'batch' => $presented,
+                'cart_lines' => $presented['cart_lines'] ?? [],
+                'idempotency_token' => $owned->idempotency_token,
+            ], 'OCR_ALREADY_APPLIED');
         }
 
         $prefs = $this->presenter->prefs($owned);
         $built = $this->batches->buildPosDraft($owned);
         $draftLines = (array) ($built['draft']['lines'] ?? []);
-        $lines = [];
         $errors = [];
         $approvedCount = 0;
         $addedLineIds = [];
+        $approvedForCart = [];
         $sha = $owned->images()->whereNull('replaced_by_id')->orderByDesc('id')->value('sha256');
 
         foreach ($draftLines as $line) {
@@ -519,19 +521,7 @@ class PosOcrController extends Controller
             }
 
             $approvedCount++;
-            $cartLine = $this->cartSheet->cartLine($product, $qty);
-            $id = (string) $productId;
-            if (isset($lines[$id])) {
-                if (! empty($cartLine['boxes'])) {
-                    $lines[$id]['boxes'] = (int) $lines[$id]['boxes'] + (int) $cartLine['boxes'];
-                    $lines[$id]['quantity'] = (int) $lines[$id]['boxes'] * (int) $lines[$id]['pieces_per_box'];
-                } else {
-                    $lines[$id]['quantity'] = (int) $lines[$id]['quantity'] + (int) $cartLine['quantity'];
-                }
-            } else {
-                $lines[$id] = $cartLine;
-            }
-
+            $approvedForCart[] = $line;
             if (! empty($line['ocr_line_id'])) {
                 $addedLineIds[] = (int) $line['ocr_line_id'];
             }
@@ -550,11 +540,14 @@ class PosOcrController extends Controller
             }
         }
 
-        if ($lines === []) {
+        $stock = $this->presenter->stockQtyByProduct($request->user());
+        $cartLines = $this->presenter->buildCartLinesFromApproved($approvedForCart, $stock);
+
+        if ($cartLines === []) {
             return $this->error(
                 'لا بنود معتمدة — اعتمد البنود ثم طبّق على السلة',
                 422,
-                ['errors' => $errors, 'batch' => $this->presenter->present($owned)],
+                ['errors' => $errors, 'batch' => $this->presenter->present($owned, $request->user())],
             );
         }
 
@@ -568,16 +561,15 @@ class PosOcrController extends Controller
             $owned->save();
         }
 
-        $cartLines = array_values($lines);
-
         return $this->success([
             'cart_lines' => $cartLines,
             'approved_count' => $approvedCount,
             'idempotency_token' => $token,
-            'batch' => $this->presenter->present($owned->fresh()),
+            'batch' => $this->presenter->present($owned->fresh(), $request->user()),
             'next' => [
                 'merge_into_local_cart' => true,
                 'checkout' => 'POST …/pos/checkout بنفس شكل lines (product_id + boxes|quantity)',
+                'send_idempotency_token_on_checkout' => false,
             ],
         ], 'تم تجهيز '.$approvedCount.' منتج للسلة');
     }
