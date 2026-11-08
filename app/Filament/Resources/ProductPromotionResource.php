@@ -25,11 +25,11 @@ class ProductPromotionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-megaphone';
 
-    protected static ?int $navigationSort = 45;
+    protected static ?int $navigationSort = 110;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المحتوى';
+        return 'الموقع والمحتوى';
     }
 
     public static function getNavigationLabel(): string

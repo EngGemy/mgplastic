@@ -106,7 +106,7 @@ class CreateWholesaleInvoice extends Page
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'التشغيل اليومي';
     }
 
     public static function canAccess(array $parameters = []): bool

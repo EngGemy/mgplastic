@@ -18,13 +18,14 @@ class ClaimResource extends Resource
     use AdminOnlyResource;
 
     protected static ?string $model = Claim::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-exclamation-circle';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 40;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المستخدمون';
+        return 'الشبكة التجارية';
     }
 
     public static function getNavigationLabel(): string
@@ -121,7 +122,7 @@ class ClaimResource extends Resource
     {
         return [
             'index' => Pages\ListClaims::route('/'),
-            'view'  => Pages\ViewClaim::route('/{record}'),
+            'view' => Pages\ViewClaim::route('/{record}'),
         ];
     }
 }

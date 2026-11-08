@@ -14,14 +14,32 @@ use Filament\Tables\Table;
 class TermsConditionResource extends Resource
 {
     use AdminOnlyResource;
-    protected static ?string $model = TermsCondition::class;
-    protected static ?string $navigationIcon = 'heroicon-o-document-text';
-    protected static ?int $navigationSort = 40;
 
-    public static function getNavigationGroup(): ?string { return 'الإعدادات'; }
-    public static function getNavigationLabel(): string { return 'الشروط والأحكام'; }
-    public static function getModelLabel(): string { return 'الشروط والأحكام'; }
-    public static function getPluralModelLabel(): string { return 'الشروط والأحكام'; }
+    protected static ?string $model = TermsCondition::class;
+
+    protected static ?string $navigationIcon = 'heroicon-o-document-text';
+
+    protected static ?int $navigationSort = 50;
+
+    public static function getNavigationGroup(): ?string
+    {
+        return 'الإعدادات';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return 'الشروط والأحكام';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'الشروط والأحكام';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'الشروط والأحكام';
+    }
 
     public static function form(Form $form): Form
     {
@@ -103,9 +121,9 @@ class TermsConditionResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListTermsConditions::route('/'),
+            'index' => Pages\ListTermsConditions::route('/'),
             'create' => Pages\CreateTermsCondition::route('/create'),
-            'edit'   => Pages\EditTermsCondition::route('/{record}/edit'),
+            'edit' => Pages\EditTermsCondition::route('/{record}/edit'),
         ];
     }
 }

@@ -7,8 +7,6 @@ use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductPointsRateChange;
-use App\Filament\Pages\ProductPointsChangesReport;
-use App\Filament\Pages\ProductPointsRates;
 use Filament\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -23,7 +21,7 @@ class ProductsReport extends Page implements HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-bar';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 30;
 
     protected static string $view = 'filament.pages.products-report';
 
@@ -34,7 +32,7 @@ class ProductsReport extends Page implements HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'صناعة القرار';
+        return 'التقارير والقرارات';
     }
 
     public static function getNavigationLabel(): string

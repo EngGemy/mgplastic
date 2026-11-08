@@ -22,7 +22,7 @@ class ManageMobileHome extends Page
 
     public static function getNavigationGroup(): ?string
     {
-        return 'رئيسية التطبيق';
+        return 'التطبيق';
     }
 
     public static function getNavigationLabel(): string

@@ -25,7 +25,7 @@ trait InteractsWithMobileHomeLayout
 
     public static function getNavigationGroup(): ?string
     {
-        return 'رئيسية التطبيق';
+        return 'التطبيق';
     }
 
     /** @return array<string, string> */

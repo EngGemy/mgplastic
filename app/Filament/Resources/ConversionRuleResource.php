@@ -17,13 +17,13 @@ class ConversionRuleResource extends Resource
 
     protected static ?string $model = ConversionRule::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-bell-alert';
+    protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 20;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'النقاط والمكافآت';
     }
 
     public static function getNavigationLabel(): string

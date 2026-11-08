@@ -12,12 +12,12 @@ class ListProductTagImages extends ListRecords
 
     public function getTitle(): string
     {
-        return 'صوره التاجات';
+        return 'صور التاجات';
     }
 
     public function getHeading(): string
     {
-        return 'صوره التاجات';
+        return 'صور التاجات';
     }
 
     public function getSubheading(): ?string

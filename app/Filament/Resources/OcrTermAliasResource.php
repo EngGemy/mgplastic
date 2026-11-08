@@ -23,11 +23,11 @@ class OcrTermAliasResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-language';
 
-    protected static ?int $navigationSort = 96;
+    protected static ?int $navigationSort = 100;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'النظام';
+        return 'الإعدادات';
     }
 
     public static function getNavigationLabel(): string

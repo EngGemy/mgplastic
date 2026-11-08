@@ -20,9 +20,9 @@ class PriceListResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
-    protected static ?string $navigationGroup = 'قوائم الأسعار';
+    protected static ?string $navigationGroup = 'المنتجات والأسعار';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 50;
 
     protected static ?string $modelLabel = 'قائمة أسعار';
 

@@ -3,17 +3,17 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Resources\UserResource;
-use App\Models\User;
-use App\Models\Country;
 use App\Models\City;
+use App\Models\Country;
+use App\Models\User;
 use App\Support\AdminPermissions;
 use App\Support\UserRoles;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Pages\Page;
 use Filament\Tables;
-use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -24,7 +24,7 @@ class UsersReport extends Page implements HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 20;
 
     protected static string $view = 'filament.pages.users-report';
 
@@ -41,7 +41,7 @@ class UsersReport extends Page implements HasTable
 
     public static function getNavigationGroup(): ?string
     {
-        return 'صناعة القرار';
+        return 'التقارير والقرارات';
     }
 
     public static function getNavigationLabel(): string

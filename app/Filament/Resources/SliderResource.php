@@ -20,16 +20,16 @@ class SliderResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-photo';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 120;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'المحتوى';
+        return 'الموقع والمحتوى';
     }
 
     public static function getNavigationLabel(): string
     {
-        return 'الشرائح (Sliders)';
+        return 'الشرائح';
     }
 
     public static function getModelLabel(): string

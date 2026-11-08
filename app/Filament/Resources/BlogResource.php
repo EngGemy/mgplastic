@@ -19,14 +19,32 @@ use Illuminate\Database\Eloquent\Builder;
 class BlogResource extends Resource
 {
     use AdminOnlyResource;
+
     protected static ?string $model = Blog::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-newspaper';
+
     protected static ?int $navigationSort = 10;
 
-    public static function getNavigationGroup(): ?string { return 'المحتوى'; }
-    public static function getNavigationLabel(): string { return 'المقالات'; }
-    public static function getModelLabel(): string { return 'مقال'; }
-    public static function getPluralModelLabel(): string { return 'المقالات'; }
+    public static function getNavigationGroup(): ?string
+    {
+        return 'الموقع والمحتوى';
+    }
+
+    public static function getNavigationLabel(): string
+    {
+        return 'المقالات';
+    }
+
+    public static function getModelLabel(): string
+    {
+        return 'مقال';
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return 'المقالات';
+    }
 
     /** ✅ Base query with relations & counts (safe place for withCount) */
     public static function getEloquentQuery(): Builder
@@ -80,7 +98,7 @@ class BlogResource extends Resource
                     Forms\Components\Select::make('status')
                         ->label(__('Status'))
                         ->options([
-                            'pending'  => __('Pending'),
+                            'pending' => __('Pending'),
                             'approved' => __('Approved'),
                         ])
                         ->default('pending')
@@ -111,13 +129,13 @@ class BlogResource extends Resource
                     ->colors([
                         'success' => 'approved',
                         'warning' => 'pending',
-                        'secondary' => fn ($state) => ! in_array($state, ['approved','pending'], true),
+                        'secondary' => fn ($state) => ! in_array($state, ['approved', 'pending'], true),
                     ])
                     ->formatStateUsing(fn (string $state) => __(
                         match ($state) {
                             'approved' => 'Approved',
-                            'pending'  => 'Pending',
-                            default    => ucfirst($state),
+                            'pending' => 'Pending',
+                            default => ucfirst($state),
                         }
                     ))
                     ->sortable(),
@@ -144,7 +162,7 @@ class BlogResource extends Resource
                 Tables\Filters\SelectFilter::make('status')
                     ->label(__('Status'))
                     ->options([
-                        'pending'  => __('Pending'),
+                        'pending' => __('Pending'),
                         'approved' => __('Approved'),
                     ]),
             ])
@@ -180,9 +198,9 @@ class BlogResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListBlogs::route('/'),
+            'index' => Pages\ListBlogs::route('/'),
             'create' => Pages\CreateBlog::route('/create'),
-            'edit'   => Pages\EditBlog::route('/{record}/edit'),
+            'edit' => Pages\EditBlog::route('/{record}/edit'),
         ];
     }
 }

@@ -17,7 +17,7 @@ class ManageMobileHomePlumbers extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-wrench-screwdriver';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 10;
 
     protected static string $view = 'filament.pages.manage-mobile-home-audience';
 

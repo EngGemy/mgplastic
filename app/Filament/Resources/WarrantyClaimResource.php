@@ -20,11 +20,11 @@ class WarrantyClaimResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-exclamation-triangle';
 
-    protected static ?int $navigationSort = 44;
+    protected static ?int $navigationSort = 60;
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'النقاط والمكافآت';
     }
 
     public static function getNavigationLabel(): string

@@ -19,7 +19,7 @@ class RemindersDashboard extends Page implements HasForms
 
     protected static string $view = 'filament.pages.reminders-dashboard';
 
-    protected static ?int $navigationSort = 45;
+    protected static ?int $navigationSort = 70;
 
     public ?array $data = [];
 
@@ -27,7 +27,7 @@ class RemindersDashboard extends Page implements HasForms
 
     public static function getNavigationGroup(): ?string
     {
-        return 'نظام النقاط';
+        return 'النقاط والمكافآت';
     }
 
     public static function getNavigationLabel(): string
