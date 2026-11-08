@@ -26,6 +26,9 @@ class HomeMobileLayoutService
 
     private bool $seededThisRequest = false;
 
+    /** @var array<string, bool> */
+    private static array $tableExistsCache = [];
+
     public function ensureSeeded(): void
     {
         if ($this->seededThisRequest) {
@@ -33,7 +36,12 @@ class HomeMobileLayoutService
         }
         $this->seededThisRequest = true;
 
-        if (! Schema::hasTable('home_mobile_settings')) {
+        // Warm home hits were paying 6–8 seed/exists queries every request.
+        if (Cache::get('home_mobile:seeded_ok')) {
+            return;
+        }
+
+        if (! $this->tableExists('home_mobile_settings')) {
             return;
         }
 
@@ -41,16 +49,35 @@ class HomeMobileLayoutService
         $this->seedProductTypes();
         $this->seedHighlights();
         $this->seedSections();
+
+        if ($this->tableExists('home_layout_sections')
+            && HomeLayoutSection::query()->exists()) {
+            Cache::put('home_mobile:seeded_ok', true, 3600);
+        }
     }
 
     public function forgetCache(): void
     {
         Cache::forget('home_mobile:product_type_defs');
         Cache::forget('home_mobile:highlight_defs');
+        Cache::forget('home_mobile:seeded_ok');
+        Cache::forget('home_mobile:settings');
         foreach (self::ROLES as $role) {
             Cache::forget('home_mobile:layout:'.$role);
+            Cache::forget('home_mobile:popup:'.$role.':ar');
+            Cache::forget('home_mobile:popup:'.$role.':en');
         }
         Cache::forget('home_mobile:layout');
+        self::$tableExistsCache = [];
+    }
+
+    protected function tableExists(string $table): bool
+    {
+        if (array_key_exists($table, self::$tableExistsCache)) {
+            return self::$tableExistsCache[$table];
+        }
+
+        return self::$tableExistsCache[$table] = Schema::hasTable($table);
     }
 
     public function bumpVersion(): int
@@ -69,7 +96,7 @@ class HomeMobileLayoutService
     public function productTypeDefinitions(): array
     {
         // Hot path (catalog/stock maps every product) — never re-run ensureSeeded here.
-        if (! Schema::hasTable('home_product_types')) {
+        if (! $this->tableExists('home_product_types')) {
             return app(ProductTypeService::class)->definitionsFromConfigOnly();
         }
 
@@ -90,7 +117,7 @@ class HomeMobileLayoutService
     {
         $this->ensureSeeded();
 
-        if (! Schema::hasTable('home_highlights')) {
+        if (! $this->tableExists('home_highlights')) {
             return array_values(array_filter(config('home_highlights', []), 'is_array'));
         }
 
@@ -154,8 +181,19 @@ class HomeMobileLayoutService
         // Live count — not cached so receive clears the badge immediately.
         $payload = $this->applyPendingReceiptsBadge($payload, $user);
 
-        // Popup is live (not cached) so admin pause/publish is instant.
-        $payload['popup'] = \App\Models\HomePopup::mobilePayloadFor($role, $user, $locale);
+        // Guest popup: short TTL (admin pause ≤30s). Auth users stay live (test cohorts).
+        // Wrap value — Cache treats bare null as a miss.
+        $localeKey = str_starts_with(strtolower($locale), 'en') ? 'en' : 'ar';
+        if ($user === null) {
+            $wrapped = Cache::remember(
+                'home_mobile:popup:'.$role.':'.$localeKey,
+                30,
+                fn () => ['v' => \App\Models\HomePopup::mobilePayloadFor($role, null, $locale)]
+            );
+            $payload['popup'] = is_array($wrapped) ? ($wrapped['v'] ?? null) : null;
+        } else {
+            $payload['popup'] = \App\Models\HomePopup::mobilePayloadFor($role, $user, $locale);
+        }
 
         return $payload;
     }
@@ -260,7 +298,7 @@ class HomeMobileLayoutService
         array $highlights,
         ?User $user = null,
     ): array {
-        if (! Schema::hasTable('home_layout_sections')) {
+        if (! $this->tableExists('home_layout_sections')) {
             return [];
         }
 
@@ -918,7 +956,7 @@ class HomeMobileLayoutService
 
     protected function seedProductTypes(): void
     {
-        if (! Schema::hasTable('home_product_types') || HomeProductType::query()->exists()) {
+        if (! $this->tableExists('home_product_types') || HomeProductType::query()->exists()) {
             return;
         }
         foreach (config('product_types', []) as $i => $row) {
@@ -941,7 +979,7 @@ class HomeMobileLayoutService
 
     protected function seedHighlights(): void
     {
-        if (! Schema::hasTable('home_highlights') || HomeHighlight::query()->exists()) {
+        if (! $this->tableExists('home_highlights') || HomeHighlight::query()->exists()) {
             return;
         }
         foreach (config('home_highlights', []) as $i => $row) {
@@ -965,7 +1003,7 @@ class HomeMobileLayoutService
 
     protected function seedSections(): void
     {
-        if (! Schema::hasTable('home_layout_sections') || HomeLayoutSection::query()->exists()) {
+        if (! $this->tableExists('home_layout_sections') || HomeLayoutSection::query()->exists()) {
             return;
         }
 
@@ -977,7 +1015,7 @@ class HomeMobileLayoutService
      */
     public function syncDefaultSections(bool $force = false): int
     {
-        if (! Schema::hasTable('home_layout_sections')) {
+        if (! $this->tableExists('home_layout_sections')) {
             return 0;
         }
 

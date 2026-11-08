@@ -42,6 +42,25 @@ class HomePopup extends Model
         'list_events',
     ];
 
+    protected static function booted(): void
+    {
+        static::saved(function () {
+            try {
+                app(HomeMobileLayoutService::class)->forgetCache();
+            } catch (\Throwable) {
+                // ignore during early boot / migrate
+            }
+        });
+
+        static::deleted(function () {
+            try {
+                app(HomeMobileLayoutService::class)->forgetCache();
+            } catch (\Throwable) {
+                // ignore
+            }
+        });
+    }
+
     protected $fillable = [
         'version',
         'title_ar',
@@ -309,7 +328,7 @@ class HomePopup extends Model
     public function bumpVersion(): void
     {
         $this->version = max(1, (int) $this->version) + 1;
-        $this->save();
+        $this->save(); // saved hook clears home popup/layout caches
     }
 
     public function refreshImageRatioFromFile(): void

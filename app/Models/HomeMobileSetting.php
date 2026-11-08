@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Support\PublicStorageUrl;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class HomeMobileSetting extends Model
 {
@@ -30,7 +31,18 @@ class HomeMobileSetting extends Model
 
     public static function instance(): self
     {
-        return static::query()->firstOrCreate([], static::defaults());
+        // Request-local + short shared cache — home layout reads this every hit.
+        return once(function () {
+            $cached = Cache::get('home_mobile:settings');
+            if ($cached instanceof self) {
+                return $cached;
+            }
+
+            $row = static::query()->firstOrCreate([], static::defaults());
+            Cache::put('home_mobile:settings', $row, 60);
+
+            return $row;
+        });
     }
 
     public static function defaults(): array

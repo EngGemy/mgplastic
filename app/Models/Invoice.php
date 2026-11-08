@@ -214,6 +214,13 @@ class Invoice extends Model
 
     public static function netPointsSql(string $points = 'idi.points_value', string $qty = 'idi.quantity', string $returned = 'idi.returned_quantity'): string
     {
+        // Harden against accidental SQL injection if callers ever pass untrusted identifiers.
+        foreach ([$points, $qty, $returned] as $identifier) {
+            if (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
+                throw new \InvalidArgumentException('Invalid SQL identifier for netPointsSql.');
+            }
+        }
+
         $cast = \Illuminate\Support\Facades\DB::connection()->getDriverName() === 'sqlite' ? 'INTEGER' : 'SIGNED';
         $net = "({$qty} - COALESCE({$returned}, 0))";
 
