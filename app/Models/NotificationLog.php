@@ -15,6 +15,19 @@ class NotificationLog extends Model
 
     public const STATUS_UNREGISTERED = 'unregistered';
 
+    public const STATUS_EXPIRED = 'expired';
+
+    /** @return list<string> */
+    public static function finalStatuses(): array
+    {
+        return [
+            self::STATUS_SENT,
+            self::STATUS_FAILED,
+            self::STATUS_UNREGISTERED,
+            self::STATUS_EXPIRED,
+        ];
+    }
+
     protected $fillable = [
         'notification_id',
         'device_token_id',

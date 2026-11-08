@@ -15,7 +15,8 @@ class MonitorHealthCommand extends Command
     public function handle(SystemHealthService $health, HealthAlertService $alerts): int
     {
         $result = $alerts->evaluateAndAlert();
-        $checks = $health->checksAsArrays(liveWahaSession: true);
+        $snapshot = $health->cachedSnapshot();
+        $checks = is_array($snapshot['checks'] ?? null) ? $snapshot['checks'] : [];
 
         if ($this->option('json')) {
             $this->line(json_encode([

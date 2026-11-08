@@ -22,7 +22,9 @@ class SystemHealthService
      */
     public function checks(bool $liveWahaSession = true): array
     {
-        $this->whatsApp->probeBreakerIfDue();
+        if ($liveWahaSession) {
+            $this->whatsApp->probeBreakerIfDue();
+        }
 
         return [
             $this->checkWahaBreaker(),
@@ -54,25 +56,77 @@ class SystemHealthService
     }
 
     /**
-     * Cached summary for admin banner (avoids WAHA + heavy queries on every request).
+     * Run live checks (including WAHA HTTP) and persist snapshot for the admin banner.
+     *
+     * @return list<array{key: string, label: string, status: string, value: mixed, details: ?string, checked_at: string}>
+     */
+    public function refreshAndStoreSnapshot(): array
+    {
+        Cache::forget('monitoring:waha_session_check');
+        $checks = $this->checks(liveWahaSession: true);
+        $this->storeSnapshot($checks);
+
+        return array_map(fn (HealthCheck $c) => $c->toArray(), $checks);
+    }
+
+    /**
+     * @param  list<HealthCheck|array<string, mixed>>  $checks
+     */
+    public function storeSnapshot(array $checks): void
+    {
+        $arrays = array_map(
+            fn ($c) => $c instanceof HealthCheck ? $c->toArray() : $c,
+            $checks
+        );
+        $problems = array_values(array_filter(
+            $arrays,
+            fn (array $c) => in_array($c['status'] ?? '', ['warning', 'critical'], true)
+        ));
+
+        $ttlMinutes = max(10, (int) config('monitoring.health_snapshot_ttl_minutes', 120));
+        Cache::put($this->snapshotCacheKey(), [
+            'checks' => $arrays,
+            'problems' => $problems,
+            'checked_at' => now()->toIso8601String(),
+        ], now()->addMinutes($ttlMinutes));
+    }
+
+    /**
+     * @return array{checks: list<array<string, mixed>>, problems: list<array<string, mixed>>, checked_at: ?string}|null
+     */
+    public function cachedSnapshot(): ?array
+    {
+        $snapshot = Cache::get($this->snapshotCacheKey());
+
+        return is_array($snapshot) ? $snapshot : null;
+    }
+
+    /**
+     * Banner: read-only snapshot from monitor:health / live refresh. Never calls WAHA.
      *
      * @return list<array{key: string, label: string, status: string, value: mixed, details: ?string, checked_at: string}>
      */
     public function bannerProblems(): array
     {
-        $ttl = max(5, (int) config('monitoring.health_banner_cache_seconds', 30));
+        $snapshot = $this->cachedSnapshot();
+        if ($snapshot === null) {
+            return [];
+        }
 
-        return Cache::remember('monitoring:banner_problems', $ttl, function () {
-            return array_map(
-                fn (HealthCheck $c) => $c->toArray(),
-                $this->problems(liveWahaSession: true)
-            );
-        });
+        $problems = $snapshot['problems'] ?? [];
+
+        return is_array($problems) ? array_values($problems) : [];
     }
 
     public function forgetBannerCache(): void
     {
         Cache::forget('monitoring:banner_problems');
+        Cache::forget($this->snapshotCacheKey());
+    }
+
+    protected function snapshotCacheKey(): string
+    {
+        return (string) config('monitoring.health_snapshot_key', 'monitoring:health_snapshot');
     }
 
     public function checkWahaBreaker(): HealthCheck
@@ -402,9 +456,27 @@ class SystemHealthService
         $failed24h = 0;
 
         try {
+            // Ignore orphan queued rows that already have a sibling final status
+            // (legacy bug: dispatcher inserted queued, job inserted a separate final row).
+            $finalStatuses = NotificationLog::finalStatuses();
             $staleQueued = (int) NotificationLog::query()
-                ->where('status', NotificationLog::STATUS_QUEUED)
-                ->where('created_at', '<=', now()->subMinutes($staleMinutes))
+                ->from('notification_logs as q')
+                ->where('q.status', NotificationLog::STATUS_QUEUED)
+                ->where('q.created_at', '<=', now()->subMinutes($staleMinutes))
+                ->whereNotExists(function ($sub) use ($finalStatuses) {
+                    $sub->select(DB::raw(1))
+                        ->from('notification_logs as s')
+                        ->whereColumn('s.notification_id', 'q.notification_id')
+                        ->whereColumn('s.id', '!=', 'q.id')
+                        ->whereIn('s.status', $finalStatuses)
+                        ->where(function ($w) {
+                            $w->where(function ($exact) {
+                                $exact->whereColumn('s.device_token_id', 'q.device_token_id');
+                            })->orWhere(function ($generic) {
+                                $generic->whereNull('q.device_token_id');
+                            });
+                        });
+                })
                 ->count();
 
             $failed24h = (int) NotificationLog::query()
@@ -436,7 +508,7 @@ class SystemHealthService
                 'queued_stale' => $staleQueued,
                 'failed_24h' => $failed24h,
             ],
-            'details' => "معلّق >{$staleMinutes}د: {$staleQueued} — فشل {$failedWindow}س: {$failed24h}",
+            'details' => "معلّق حقيقي >{$staleMinutes}د: {$staleQueued} — فشل {$failedWindow}س: {$failed24h}",
         ]);
     }
 

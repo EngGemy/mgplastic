@@ -96,7 +96,8 @@ class HealthAlertService
             $this->mail($recoveredForMail, 'recovered');
         }
 
-        $this->health->forgetBannerCache();
+        // Persist snapshot for the admin banner (no live WAHA on page render).
+        $this->health->storeSnapshot($checks);
 
         return compact('alerted', 'recovered', 'repeated');
     }

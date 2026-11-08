@@ -80,6 +80,13 @@ class WhatsAppNotifier
             $forceSync = filter_var(config('services.waha.sync_alerts', false), FILTER_VALIDATE_BOOLEAN)
                 || config('queue.default') === 'sync';
 
+            $queuedAt = now()->toIso8601String();
+            foreach ($prepared as $i => $message) {
+                if (empty($message['queued_at'])) {
+                    $prepared[$i]['queued_at'] = $queuedAt;
+                }
+            }
+
             if ($forceSync) {
                 $this->deliverDetailed($prepared);
 
@@ -1011,6 +1018,7 @@ class WhatsAppNotifier
                 'event' => 'otp_card',
                 'recipient_type' => 'otp',
                 'is_otp' => true,
+                'queued_at' => now()->toIso8601String(),
             ]];
 
             if ($forceSync) {
