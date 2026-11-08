@@ -74,6 +74,10 @@ Route::get('/invoices/{invoice}/pdf', [\App\Http\Controllers\Admin\InvoiceDocume
     ->middleware('signed')
     ->name('invoices.pdf');
 
+Route::get('/ocr-images/{image}/preview', [\App\Http\Controllers\Web\OcrImagePreviewController::class, 'show'])
+    ->middleware('signed')
+    ->name('ocr.images.preview');
+
 if (AdminPanelPath::hidesLegacyAdminUrl()) {
     Route::any('admin/{path?}', fn () => abort(404))
         ->where('path', '.*')

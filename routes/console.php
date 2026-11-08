@@ -63,6 +63,11 @@ Schedule::command('ai:prune-message-cache')
     ->timezone($tz)
     ->withoutOverlapping();
 
+Schedule::command('ocr:prune-uploads')
+    ->dailyAt('03:50')
+    ->timezone($tz)
+    ->withoutOverlapping();
+
 Schedule::command('testimonials:generate')
     ->dailyAt('09:15')
     ->timezone($tz)

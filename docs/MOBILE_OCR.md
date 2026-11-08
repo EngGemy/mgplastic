@@ -11,285 +11,256 @@
 
 ---
 
-## 1) ليه مهم؟
+## 0) إجابات فريق الموبايل (من الكود)
 
-البائع يصوّر ورقة مكتوبة (أو يلصق نص) → السيرفر يقرأ البنود ويربطها بكتالوج MG → المستخدم يراجع ويعتمد → البنود تدخل **السلة المحلية** → تأكيد البيع عبر `pos/checkout` كالعادة.
+### 1) مصدر المخزون / المطابقة
+
+| سؤال | الجواب |
+|------|--------|
+| المرشّحون من وين؟ | من **كتالوج MG الكامل** (`products` ذات `catalog_family`)، **مش** من مخزون البائع فقط. انظر `InvoiceOcrCatalogMatcher::enrich` → `Product::query()->whereNotNull('catalog_family')` (`app/Services/Ocr/InvoiceOcrCatalogMatcher.php:23-27`). |
+| منتج مش في مخزون البائع؟ | المطابقة والاعتماد (`approve`) **ما بيتمنعوش**. `apply` كمان **ما بيتحققش** من المخزون. الخصم الفعلي يحصل في `pos/checkout` عبر `NetworkInventoryService` وقد يرجع 422 لو الكمية أكبر من المتوفر. |
+| `available_qty`؟ | **مضاف** على كل بند في `draft.lines` وعلى كل عنصر في `candidates[]` و`cart_lines` (+ `in_stock`, `qty_exceeds_stock`). الكمية المتوفرة بالـ **قطع** من مخزون البائع الحالي. |
+
+`qty_exceeds_stock`: يقارن القطع المطلوبة (`qty × pieces_per_box` لو المنتج بالصندوق، وإلا `qty`) مع `available_qty`.
+
+> اقتراح يحتاج موافقة (يغيّر السلوك): رفض `approve`/`apply` لو `qty_exceeds_stock` — **غير مفعّل** حالياً؛ التطبيق يعرض تحذيراً ويترك القرار للبائع قبل checkout.
+
+### 2) استرجاع بعد apply
+
+- سابقاً: `POST apply` مرة تانية → 409 بدون بنود.
+- الآن:
+  - `GET …/batches/{id}` عند `step=added` يرجّع **`cart_lines`** جاهزة للدمج.
+  - `POST apply` المتكرر → 409 مع `error_code=OCR_ALREADY_APPLIED` وداخل `errors`: `cart_lines` + `batch` + `idempotency_token`.
+
+### 3) `gemini_enabled`
+
+موجود أصلاً على `GET …/current` حتى لو `batch=null` (`PosOcrController::current` — `app/Http/Controllers/Api/Mobile/PosOcrController.php:46-51`).  
+استخدمه لإخفاء زر الكاميرا بدون إنشاء دفعة.
+
+### 4) الوحدات
+
+من `InvoiceCartSheetService::cartLine` (`app/Services/InvoiceCartSheetService.php:118-131`):
+
+| حقل | المعنى |
+|-----|--------|
+| `draft.lines[].qty` و`set_qty` | **كمية الورقة** كما قرأها OCR. لو المنتج له `pieces_per_box > 0`، السيرفر يفسّرها كـ **عدد صناديق** عند التحويل للسلة؛ وإلا **قطع**. |
+| `cart_lines[].quantity` | دائماً بالـ **قطع** (`boxes × pieces_per_box` أو نفس `qty`). |
+| `cart_lines[].boxes` | رقم لو `pieces_per_box > 0`؛ وإلا `null`. |
+| `cart_lines[].pieces_per_box` | رقم لو المنتج بالصندوق؛ وإلا `null`. |
+
+للـ checkout: أرسل `boxes` إن وُجد، وإلا `quantity`.
+
+### 5) أشكال ناقصة — انظر القسم 14
+
+### 6) `confirm_understanding` vs `choose_family`
+
+| اعرض | متى (من الحقول) | action |
+|------|-----------------|--------|
+| تأكيد الفهم | `understanding` موجود + `needs_review` فيه `unconfirmed_term` (مصطلح لهجة/إنجليزي غير مؤكد) | `confirm_understanding` |
+| اختيار العائلة | `family_candidates` غير فارغ **أو** `family_chips` موجود **أو** `needs_review` فيه `ambiguous_family` / `unknown_word` | `choose_family` + `lexicon_family` |
+
+الكود: `InvoiceOcrCatalogMatcher` عند `!lexicon_auto_ok` (`:250-266`) و`family_candidates` (`:191-205`) و`family_chips` (`:606-616`).
+
+### 7) `idempotency_token`
+
+خاص بـ **OCR apply فقط** (منع تكرار إضافة نفس الدفعة).  
+`POST …/pos/checkout` **لا يقرأ** هذا الحقل حالياً (`Distributor\PosController::checkout` يتحقق من `retail_trader_id` + `lines` فقط).  
+**لا ترسله مع checkout.** الرد يحمل `next.send_idempotency_token_on_checkout: false`.
+
+> اقتراح يحتاج موافقة: دعم `ocr_idempotency_token` اختياري في checkout — غير منفَّذ.
+
+### 8) تغيير العميل بعد القراءة
+
+`PATCH …/prefs` مع `{ "customer_user_id": N, "reenrich": true }` **كافٍ** — يحدّث تفضيلات المطابقة/الأسماء المستعارة ويعيد تصنيف البنود بدون Gemini جديد. **لا تحتاج دفعة جديدة.**  
+(`MobileOcrPresenter::putPrefs` يزامن `batch.distributor_id`.)
+
+### 9) الترجمة وأكواد الخطأ
+
+| عنصر | السلوك |
+|------|--------|
+| `message` | نص عربي ثابت في الكنترولر — **لا** يتبع `Accept-Language`. |
+| `needs_review` | أكواد آلة إنجليزية (`needs_choice`, …) — التطبيق يترجمها محلياً. |
+| صورة مكررة 409 | `error_code: "OCR_DUPLICATE_IMAGE"` |
+| apply مكرر 409 | `error_code: "OCR_ALREADY_APPLIED"` |
+
+### 10) تخزين صور الورقة
+
+| قبل | الآن |
+|-----|------|
+| `preview_url` → `storage/app/public` (عام عبر symlink) | ما زال موجوداً للتوافق |
+| لا احتفاظ محدد | تنظيف يومي `ocr:prune-uploads` (افتراضي 30 يوم للدفعات `added`/`abandoned`) |
+| — | **`preview_signed_url`** + **`preview_signed_expires_at`** (افتراضي 30 دقيقة) عبر مسار موقّع `ocr.images.preview` |
+
+**سياسة الوصول:** الملف ما زال على قرص `public` (لوحة التحكم تحتاجه). للتطبيق: **فضّل `preview_signed_url`** وجدّده عند انتهاء الصلاحية بـ `GET batches/{id}`.  
+الإعدادات: `config/ocr_uploads.php` (`OCR_UPLOAD_RETENTION_DAYS`, `OCR_SIGNED_PREVIEW_MINUTES`).
+
+> اقتراح يحتاج موافقة (يكسر الروابط العامة القديمة): نقل الرفع إلى قرص `private` فقط — غير منفَّذ.
+
+---
+
+## 1) التدفق
 
 ```
-كاميرا / معرض / لصق نص
+GET /current  (gemini_enabled؟ resumable؟)
         ↓
-POST batches → POST …/images (أو paste)
+POST batches → POST …/images | paste
         ↓
-poll GET batches/{id}  (step: polling → review)
+poll GET batches/{id}  (polling → review)
         ↓
-مراجعة: اختر منتج / نظام / كمية → approve
+مراجعة / approve / approve-ready
         ↓
-POST …/apply  →  cart_lines[]
+POST …/apply → cart_lines[]  (أو استرجعها لاحقاً من GET عند step=added)
         ↓
-ادمج في سلة التطبيق → POST …/pos/checkout
+سلة محلية → POST …/pos/checkout
 ```
 
 ---
 
-## 2) Checklist تنفيذ التطبيق
+## 2) Checklist
 
-- [ ] زر في شاشة POS: «قراءة ورقة» / أيقونة كاميرا
-- [ ] عند الفتح: `GET …/pos/ocr/current` — لو `resumable=true` اعرض «متابعة القراءة» أو «تجاهل»
-- [ ] إنشاء دفعة: `POST …/pos/ocr/batches`
-- [ ] رفع صور (حتى 10): `multipart` حقل `image` أو `file`
-- [ ] أثناء القراءة: poll كل `poll.interval_ms` (ثم بعد ~20ث استخدم `backoff_interval_ms`)
-- [ ] شاشة مراجعة: قائمة `draft.lines` + شارة `stats` + مستبعدات `draft.excluded`
-- [ ] اعتماد بند: `PATCH …/lines/{ocr_line_id}` بـ `action=approve`
-- [ ] «اعتماد كل الجاهز»: `POST …/approve-ready`
-- [ ] «أضف للسلة»: `POST …/apply` → ادمج `cart_lines` محلياً
-- [ ] لا تستدعِ checkout تلقائياً من OCR — المستخدم يراجع السلة أولاً
-- [ ] لو `gemini_enabled=false` أخفِ الزر أو أظهر رسالة «غير متاح حالياً»
+- [ ] أخفِ زر OCR لو `GET /current` → `gemini_enabled=false` (حتى مع `batch=null`)
+- [ ] استئناف عبر `/current` أو تجاهل بـ `abandon`
+- [ ] Poll حسب `poll.*`
+- [ ] اعرض `available_qty` / حذّر عند `qty_exceeds_stock`
+- [ ] بعد apply: احفظ `cart_lines` محلياً؛ لو ضاعت → `GET batches/{id}` أو أعد `apply` واقرأ `errors.cart_lines` من 409
+- [ ] استخدم `preview_signed_url` للعرض
+- [ ] ترجم `needs_review` محلياً (أكواد آلة)
+- [ ] لا ترسل `idempotency_token` إلى checkout
 
 ---
 
 ## 3) Endpoints
 
-كل المسارات تحت `{base}` =  
-`/api/v1/mobile/distributor/pos/ocr` **أو** `/api/v1/mobile/trader/pos/ocr`
-
 | Method | Path | الغرض |
 |--------|------|--------|
-| GET | `/current` | دفعة معلّقة لنفس المستخدم (أو null) |
-| POST | `/batches` | إنشاء / استئناف دفعة |
-| GET | `/batches/{id}` | حالة + مسودة (لـ poll) |
+| GET | `/current` | دفعة معلّقة + `gemini_enabled` |
+| POST | `/batches` | إنشاء / استئناف |
+| GET | `/batches/{id}` | حالة + مسودة (+ `cart_lines` لو `added`) |
 | POST | `/batches/{id}/images` | رفع صورة |
-| POST | `/batches/{id}/paste` | تحليل نص ملصوق |
-| POST | `/batches/{id}/images/{imageId}/retry` | إعادة محاولة صورة فاشلة |
-| POST | `/batches/{id}/images/{imageId}/cancel` | إلغاء صورة |
-| POST | `/batches/{id}/reread` | إعادة قراءة كل الصور (يتجاهل الكاش) |
-| POST | `/batches/{id}/abandon` | تجاهل الدفعة |
-| PATCH | `/batches/{id}/prefs` | نظام افتراضي / تذكر للعميل |
+| POST | `/batches/{id}/paste` | نص ملصوق |
+| POST | `/batches/{id}/images/{imageId}/retry` | إعادة محاولة |
+| POST | `/batches/{id}/images/{imageId}/cancel` | إلغاء |
+| POST | `/batches/{id}/reread` | إعادة قراءة |
+| POST | `/batches/{id}/abandon` | تجاهل |
+| PATCH | `/batches/{id}/prefs` | نظام / عميل / تذكر |
 | PATCH | `/batches/{id}/lines/{lineId}` | تعديل بند |
-| POST | `/batches/{id}/approve-ready` | اعتماد كل البنود «الخضراء» |
+| POST | `/batches/{id}/approve-ready` | اعتماد الجاهز |
 | POST | `/batches/{id}/apply` | إخراج بنود السلة |
 
 ---
 
-## 4) إنشاء دفعة
+## 4) `GET /current`
 
-```http
-POST /api/v1/mobile/distributor/pos/ocr/batches
-Authorization: Bearer …
-Content-Type: application/json
-
+```json
 {
-  "customer_user_id": 55,
-  "system_default": "ask",
-  "remember_for_customer": false
+  "status": true,
+  "message": "لا توجد دفعة معلّقة",
+  "data": {
+    "batch": null,
+    "resumable": false,
+    "gemini_enabled": true
+  }
 }
 ```
 
-| حقل | مطلوب | قيم | معنى |
-|-----|--------|------|------|
-| `customer_user_id` | لا | رقم مستخدم | العميل (قطاعي للجملة / سباك للقطاعي) — لتحسين المطابقة والتعلّم |
-| `system_default` | لا | `ask` \| `us` \| `eu` | لو المقاس مش واضح: اسأل / أمريكي / أوروبي |
-| `remember_for_customer` | لا | bool | احفظ تصحيحات OCR لهذا العميل |
+---
 
-**رد 201 — ملخص `data.batch`:**
+## 5) إنشاء دفعة + رفع
+
+```http
+POST …/batches
+{ "customer_user_id": 55, "system_default": "ask", "remember_for_customer": false }
+```
+
+```http
+POST …/batches/12/images
+Content-Type: multipart/form-data
+image: (jpeg/png ≤ 12MB)
+```
+
+409 مكرر:
+
+```json
+{
+  "status": false,
+  "message": "الصورة مرفوعة مسبقاً في نفس الدفعة",
+  "error_code": "OCR_DUPLICATE_IMAGE",
+  "errors": { "image": { "id": 44, "…" : "…" }, "batch": { } }
+}
+```
+
+---
+
+## 6) Poll — شكل `batch` الكامل (مختصر حقول جديدة)
 
 ```json
 {
   "batch_id": 12,
-  "status": "draft",
-  "step": "draft",
+  "status": "review",
+  "step": "review",
   "settled": true,
   "reading": false,
-  "prefs": {
-    "system_default": null,
-    "customer_user_id": 55,
-    "remember_for_customer": false
-  },
-  "poll": {
-    "interval_ms": 2000,
-    "backoff_after_ms": 20000,
-    "backoff_interval_ms": 5000
-  },
+  "cart_added_at": null,
+  "idempotency_token": null,
+  "prefs": { "system_default": "us", "customer_user_id": 55, "remember_for_customer": false },
+  "poll": { "interval_ms": 2000, "backoff_after_ms": 20000, "backoff_interval_ms": 5000 },
   "limits": { "max_images": 10 },
-  "images": [],
-  "draft": null,
+  "lexicon_families": [
+    { "key": "pipe", "label": "ماسورة" },
+    { "key": "elbow", "label": "كوع" },
+    { "key": "tee", "label": "مثلث" }
+  ],
+  "images": [
+    {
+      "id": 44,
+      "position": 1,
+      "status": "done",
+      "lines_count": 3,
+      "error_code": null,
+      "preview_url": "https://…/storage/ocr-uploads/…",
+      "preview_signed_url": "https://…/ocr-images/44/preview?expires=…&signature=…",
+      "preview_signed_expires_at": "2026-11-08T22:10:00+02:00",
+      "countdown_seconds": null,
+      "quality_warning": false,
+      "attempts": 1,
+      "read_version": 1
+    }
+  ],
+  "draft": { "lines": [], "excluded": [], "source_type": "batch", "ocr_batch_id": 12 },
   "merge_suggestions": [],
-  "accounting": { "matched": 0, "needs_review": 0, "excluded": 0, "lines_read": 0 },
-  "stats": { "pending": 0, "ready": 0, "approved": 0, "excluded": 0 },
+  "accounting": { "matched": 2, "needs_review": 1, "excluded": 1, "lines_read": 4 },
+  "stats": { "pending": 1, "ready": 2, "approved": 0, "excluded": 1 },
+  "cart_lines": null,
   "gemini_enabled": true
 }
 ```
 
-`step` المهم للتطبيق:
-
-| step | UI |
-|------|-----|
-| `draft` | ارفع صورة / الصق نص |
-| `polling` | جاري القراءة — اعرض شريط الصور + progress |
-| `review` | شاشة المراجعة |
-| `added` | اتعمل apply مسبقاً |
-| `abandoned` | متجاهَلة |
+عند `step=added`: `cart_lines` مصفوفة (نفس شكل apply).
 
 ---
 
-## 5) رفع صورة
-
-```http
-POST /api/v1/mobile/distributor/pos/ocr/batches/12/images
-Authorization: Bearer …
-Content-Type: multipart/form-data
-
-image: (jpeg/png/webp ≤ 12MB)
-```
-
-- اسم الحقل: `image` **أو** `file`
-- اختياري: `force_duplicate=1` لرفع نفس الصورة مرة أخرى
-- **409** لو الصورة نفسها مرفوعة في الدفعة (`already uploaded`)
-- **503** لو Gemini غير مفعّل
-- بعد النجاح ابدأ الـ poll فوراً
-
-نصائح جودة (من إعدادات السيرفر):
-
-- صفّ الورقة، إضاءة جيدة، بدون قص للنص
-- يفضّل تصغير الضلع الأطول إلى ~2000px وجودة JPEG ~0.85 قبل الرفع
-
----
-
-## 6) لصق نص (بدون كاميرا)
-
-```http
-POST …/batches/12/paste
-Content-Type: application/json
-
-{ "text": "كوع 90 1 بوصة MG × 4\nماسورة 32 مم MG × 10" }
-```
-
-سطر لكل بند قدر الإمكان.
-
----
-
-## 7) Poll الحالة
-
-```http
-GET …/batches/12
-```
-
-- طالما `reading=true` أو `step=polling`: كرّر الطلب
-- استخدم `poll.interval_ms` أولاً؛ بعد `backoff_after_ms` من بدء الرفع بدّل إلى `backoff_interval_ms`
-- يمكن عرض بنود جاهزة من صور خلصت قبل انتهاء كل الصور (`draft` قد يظهر مبكراً)
-- توقف عند `settled=true` وانتقل لـ `review`
-
-شكل صورة في `images[]`:
-
-```json
-{
-  "id": 44,
-  "position": 1,
-  "status": "reading",
-  "lines_count": 0,
-  "error_code": null,
-  "preview_url": "https://…/storage/ocr-uploads/…",
-  "countdown_seconds": null,
-  "quality_warning": false,
-  "attempts": 1,
-  "read_version": 0
-}
-```
-
-| status | معنى |
-|--------|------|
-| `queued` | في الانتظار |
-| `reading` | جاري |
-| `retrying` | إعادة محاولة — استخدم `countdown_seconds` |
-| `done` | نجحت |
-| `empty` | ما فيش بنود |
-| `failed` | فشلت — اعرض زر retry |
-| `canceled` | أُلغيت |
-
-أكواد خطأ شائعة في `error_code`: `OCR-TIMEOUT` · `OCR-BUSY` · `OCR-AUTH` · `OCR-EMPTY-JSON` · `OCR-FAILED`
-
----
-
-## 8) شاشة المراجعة
-
-### 8.1 إحصائيات
-
-من `batch.stats`:
-
-| حقل | عرض مقترح |
-|-----|-----------|
-| `pending` | يحتاجك |
-| `ready` | جاهز (أخضر) |
-| `approved` | معتمد |
-| `excluded` | مستبعد (غالباً بدون علامة MG) |
-
-### 8.2 بند في `draft.lines[]`
-
-حقول مهمة للتطبيق:
-
-| حقل | استخدام |
-|-----|---------|
-| `ocr_line_id` | معرّف الـ PATCH |
-| `raw_text` | النص المقروء |
-| `qty` | الكمية |
-| `matched_product_id` | المنتج المقترح |
-| `name` | اسم المنتج |
-| `approved` / `review_status` | حالة الاعتماد |
-| `needs_review` | مصفوفة أسباب (فارغة = جاهز غالباً) |
-| `candidates[]` | مرشّحون `{product_id, name, system, …}` |
-| `slots.system` | `us` / `eu` |
-| `slots.lexicon_family` | عائلة معجمية |
-| `main_image` / `pieces_per_box` | عرض |
-
-### 8.3 تعديل بند
+## 7) تعديل بند
 
 ```http
 PATCH …/batches/12/lines/901
-Content-Type: application/json
-
 { "action": "approve", "product_id": 42 }
 ```
 
-| action | جسم إضافي | نتيجة |
-|--------|-----------|--------|
-| `select_product` | `product_id` | ربط منتج بدون اعتماد |
-| `approve` | `product_id` اختياري لو مربوط مسبقاً | اعتماد |
-| `unapprove` | — | إلغاء الاعتماد |
-| `set_qty` | `qty` ≥ 1 | تغيير الكمية |
-| `choose_system` | `system`: `us`\|`eu` | اختيار من المرشّحين حسب النظام |
-| `choose_family` | `lexicon_family` | فك غموض العائلة ثم إعادة مطابقة |
-| `confirm_understanding` | — | تأكيد فهم اللهجة/الاسم |
-
-### 8.4 اعتماد كل الجاهز
-
-```http
-POST …/batches/12/approve-ready
-```
-
-يعتمد البنود ذات `match_decision` = `auto` أو `alias` وبدون `needs_review`.
-
-### 8.5 إعدادات أثناء المراجعة
-
-```http
-PATCH …/batches/12/prefs
-{
-  "system_default": "us",
-  "remember_for_customer": true,
-  "customer_user_id": 55,
-  "reenrich": true
-}
-```
-
-`reenrich=true` (الافتراضي عند تغيير النظام) يعيد تصنيف البنود بدون استدعاء Gemini من جديد.
+| action | حقول إضافية |
+|--------|-------------|
+| `select_product` | `product_id` (مطلوب) |
+| `approve` | `product_id` اختياري لو مربوط |
+| `unapprove` | — |
+| `set_qty` | `qty` ≥ 1 |
+| `choose_system` | `system`: `us`\|`eu` |
+| `choose_family` | `lexicon_family` من `lexicon_families` أو `family_chips`/`family_candidates` |
+| `confirm_understanding` | — |
 
 ---
 
-## 9) تطبيق على السلة
+## 8) Apply + استرجاع
 
-```http
-POST …/batches/12/apply
-```
-
-**نجاح 200:**
+**نجاح:**
 
 ```json
 {
@@ -304,107 +275,235 @@ POST …/batches/12/apply
         "boxes": null,
         "pieces_per_box": null,
         "points_per_unit": 2,
-        "image": "…"
+        "image": "…",
+        "available_qty": 120,
+        "in_stock": true,
+        "qty_exceeds_stock": false
       }
     ],
     "approved_count": 3,
     "idempotency_token": "uuid…",
-    "batch": { "step": "added", "…" : "…" },
+    "batch": { "step": "added", "cart_lines": [ "…" ] },
     "next": {
       "merge_into_local_cart": true,
-      "checkout": "POST …/pos/checkout بنفس شكل lines (product_id + boxes|quantity)"
+      "checkout": "POST …/pos/checkout بنفس شكل lines (product_id + boxes|quantity)",
+      "send_idempotency_token_on_checkout": false
     }
   }
 }
 ```
 
-قواعد الدمج في التطبيق:
+**تكرار apply (استرجاع):**
 
-1. لكل عنصر في `cart_lines`: لو المنتج موجود في السلة → زِد الكمية/`boxes`؛ وإلا أضِف سطراً جديداً.
-2. لو `boxes` غير null استخدمه في checkout؛ وإلا استخدم `quantity`.
-3. **409** = الدفعة اتعملت apply قبل كده — لا تكرّر الدمج.
-4. **422** = مفيش بنود معتمدة.
+```json
+{
+  "status": false,
+  "message": "تم تطبيق هذه الدفعة مسبقاً — لن تُكرَّر البنود",
+  "error_code": "OCR_ALREADY_APPLIED",
+  "errors": {
+    "batch": { "step": "added", "cart_lines": [ "…" ] },
+    "cart_lines": [ { "product_id": 42, "quantity": 4, "available_qty": 120 } ],
+    "idempotency_token": "uuid…"
+  }
+}
+```
 
-بعد الدمج: افتح شاشة مراجعة السلة ثم:
+---
+
+## 9) Checkout (بعد الدمج)
 
 ```http
 POST /api/v1/mobile/distributor/pos/checkout
 {
   "retail_trader_id": 55,
-  "lines": [
-    { "product_id": 42, "quantity": 4 }
-  ]
+  "lines": [ { "product_id": 42, "quantity": 4 } ]
 }
 ```
 
-(للقطاعي: `POST …/trader/pos/checkout` مع `plumber_id` حسب عقد الـ POS الحالي.)
+لا ترسل `idempotency_token` من OCR.
 
 ---
 
-## 10) استئناف / تجاهل
+## 14) قاموس الحقول والأشكال
 
-```http
-GET …/current
-→ { "resumable": true, "batch": { … } }
-```
-
-- **متابعة:** اذهب مباشرة لـ `GET …/batches/{id}`
-- **تجاهل:** `POST …/batches/{id}/abandon` ثم أنشئ دفعة جديدة
-
----
-
-## 11) أخطاء متوقعة
-
-| HTTP | متى |
-|------|-----|
-| 401 | بدون توكن / منتهي |
-| 403 | دور غير الجملة/القطاعي |
-| 404 | دفعة/صورة/بند مش تبع المستخدم |
-| 409 | صورة مكررة أو apply مكرر |
-| 422 | فاليديشن / لا بنود معتمدة / دفعة مغلقة |
-| 503 | Gemini غير مفعّل على السيرفر |
-
-غلاف الرد دائماً:
+### 14.1 `draft.excluded[]`
 
 ```json
-{ "status": true|false, "message": "…", "data": { } }
+{
+  "raw_text": "ماسورة 4 بدون علامة",
+  "name": "ماسورة 4 بدون علامة",
+  "qty": 2,
+  "reason": "plumbing_without_mg",
+  "exclude_label": "بدون علامة MG",
+  "match_status": "not_mg",
+  "slots": { }
+}
+```
+
+| `reason` | معنى |
+|----------|------|
+| `plumbing_without_mg` | سباكة بدون علامة MG |
+| `non_mg_brand` / `known_non_mg` | ماركة غير MG |
+| `unreadable_or_non_mg` | مش مقروء / مش كتالوج |
+
+عرض للمعلومة فقط — لا تدخل السلة.
+
+### 14.2 `merge_suggestions[]`
+
+```json
+{
+  "product_id": 42,
+  "size": "1",
+  "qtys": [2, 3],
+  "sum": 5,
+  "line_indexes": [0, 3],
+  "message": "نفس المنتج في أكثر من صورة — ادمج (مجموع 5) أو أبقِ منفصلاً"
+}
+```
+
+**ماذا يفعل التطبيق؟** تنبيه اختياري. عند `apply` السيرفر **يدمج تلقائياً** نفس `product_id` في `cart_lines`. ممكن تخلي المستخدم يلغي اعتماد أحد البنود ويعدّل الكمية يدوياً.
+
+### 14.3 `candidates[]` item
+
+```json
+{
+  "product_id": 42,
+  "name": "كوع 90 – 1 بوصة MG",
+  "system": "us",
+  "size_value": 1,
+  "size_unit": "in",
+  "pieces_per_box": null,
+  "points_per_unit": 2,
+  "main_image": "products/…",
+  "flags": {
+    "family": true,
+    "size": true,
+    "angle": true,
+    "size2": true,
+    "system": true,
+    "variant": true
+  },
+  "rank": 90,
+  "similarity": 0.82,
+  "available_qty": 120,
+  "in_stock": true
+}
+```
+
+(مرشّح alias قد يختصر إلى `product_id`, `name`, `flags.alias`.)
+
+### 14.4 `needs_review` (أكواد — ترجمها في التطبيق)
+
+| كود | معنى للترجمة |
+|-----|----------------|
+| `needs_choice` | يحتاج اختيار المستخدم |
+| `ambiguous_family` | عائلة غامضة (مثل مثلث / مثلث واي) |
+| `unconfirmed_term` | مصطلح لهجة/إنجليزي غير مؤكد — اطلب تأكيد الفهم |
+| `unknown_word` | كلمة غير معروفة |
+| `mg_family_unknown_variant` | عائلة معروفة بلا مرشح مطابق |
+| `low_confidence` | ثقة قراءة منخفضة |
+| `qty` | كمية ناقصة/خارج المدى |
+| `line_math` | حساب السطر غير متسق |
+| `catalog_unmatched` | لم يُطابق الكتالوج |
+| `price_missing` / `qty_missing` / `ambiguous_roles` | أعلام قديمة من مسار الفاتورة المطبوعة |
+
+### 14.5 `review_status`
+
+| قيمة | معنى |
+|------|------|
+| `needs` | يحتاج مراجعة |
+| `ready` | جاهز للاعتماد |
+| `approved` | معتمد |
+| `excluded` | مستبعد |
+| `added` | دخل نتيجة apply |
+
+### 14.6 `match_decision`
+
+| قيمة | معنى |
+|------|------|
+| `auto` | مطابقة فريدة تلقائية |
+| `alias` | من اختيارات/تعلّم سابق |
+| `manual` | يدوي / بلا مرشح كافٍ |
+| `needs_choice` | يحتاج قرار |
+
+### 14.7 `lexicon_family`
+
+السيرفر يرسل قائمة كاملة في `batch.lexicon_families`. المفاتيح من `config/ocr_lexicon.php`:
+
+`pipe`, `tee`, `y_tee`, `access_tee`, `access_elbow`, `elbow`, `coupling`, `reducer`, `end_cap`, `plug`, `floor_trap`, `odor_trap`, `vent_cap`, `cross`
+
+على مستوى البند: `slots.lexicon_family` و/أو `family_candidates` / `family_chips` عند الحاجة.
+
+`family_chips` (للبند المجهول):
+
+```json
+[
+  { "key": "pipe", "label": "ماسورة" },
+  { "key": "elbow", "label": "كوع" },
+  { "key": "tee", "label": "مثلث" },
+  { "key": "y_tee", "label": "مثلث واي" },
+  { "key": "coupling", "label": "وصلة" },
+  { "key": "reducer", "label": "مخفض" }
+]
+```
+
+### 14.8 بند `draft.lines[]` كامل (مثال)
+
+```json
+{
+  "ocr_line_id": 901,
+  "ocr_image_id": 44,
+  "raw_text": "كوع ٩٠ ١ بوصه نظام امريك MG",
+  "qty": 4,
+  "matched_product_id": 42,
+  "name": "كوع 90 – 1 بوصة MG",
+  "match_decision": "auto",
+  "match_status": "matched",
+  "match_reason": "من الكتابة",
+  "review_status": "ready",
+  "approved": false,
+  "needs_review": [],
+  "candidates": [],
+  "understanding": null,
+  "family_candidates": [],
+  "slots": {
+    "family": "elbow_90",
+    "lexicon_family": "elbow",
+    "size_value": 1,
+    "size_unit": "in",
+    "system": "us",
+    "system_source": "text",
+    "mg_brand": true
+  },
+  "pieces_per_box": null,
+  "points_per_unit": 2,
+  "main_image": "…",
+  "available_qty": 120,
+  "in_stock": true,
+  "qty_exceeds_stock": false
+}
 ```
 
 ---
 
-## 12) حدود وتشغيل
+## 15) حدود وتشغيل
 
-- حتى **10** صور لكل دفعة
-- معالجة متوازية محدودة على السيرفر (~2 صور)
-- القراءة غير متزامنة عادةً → **poll إلزامي**
-- البنود بدون علامة MG تروح `excluded` — يمكن عرضها للمستخدم للمعلومة فقط
-- OCR لا يخصم مخزون ولا يعطي نقاط — ده بعد `pos/checkout` + تأكيد الاستلام
+- حتى 10 صور / دفعة؛ ~2 متوازي على السيرفر
+- Poll إلزامي
+- تنظيف الصور: `php artisan ocr:prune-uploads` يومياً 03:50 (Africa/Tripoli)
+- OCR لا يخصم مخزوناً ولا يعطي نقاطاً
 
 ---
 
-## 13) اختبار سريع (curl)
+## 16) اختبار سريع
 
 ```bash
 TOKEN=…
 BASE=https://mg-plastic.com/api/v1/mobile/distributor/pos/ocr
 
-# 1) دفعة
-curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
-  -d '{"system_default":"ask"}' -H "Content-Type: application/json" \
-  "$BASE/batches"
+curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" "$BASE/current"
+# تحقق: gemini_enabled موجود مع batch=null
 
-# 2) صورة
-curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
-  -F "image=@/path/note.jpg" \
-  "$BASE/batches/12/images"
-
-# 3) poll
-curl -s -H "Authorization: Bearer $TOKEN" "$BASE/batches/12"
-
-# 4) اعتماد + apply
-curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"action":"approve","product_id":42}' \
-  "$BASE/batches/12/lines/901"
-
-curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/batches/12/apply"
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"system_default":"ask"}' "$BASE/batches"
 ```

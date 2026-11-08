@@ -20,12 +20,16 @@ trait ApiResponds
         return $this->success($data, $message, 201);
     }
 
-    protected function error(string $message, int $code = 400, mixed $errors = null): JsonResponse
+    protected function error(string $message, int $code = 400, mixed $errors = null, ?string $errorCode = null): JsonResponse
     {
         $payload = [
             'status' => false,
             'message' => $message,
         ];
+
+        if ($errorCode !== null) {
+            $payload['error_code'] = $errorCode;
+        }
 
         if ($errors !== null) {
             $payload['errors'] = $errors;
