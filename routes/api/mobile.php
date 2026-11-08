@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\Mobile\InvoiceShareController;
 use App\Http\Controllers\Api\Mobile\NotificationController;
 use App\Http\Controllers\Api\Mobile\OtaController;
 use App\Http\Controllers\Api\Mobile\PointsPanelController;
+use App\Http\Controllers\Api\Mobile\PosOcrController;
 use App\Http\Controllers\Api\Mobile\ProductCollectionController;
 use App\Http\Controllers\Api\Mobile\ProductPromotionController;
 use App\Http\Controllers\Api\Mobile\ProfileController;
@@ -240,6 +241,23 @@ Route::prefix('v1/mobile')->group(function () {
         Route::get('pos/stock', [TraderPosController::class, 'stock']);
         Route::post('pos/checkout', [TraderPosController::class, 'checkout']);
 
+        // POS OCR — قراءة ورقة مكتوبة → مراجعة → سلة (ثم checkout)
+        Route::prefix('pos/ocr')->group(function () {
+            Route::get('current', [PosOcrController::class, 'current']);
+            Route::post('batches', [PosOcrController::class, 'store']);
+            Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
+            Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
+            Route::post('batches/{batch}/paste', [PosOcrController::class, 'pasteText'])->whereNumber('batch');
+            Route::post('batches/{batch}/images/{image}/retry', [PosOcrController::class, 'retryImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/images/{image}/cancel', [PosOcrController::class, 'cancelImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/reread', [PosOcrController::class, 'reread'])->whereNumber('batch');
+            Route::post('batches/{batch}/abandon', [PosOcrController::class, 'abandon'])->whereNumber('batch');
+            Route::patch('batches/{batch}/prefs', [PosOcrController::class, 'updatePrefs'])->whereNumber('batch');
+            Route::patch('batches/{batch}/lines/{line}', [PosOcrController::class, 'updateLine'])->whereNumber('batch')->whereNumber('line');
+            Route::post('batches/{batch}/approve-ready', [PosOcrController::class, 'approveReady'])->whereNumber('batch');
+            Route::post('batches/{batch}/apply', [PosOcrController::class, 'apply'])->whereNumber('batch');
+        });
+
         // Multi wholesaler network (قطاعي ↔ أكثر من جملة)
         Route::get('wholesalers', [TraderWholesalerController::class, 'index']);
         Route::post('wholesalers/link', [TraderWholesalerController::class, 'link']); // sends join request
@@ -371,6 +389,23 @@ Route::prefix('v1/mobile')->group(function () {
 
         Route::get('pos/stock', [DistributorPosController::class, 'stock']);
         Route::post('pos/checkout', [DistributorPosController::class, 'checkout']);
+
+        // POS OCR — قراءة ورقة مكتوبة → مراجعة → سلة (ثم checkout)
+        Route::prefix('pos/ocr')->group(function () {
+            Route::get('current', [PosOcrController::class, 'current']);
+            Route::post('batches', [PosOcrController::class, 'store']);
+            Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
+            Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
+            Route::post('batches/{batch}/paste', [PosOcrController::class, 'pasteText'])->whereNumber('batch');
+            Route::post('batches/{batch}/images/{image}/retry', [PosOcrController::class, 'retryImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/images/{image}/cancel', [PosOcrController::class, 'cancelImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/reread', [PosOcrController::class, 'reread'])->whereNumber('batch');
+            Route::post('batches/{batch}/abandon', [PosOcrController::class, 'abandon'])->whereNumber('batch');
+            Route::patch('batches/{batch}/prefs', [PosOcrController::class, 'updatePrefs'])->whereNumber('batch');
+            Route::patch('batches/{batch}/lines/{line}', [PosOcrController::class, 'updateLine'])->whereNumber('batch')->whereNumber('line');
+            Route::post('batches/{batch}/approve-ready', [PosOcrController::class, 'approveReady'])->whereNumber('batch');
+            Route::post('batches/{batch}/apply', [PosOcrController::class, 'apply'])->whereNumber('batch');
+        });
 
         // Notifications inbox (same shared controller)
         Route::prefix('notifications')->group(function () {
