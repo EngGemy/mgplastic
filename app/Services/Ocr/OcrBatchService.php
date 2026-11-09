@@ -19,20 +19,40 @@ class OcrBatchService
         protected OcrQtyUnitResolver $qtyUnits,
     ) {}
 
-    public function findResumableDraft(User $user): ?OcrBatch
+    public function findResumableDraft(User $user, ?OcrBatchContext $context = null): ?OcrBatch
     {
-        return OcrBatch::query()
+        $context ??= new OcrBatchContext(purpose: OcrBatchContext::PURPOSE_POS);
+
+        $q = OcrBatch::query()
             ->where('user_id', $user->id)
-            ->whereIn('status', ['draft', 'reading', 'review'])
-            ->latest('id')
-            ->first();
+            ->where('purpose', $context->purpose)
+            ->whereIn('status', ['draft', 'reading', 'review']);
+
+        if ($context->purpose === OcrBatchContext::PURPOSE_SUPPLY) {
+            if ($context->source !== null) {
+                $q->where('source', $context->source);
+            }
+            // Factory has null supplier; warehouse/wholesale/shop must match supplier when provided.
+            if ($context->source === OcrBatchContext::SOURCE_FACTORY) {
+                $q->whereNull('supplier_user_id');
+            } elseif ($context->supplierUserId) {
+                $q->where('supplier_user_id', $context->supplierUserId);
+            }
+        }
+
+        return $q->latest('id')->first();
     }
 
-    public function createOrResume(User $user, ?int $distributorId = null): OcrBatch
+    public function createOrResume(User $user, ?int $distributorId = null, ?OcrBatchContext $context = null): OcrBatch
     {
-        $existing = $this->findResumableDraft($user);
+        $context ??= new OcrBatchContext(
+            purpose: OcrBatchContext::PURPOSE_POS,
+            customerUserId: $distributorId,
+        );
+
+        $existing = $this->findResumableDraft($user, $context);
         if ($existing) {
-            if ($distributorId && ! $existing->distributor_id) {
+            if ($context->purpose === OcrBatchContext::PURPOSE_POS && $distributorId && ! $existing->distributor_id) {
                 $existing->distributor_id = $distributorId;
                 $existing->save();
             }
@@ -42,7 +62,12 @@ class OcrBatchService
 
         return OcrBatch::query()->create([
             'user_id' => $user->id,
-            'distributor_id' => $distributorId,
+            'purpose' => $context->purpose,
+            'source' => $context->source,
+            'supplier_user_id' => $context->supplierUserId,
+            'distributor_id' => $context->purpose === OcrBatchContext::PURPOSE_POS
+                ? ($distributorId ?? $context->customerUserId)
+                : null,
             'status' => 'draft',
         ]);
     }

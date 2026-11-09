@@ -194,6 +194,23 @@ Route::prefix('v1/mobile')->group(function () {
         Route::post('orders/{order}/receive', [PlumberOrderController::class, 'receive']);
         Route::post('orders/{order}/cancel', [PlumberOrderController::class, 'cancel']);
 
+        // Supply-order OCR — قراءة ورقة → طلب من محل قطاعي (purpose=supply_order, source=shop)
+        Route::prefix('orders/ocr')->group(function () {
+            Route::get('current', [PosOcrController::class, 'current']);
+            Route::post('batches', [PosOcrController::class, 'store']);
+            Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
+            Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
+            Route::post('batches/{batch}/paste', [PosOcrController::class, 'pasteText'])->whereNumber('batch');
+            Route::post('batches/{batch}/images/{image}/retry', [PosOcrController::class, 'retryImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/images/{image}/cancel', [PosOcrController::class, 'cancelImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/reread', [PosOcrController::class, 'reread'])->whereNumber('batch');
+            Route::post('batches/{batch}/abandon', [PosOcrController::class, 'abandon'])->whereNumber('batch');
+            Route::patch('batches/{batch}/prefs', [PosOcrController::class, 'updatePrefs'])->whereNumber('batch');
+            Route::patch('batches/{batch}/lines/{line}', [PosOcrController::class, 'updateLine'])->whereNumber('batch')->whereNumber('line');
+            Route::post('batches/{batch}/approve-ready', [PosOcrController::class, 'approveReady'])->whereNumber('batch');
+            Route::post('batches/{batch}/apply', [PosOcrController::class, 'apply'])->whereNumber('batch');
+        });
+
         // Pending POS/fulfill receipts — plumber must confirm before points settle
         Route::get('pending-receipts', [PlumberDistributionReceiptController::class, 'pending']);
         Route::post('distributions/{distribution}/receive', [PlumberDistributionReceiptController::class, 'receive'])
@@ -243,6 +260,23 @@ Route::prefix('v1/mobile')->group(function () {
 
         // POS OCR — قراءة ورقة مكتوبة → مراجعة → سلة (ثم checkout)
         Route::prefix('pos/ocr')->group(function () {
+            Route::get('current', [PosOcrController::class, 'current']);
+            Route::post('batches', [PosOcrController::class, 'store']);
+            Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
+            Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
+            Route::post('batches/{batch}/paste', [PosOcrController::class, 'pasteText'])->whereNumber('batch');
+            Route::post('batches/{batch}/images/{image}/retry', [PosOcrController::class, 'retryImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/images/{image}/cancel', [PosOcrController::class, 'cancelImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/reread', [PosOcrController::class, 'reread'])->whereNumber('batch');
+            Route::post('batches/{batch}/abandon', [PosOcrController::class, 'abandon'])->whereNumber('batch');
+            Route::patch('batches/{batch}/prefs', [PosOcrController::class, 'updatePrefs'])->whereNumber('batch');
+            Route::patch('batches/{batch}/lines/{line}', [PosOcrController::class, 'updateLine'])->whereNumber('batch')->whereNumber('line');
+            Route::post('batches/{batch}/approve-ready', [PosOcrController::class, 'approveReady'])->whereNumber('batch');
+            Route::post('batches/{batch}/apply', [PosOcrController::class, 'apply'])->whereNumber('batch');
+        });
+
+        // Supply-order OCR — قطاعي يطلب من الجملة (purpose=supply_order, source=wholesale)
+        Route::prefix('orders/ocr')->group(function () {
             Route::get('current', [PosOcrController::class, 'current']);
             Route::post('batches', [PosOcrController::class, 'store']);
             Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
@@ -392,6 +426,23 @@ Route::prefix('v1/mobile')->group(function () {
 
         // POS OCR — قراءة ورقة مكتوبة → مراجعة → سلة (ثم checkout)
         Route::prefix('pos/ocr')->group(function () {
+            Route::get('current', [PosOcrController::class, 'current']);
+            Route::post('batches', [PosOcrController::class, 'store']);
+            Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
+            Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
+            Route::post('batches/{batch}/paste', [PosOcrController::class, 'pasteText'])->whereNumber('batch');
+            Route::post('batches/{batch}/images/{image}/retry', [PosOcrController::class, 'retryImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/images/{image}/cancel', [PosOcrController::class, 'cancelImage'])->whereNumber('batch')->whereNumber('image');
+            Route::post('batches/{batch}/reread', [PosOcrController::class, 'reread'])->whereNumber('batch');
+            Route::post('batches/{batch}/abandon', [PosOcrController::class, 'abandon'])->whereNumber('batch');
+            Route::patch('batches/{batch}/prefs', [PosOcrController::class, 'updatePrefs'])->whereNumber('batch');
+            Route::patch('batches/{batch}/lines/{line}', [PosOcrController::class, 'updateLine'])->whereNumber('batch')->whereNumber('line');
+            Route::post('batches/{batch}/approve-ready', [PosOcrController::class, 'approveReady'])->whereNumber('batch');
+            Route::post('batches/{batch}/apply', [PosOcrController::class, 'apply'])->whereNumber('batch');
+        });
+
+        // Supply-order OCR — جملة يطلب من مصنع/مخزن (source=factory|warehouse)
+        Route::prefix('orders/ocr')->group(function () {
             Route::get('current', [PosOcrController::class, 'current']);
             Route::post('batches', [PosOcrController::class, 'store']);
             Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');

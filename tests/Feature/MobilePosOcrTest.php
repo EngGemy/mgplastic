@@ -435,4 +435,210 @@ class MobilePosOcrTest extends TestCase
         $this->assertSame('default', $assumed['qty_unit_source']);
         $this->assertContains('unit_assumed', $assumed['needs_review']);
     }
+
+    public function test_pos_current_does_not_surface_supply_batch(): void
+    {
+        $user = $this->distributor();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/mobile/distributor/orders/ocr/batches', [
+            'purpose' => 'supply_order',
+            'source' => 'factory',
+        ])->assertCreated()
+            ->assertJsonPath('data.batch.purpose', 'supply_order')
+            ->assertJsonPath('data.batch.source', 'factory')
+            ->assertJsonPath('data.batch.stock_source', 'factory_catalog');
+
+        $this->getJson('/api/v1/mobile/distributor/pos/ocr/current')
+            ->assertOk()
+            ->assertJsonPath('data.resumable', false)
+            ->assertJsonPath('data.batch', null);
+
+        $this->getJson('/api/v1/mobile/distributor/orders/ocr/current?source=factory')
+            ->assertOk()
+            ->assertJsonPath('data.resumable', true)
+            ->assertJsonPath('data.batch.purpose', 'supply_order')
+            ->assertJsonPath('data.batch.source', 'factory');
+    }
+
+    public function test_warehouse_current_scoped_by_warehouse_id(): void
+    {
+        $user = $this->distributor();
+        $whA = $this->distributor();
+        $whB = $this->distributor();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/mobile/distributor/orders/ocr/batches', [
+            'source' => 'warehouse',
+            'warehouse_id' => $whA->id,
+        ])->assertCreated();
+
+        $this->getJson('/api/v1/mobile/distributor/orders/ocr/current?source=warehouse&warehouse_id='.$whB->id)
+            ->assertOk()
+            ->assertJsonPath('data.resumable', false);
+
+        $this->getJson('/api/v1/mobile/distributor/orders/ocr/current?source=warehouse&warehouse_id='.$whA->id)
+            ->assertOk()
+            ->assertJsonPath('data.resumable', true)
+            ->assertJsonPath('data.batch.supplier_user_id', $whA->id)
+            ->assertJsonPath('data.batch.stock_source', 'warehouse_stock');
+    }
+
+    public function test_plumber_supply_ocr_keeps_oos_in_cart_lines(): void
+    {
+        $shop = User::factory()->create([
+            'role' => 'retail_trader',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        $plumber = User::factory()->create([
+            'role' => 'plumber',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($plumber);
+        $product = $this->seedElbowProduct();
+
+        $batchId = (int) $this->postJson('/api/v1/mobile/plumber/orders/ocr/batches', [
+            'source' => 'shop',
+            'retail_trader_id' => $shop->id,
+        ])->assertCreated()
+            ->assertJsonPath('data.batch.purpose', 'supply_order')
+            ->assertJsonPath('data.batch.source', 'shop')
+            ->assertJsonPath('data.batch.stock_source', 'shop_stock')
+            ->json('data.batch.batch_id');
+
+        Storage::disk('local')->put('ocr-uploads/plumb.jpg', 'p');
+        $batch = \App\Models\OcrBatch::findOrFail($batchId);
+        $image = \App\Models\OcrImage::query()->create([
+            'batch_id' => $batch->id,
+            'position' => 1,
+            'path' => 'ocr-uploads/plumb.jpg',
+            'sha256' => hash('sha256', 'p'),
+            'status' => 'done',
+            'read_version' => 1,
+            'lines_count' => 1,
+        ]);
+        $line = OcrImageLine::query()->create([
+            'image_id' => $image->id,
+            'line_no' => 1,
+            'raw_fragment' => 'كوع 90 MG',
+            'resolved_product_id' => $product->id,
+            'qty' => 2,
+            'review_status' => 'ready',
+            'version' => 1,
+            'payload' => [
+                'raw_text' => 'كوع 90 MG',
+                'matched_product_id' => $product->id,
+                'qty' => 2,
+                'match_decision' => 'auto',
+                'match_status' => 'matched',
+                'review_status' => 'ready',
+            ],
+        ]);
+
+        $this->patchJson('/api/v1/mobile/plumber/orders/ocr/batches/'.$batchId.'/lines/'.$line->id, [
+            'action' => 'approve',
+        ])->assertOk();
+
+        $apply = $this->postJson('/api/v1/mobile/plumber/orders/ocr/batches/'.$batchId.'/apply')
+            ->assertOk();
+
+        $this->assertNotEmpty($apply->json('data.cart_lines'));
+        $this->assertSame([], $apply->json('data.unavailable_lines'));
+        $this->assertFalse($apply->json('data.affects_inventory'));
+        $this->assertFalse($apply->json('data.affects_points'));
+        $this->assertSame('shop_stock', $apply->json('data.stock_source'));
+        $this->assertArrayHasKey('place_order', $apply->json('data.next'));
+        $this->assertFalse((bool) ($apply->json('data.cart_lines.0.in_stock') ?? true));
+    }
+
+    public function test_plumber_cannot_use_pos_ocr(): void
+    {
+        $plumber = User::factory()->create([
+            'role' => 'plumber',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($plumber);
+
+        $this->postJson('/api/v1/mobile/plumber/orders/ocr/batches', [
+            'purpose' => 'pos',
+        ])->assertStatus(422);
+    }
+
+    public function test_factory_apply_ignores_stock_and_keeps_lines(): void
+    {
+        $user = $this->distributor();
+        Sanctum::actingAs($user);
+        $product = $this->seedElbowProduct();
+
+        $batchId = (int) $this->postJson('/api/v1/mobile/distributor/orders/ocr/batches', [
+            'source' => 'factory',
+        ])->assertCreated()
+            ->assertJsonPath('data.batch.stock_source', 'factory_catalog')
+            ->json('data.batch.batch_id');
+
+        Storage::disk('local')->put('ocr-uploads/fac.jpg', 'f');
+        $batch = \App\Models\OcrBatch::findOrFail($batchId);
+        $image = \App\Models\OcrImage::query()->create([
+            'batch_id' => $batch->id,
+            'position' => 1,
+            'path' => 'ocr-uploads/fac.jpg',
+            'sha256' => hash('sha256', 'f'),
+            'status' => 'done',
+            'read_version' => 1,
+            'lines_count' => 1,
+        ]);
+        $line = OcrImageLine::query()->create([
+            'image_id' => $image->id,
+            'line_no' => 1,
+            'raw_fragment' => 'كوع 90 MG',
+            'resolved_product_id' => $product->id,
+            'qty' => 5,
+            'review_status' => 'ready',
+            'version' => 1,
+            'payload' => [
+                'raw_text' => 'كوع 90 MG',
+                'matched_product_id' => $product->id,
+                'qty' => 5,
+                'match_decision' => 'auto',
+                'match_status' => 'matched',
+                'review_status' => 'ready',
+            ],
+        ]);
+
+        $this->patchJson('/api/v1/mobile/distributor/orders/ocr/batches/'.$batchId.'/lines/'.$line->id, [
+            'action' => 'approve',
+        ])->assertOk();
+
+        $apply = $this->postJson('/api/v1/mobile/distributor/orders/ocr/batches/'.$batchId.'/apply')
+            ->assertOk();
+
+        $this->assertCount(1, $apply->json('data.cart_lines'));
+        $this->assertSame([], $apply->json('data.unavailable_lines'));
+        $this->assertTrue($apply->json('data.cart_lines.0.in_stock'));
+        $this->assertNull($apply->json('data.cart_lines.0.available_qty'));
+        $this->assertFalse($apply->json('data.affects_inventory'));
+    }
+
+    public function test_trader_supply_ocr_from_wholesaler(): void
+    {
+        $wholesaler = $this->distributor();
+        $trader = User::factory()->create([
+            'role' => 'retail_trader',
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+        Sanctum::actingAs($trader);
+
+        $this->postJson('/api/v1/mobile/trader/orders/ocr/batches', [
+            'source' => 'wholesale',
+            'wholesaler_id' => $wholesaler->id,
+        ])->assertCreated()
+            ->assertJsonPath('data.batch.purpose', 'supply_order')
+            ->assertJsonPath('data.batch.source', 'wholesale')
+            ->assertJsonPath('data.batch.supplier_user_id', $wholesaler->id)
+            ->assertJsonPath('data.batch.stock_source', 'wholesaler_stock');
+    }
 }

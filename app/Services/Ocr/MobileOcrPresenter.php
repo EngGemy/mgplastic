@@ -84,8 +84,9 @@ class MobileOcrPresenter
         $batch->load(['images' => fn ($q) => $q->whereNull('replaced_by_id')->orderBy('position')]);
 
         $viewer ??= $batch->user;
-        // Seller POS stock (wholesaler or retail trader) — NOT factory warehouse.
-        $stockByProduct = $this->stockQtyByProduct($viewer);
+        $context = $this->contextFromBatch($batch);
+        $stockMeta = $this->stockForContext($context, $viewer);
+        $stockByProduct = $stockMeta['qty_by_product'];
 
         $prefs = $this->prefs($batch);
         $built = $this->batches->buildPosDraft($batch);
@@ -94,7 +95,11 @@ class MobileOcrPresenter
         if (is_array($draft)) {
             $draft['system_default'] = $prefs['system_default'];
             $draft['customer_user_id'] = $prefs['customer_user_id'];
-            $draft['lines'] = $this->decorateLines((array) ($draft['lines'] ?? []), $stockByProduct);
+            $draft['lines'] = $this->decorateLines(
+                (array) ($draft['lines'] ?? []),
+                $stockByProduct,
+                $stockMeta['ignore_stock'],
+            );
             $draft['excluded'] = array_values((array) ($draft['excluded'] ?? []));
         }
 
@@ -115,13 +120,16 @@ class MobileOcrPresenter
 
         $stats = $this->statsFromDraft($draft);
         $partition = $step === 'added'
-            ? $this->rebuildCartPartition($batch, $stockByProduct)
+            ? $this->rebuildCartPartition($batch, $stockByProduct, $context)
             : ['cart_lines' => null, 'unavailable_lines' => null];
 
         return [
             'batch_id' => $batch->id,
             'status' => $batch->status,
             'step' => $step,
+            'purpose' => $context->purpose,
+            'source' => $context->source,
+            'supplier_user_id' => $context->supplierUserId,
             'settled' => $settled,
             'reading' => $pending,
             'cart_added_at' => optional($batch->cart_added_at)?->toIso8601String(),
@@ -136,7 +144,9 @@ class MobileOcrPresenter
                 'max_images' => (int) config('ocr_resilience.max_images_per_batch', 10),
             ],
             'lexicon_families' => $this->lexiconFamiliesCatalog(),
-            'stock_source' => 'seller_pos',
+            'stock_source' => $stockMeta['stock_source'],
+            'affects_inventory' => false,
+            'affects_points' => false,
             'images' => $batch->images->map(fn (OcrImage $img) => $this->presentImage($img))->values()->all(),
             'draft' => $draft,
             'merge_suggestions' => $built['merge_suggestions'] ?? [],
@@ -154,12 +164,21 @@ class MobileOcrPresenter
     }
 
     /**
-     * @param  array<int, int>  $stockByProduct
+     * @param  array<int, int>|null  $stockByProduct  null keys mean unlimited (factory)
      * @param  list<array<string, mixed>>  $draftLines
      * @return array{cart_lines:list<array<string,mixed>>, unavailable_lines:list<array<string,mixed>>}
      */
-    public function buildCartPartitionFromApproved(array $draftLines, array $stockByProduct = []): array
-    {
+    public function buildCartPartitionFromApproved(
+        array $draftLines,
+        array $stockByProduct = [],
+        ?OcrBatchContext $context = null,
+        bool $ignoreStock = false,
+        bool $splitUnavailable = true,
+    ): array {
+        $context ??= new OcrBatchContext(purpose: OcrBatchContext::PURPOSE_POS);
+        $ignoreStock = $ignoreStock || $context->ignoreStock();
+        $splitUnavailable = $splitUnavailable && $context->splitUnavailableOnApply();
+
         $available = [];
         $unavailable = [];
 
@@ -183,16 +202,16 @@ class MobileOcrPresenter
 
             $qtyUnit = (string) ($line['qty_unit'] ?? 'piece');
             $cartLine = $this->cartLineForUnit($product, $qty, $qtyUnit);
-            $cartLine = $this->decorateCartLine($cartLine, $stockByProduct);
+            $cartLine = $this->decorateCartLine($cartLine, $stockByProduct, $ignoreStock);
             $cartLine['qty_unit'] = $qtyUnit;
             $cartLine['qty_unit_source'] = $line['qty_unit_source'] ?? 'default';
             $cartLine['ocr_line_id'] = $line['ocr_line_id'] ?? null;
 
-            if (! ($cartLine['in_stock'] ?? false)) {
+            if ($splitUnavailable && ! ($cartLine['in_stock'] ?? false)) {
                 $cartLine['reason'] = 'out_of_stock';
                 $unavailable[$productId] = $this->mergeUnavailable($unavailable[$productId] ?? null, $cartLine);
             } else {
-                $available[$productId] = $this->mergeAvailable($available[$productId] ?? null, $cartLine, $stockByProduct);
+                $available[$productId] = $this->mergeAvailable($available[$productId] ?? null, $cartLine, $stockByProduct, $ignoreStock);
             }
         }
 
@@ -203,22 +222,21 @@ class MobileOcrPresenter
     }
 
     /**
-     * @deprecated use buildCartPartitionFromApproved
-     *
      * @param  array<int, int>  $stockByProduct
      * @return list<array<string, mixed>>
      */
-    public function buildCartLinesFromApproved(array $draftLines, array $stockByProduct = []): array
+    public function buildCartLinesFromApproved(array $draftLines, array $stockByProduct = [], ?OcrBatchContext $context = null): array
     {
-        return $this->buildCartPartitionFromApproved($draftLines, $stockByProduct)['cart_lines'];
+        return $this->buildCartPartitionFromApproved($draftLines, $stockByProduct, $context)['cart_lines'];
     }
 
     /**
      * @param  array<int, int>  $stockByProduct
      * @return array{cart_lines:list<array<string,mixed>>, unavailable_lines:list<array<string,mixed>>}
      */
-    public function rebuildCartPartition(OcrBatch $batch, array $stockByProduct = []): array
+    public function rebuildCartPartition(OcrBatch $batch, array $stockByProduct = [], ?OcrBatchContext $context = null): array
     {
+        $context ??= $this->contextFromBatch($batch);
         $built = $this->batches->buildPosDraft($batch);
         $draftLines = (array) ($built['draft']['lines'] ?? []);
 
@@ -233,7 +251,63 @@ class MobileOcrPresenter
             ));
         }
 
-        return $this->buildCartPartitionFromApproved($added, $stockByProduct);
+        return $this->buildCartPartitionFromApproved($added, $stockByProduct, $context);
+    }
+
+    public function contextFromBatch(OcrBatch $batch): OcrBatchContext
+    {
+        return new OcrBatchContext(
+            purpose: (string) ($batch->purpose ?: OcrBatchContext::PURPOSE_POS),
+            source: $batch->source,
+            supplierUserId: $batch->supplier_user_id ? (int) $batch->supplier_user_id : null,
+            customerUserId: $batch->distributor_id ? (int) $batch->distributor_id : null,
+        );
+    }
+
+    /**
+     * @return array{qty_by_product:array<int,int>, stock_source:string, ignore_stock:bool}
+     */
+    public function stockForContext(OcrBatchContext $context, ?User $viewer = null): array
+    {
+        $label = $context->stockSourceLabel();
+
+        if ($context->ignoreStock()) {
+            return ['qty_by_product' => [], 'stock_source' => $label, 'ignore_stock' => true];
+        }
+
+        if ($context->purpose === OcrBatchContext::PURPOSE_POS) {
+            return [
+                'qty_by_product' => $this->stockQtyByProduct($viewer),
+                'stock_source' => $label,
+                'ignore_stock' => false,
+            ];
+        }
+
+        // supply_order — stock of the supplier in context
+        $supplierId = $context->supplierUserId;
+        if (! $supplierId) {
+            return ['qty_by_product' => [], 'stock_source' => $label, 'ignore_stock' => false];
+        }
+
+        $supplier = User::query()->find($supplierId);
+        if (! $supplier) {
+            return ['qty_by_product' => [], 'stock_source' => $label, 'ignore_stock' => false];
+        }
+
+        $map = match ($context->source) {
+            OcrBatchContext::SOURCE_WAREHOUSE,
+            OcrBatchContext::SOURCE_WHOLESALE => $this->inventory
+                ->stockQtyByProductForWholesaler($supplier)
+                ->map(fn ($q) => (int) $q)
+                ->all(),
+            OcrBatchContext::SOURCE_SHOP => $this->inventory
+                ->stockQtyByProductForRetailTrader($supplier)
+                ->map(fn ($q) => (int) $q)
+                ->all(),
+            default => [],
+        };
+
+        return ['qty_by_product' => $map, 'stock_source' => $label, 'ignore_stock' => false];
     }
 
     /**
@@ -245,22 +319,14 @@ class MobileOcrPresenter
             return [];
         }
 
-        $stock = match (true) {
-            $user->isWholesaleDistributor() => $this->inventory->stockForWholesaler($user),
-            $user->isRetailTrader() => $this->inventory->stockForRetailTrader($user),
-            default => collect(),
-        };
-
-        $map = [];
-        foreach ($stock as $row) {
-            $pid = (int) ($row['product_id'] ?? 0);
-            if ($pid < 1) {
-                continue;
-            }
-            $map[$pid] = (int) ($row['available_qty'] ?? 0);
+        if ($user->isWholesaleDistributor()) {
+            return $this->inventory->stockQtyByProductForWholesaler($user)->map(fn ($q) => (int) $q)->all();
+        }
+        if ($user->isRetailTrader()) {
+            return $this->inventory->stockQtyByProductForRetailTrader($user)->map(fn ($q) => (int) $q)->all();
         }
 
-        return $map;
+        return [];
     }
 
     /**
@@ -343,35 +409,46 @@ class MobileOcrPresenter
      * @param  array<int, int>  $stockByProduct
      * @return list<array<string, mixed>>
      */
-    protected function decorateLines(array $lines, array $stockByProduct): array
+    protected function decorateLines(array $lines, array $stockByProduct, bool $ignoreStock = false): array
     {
-        return array_map(function (array $line) use ($stockByProduct) {
+        return array_map(function (array $line) use ($stockByProduct, $ignoreStock) {
             $ppb = (int) ($line['pieces_per_box'] ?? 0);
             if (! isset($line['qty_unit'])) {
                 $line = $this->qtyUnits->apply($line, $ppb > 0 ? $ppb : null);
             }
 
             $productId = (int) ($line['matched_product_id'] ?? 0);
-            $available = $productId > 0 ? (int) ($stockByProduct[$productId] ?? 0) : 0;
             $qty = (float) ($line['qty'] ?? 0);
             $unit = (string) ($line['qty_unit'] ?? 'piece');
             $requestedPieces = ($unit === 'box' && $ppb > 0)
                 ? (int) round($qty * $ppb)
                 : (int) round($qty);
 
-            $line['available_qty'] = $available;
-            $line['in_stock'] = $productId > 0 && $available > 0;
-            $line['qty_exceeds_stock'] = $productId > 0 && $requestedPieces > $available;
+            if ($ignoreStock) {
+                $line['available_qty'] = null;
+                $line['in_stock'] = $productId > 0;
+                $line['qty_exceeds_stock'] = false;
+            } else {
+                $available = $productId > 0 ? (int) ($stockByProduct[$productId] ?? 0) : 0;
+                $line['available_qty'] = $available;
+                $line['in_stock'] = $productId > 0 && $available > 0;
+                $line['qty_exceeds_stock'] = $productId > 0 && $requestedPieces > $available;
+            }
             $line['ui_action'] = $this->uiAction->for($line);
 
             if (! empty($line['candidates']) && is_array($line['candidates'])) {
-                $line['candidates'] = array_map(function ($c) use ($stockByProduct) {
+                $line['candidates'] = array_map(function ($c) use ($stockByProduct, $ignoreStock) {
                     if (! is_array($c)) {
                         return $c;
                     }
                     $pid = (int) ($c['product_id'] ?? 0);
-                    $c['available_qty'] = $pid > 0 ? (int) ($stockByProduct[$pid] ?? 0) : 0;
-                    $c['in_stock'] = $pid > 0 && $c['available_qty'] > 0;
+                    if ($ignoreStock) {
+                        $c['available_qty'] = null;
+                        $c['in_stock'] = $pid > 0;
+                    } else {
+                        $c['available_qty'] = $pid > 0 ? (int) ($stockByProduct[$pid] ?? 0) : 0;
+                        $c['in_stock'] = $pid > 0 && $c['available_qty'] > 0;
+                    }
 
                     return $c;
                 }, $line['candidates']);
@@ -409,9 +486,17 @@ class MobileOcrPresenter
      * @param  array<int, int>  $stockByProduct
      * @return array<string, mixed>
      */
-    protected function decorateCartLine(array $cartLine, array $stockByProduct): array
+    protected function decorateCartLine(array $cartLine, array $stockByProduct, bool $ignoreStock = false): array
     {
         $pid = (int) ($cartLine['product_id'] ?? 0);
+        if ($ignoreStock) {
+            $cartLine['available_qty'] = null;
+            $cartLine['in_stock'] = $pid > 0;
+            $cartLine['qty_exceeds_stock'] = false;
+
+            return $cartLine;
+        }
+
         $available = $pid > 0 ? (int) ($stockByProduct[$pid] ?? 0) : 0;
         $cartLine['available_qty'] = $available;
         $cartLine['in_stock'] = $pid > 0 && $available > 0;
@@ -426,7 +511,7 @@ class MobileOcrPresenter
      * @param  array<int, int>  $stockByProduct
      * @return array<string, mixed>
      */
-    protected function mergeAvailable(?array $existing, array $incoming, array $stockByProduct): array
+    protected function mergeAvailable(?array $existing, array $incoming, array $stockByProduct, bool $ignoreStock = false): array
     {
         if ($existing === null) {
             return $incoming;
@@ -438,7 +523,7 @@ class MobileOcrPresenter
             $existing['quantity'] = (int) $existing['quantity'] + (int) $incoming['quantity'];
         }
 
-        return $this->decorateCartLine($existing, $stockByProduct);
+        return $this->decorateCartLine($existing, $stockByProduct, $ignoreStock);
     }
 
     /**

@@ -13,17 +13,19 @@ use App\Services\Ocr\InvoiceOcrCatalogMatcher;
 use App\Services\Ocr\InvoiceOcrLearningService;
 use App\Services\Ocr\InvoiceOcrPipeline;
 use App\Services\Ocr\MobileOcrPresenter;
+use App\Services\Ocr\OcrBatchContext;
 use App\Services\Ocr\OcrBatchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 /**
- * POS OCR for mobile (distributor + retail trader).
+ * OCR for mobile — POS sale cart OR supply-order cart draft.
  *
  * Same batch pipeline as Filament admin — upload → poll → review → apply cart lines.
- * Checkout stays on existing POST …/pos/checkout.
+ * Apply never mutates inventory or points. Checkout / order store stay on existing endpoints.
  */
 class PosOcrController extends Controller
 {
@@ -37,14 +39,27 @@ class PosOcrController extends Controller
         protected GeminiClient $gemini,
     ) {}
 
-    /** GET …/pos/ocr/current */
+    /** GET …/pos/ocr/current  |  GET …/orders/ocr/current */
     public function current(Request $request): JsonResponse
     {
-        $batch = $this->batches->findResumableDraft($request->user());
+        try {
+            $context = OcrBatchContext::fromCurrentQuery(
+                $request->query(),
+                $this->defaultPurpose($request),
+            );
+            $context->assertAllowedFor($request->user());
+        } catch (ValidationException $e) {
+            return $this->error('بيانات غير صالحة', 422, $e->errors());
+        }
+
+        $batch = $this->batches->findResumableDraft($request->user(), $context);
         if (! $batch) {
             return $this->success([
                 'batch' => null,
                 'resumable' => false,
+                'purpose' => $context->purpose,
+                'source' => $context->source,
+                'supplier_user_id' => $context->supplierUserId,
                 'gemini_enabled' => $this->gemini->enabled(),
             ], 'لا توجد دفعة معلّقة');
         }
@@ -52,11 +67,14 @@ class PosOcrController extends Controller
         return $this->success([
             'batch' => $this->presenter->present($batch, $request->user()),
             'resumable' => true,
+            'purpose' => $context->purpose,
+            'source' => $context->source,
+            'supplier_user_id' => $context->supplierUserId,
             'gemini_enabled' => $this->gemini->enabled(),
         ], 'دفعة OCR معلّقة');
     }
 
-    /** POST …/pos/ocr/batches */
+    /** POST …/pos/ocr/batches  |  POST …/orders/ocr/batches */
     public function store(Request $request): JsonResponse
     {
         if (! $this->gemini->enabled()) {
@@ -64,6 +82,14 @@ class PosOcrController extends Controller
         }
 
         $v = Validator::make($request->all(), [
+            'purpose' => ['nullable', 'in:pos,supply_order'],
+            'source' => ['nullable', 'in:factory,warehouse,wholesale,shop'],
+            'warehouse_id' => ['nullable', 'integer', 'exists:users,id'],
+            'wholesaler_id' => ['nullable', 'integer', 'exists:users,id'],
+            'wholesale_distributor_id' => ['nullable', 'integer', 'exists:users,id'],
+            'supplier_id' => ['nullable', 'integer', 'exists:users,id'],
+            'supplier_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'retail_trader_id' => ['nullable', 'integer', 'exists:users,id'],
             'customer_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'system_default' => ['nullable', 'in:ask,us,eu'],
             'remember_for_customer' => ['nullable', 'boolean'],
@@ -72,8 +98,21 @@ class PosOcrController extends Controller
             return $this->error('بيانات غير صالحة', 422, $v->errors());
         }
 
-        $customerId = $request->filled('customer_user_id') ? $request->integer('customer_user_id') : null;
-        $batch = $this->batches->createOrResume($request->user(), $customerId);
+        try {
+            $context = OcrBatchContext::fromRequestInput(
+                $request->all(),
+                $this->defaultPurpose($request),
+            );
+            $context->assertAllowedFor($request->user());
+        } catch (ValidationException $e) {
+            return $this->error('بيانات غير صالحة', 422, $e->errors());
+        }
+
+        $customerId = $context->purpose === OcrBatchContext::PURPOSE_POS
+            ? ($request->filled('customer_user_id') ? $request->integer('customer_user_id') : null)
+            : null;
+
+        $batch = $this->batches->createOrResume($request->user(), $customerId, $context);
 
         $system = $request->input('system_default', 'ask');
         $this->presenter->putPrefs($batch, [
@@ -574,8 +613,13 @@ class PosOcrController extends Controller
             }
         }
 
-        $stock = $this->presenter->stockQtyByProduct($request->user());
-        $partition = $this->presenter->buildCartPartitionFromApproved($approvedForCart, $stock);
+        $context = $this->presenter->contextFromBatch($owned);
+        $stockMeta = $this->presenter->stockForContext($context, $request->user());
+        $partition = $this->presenter->buildCartPartitionFromApproved(
+            $approvedForCart,
+            $stockMeta['qty_by_product'],
+            $context,
+        );
         $cartLines = $partition['cart_lines'];
         $unavailable = $partition['unavailable_lines'];
 
@@ -597,19 +641,42 @@ class PosOcrController extends Controller
             $owned->save();
         }
 
+        $isSupply = $context->purpose === OcrBatchContext::PURPOSE_SUPPLY;
+
         return $this->success([
             'cart_lines' => $cartLines,
             'unavailable_lines' => $unavailable,
             'approved_count' => $approvedCount,
             'idempotency_token' => $token,
+            'affects_inventory' => false,
+            'affects_points' => false,
+            'purpose' => $context->purpose,
+            'source' => $context->source,
+            'supplier_user_id' => $context->supplierUserId,
+            'stock_source' => $stockMeta['stock_source'],
             'batch' => $this->presenter->present($owned->fresh(), $request->user()),
-            'next' => [
-                'merge_into_local_cart' => true,
-                'checkout' => 'POST …/pos/checkout بنفس شكل lines (product_id + boxes|quantity)',
-                'checkout_idempotency_header' => 'Idempotency-Key',
-                'send_ocr_idempotency_token_on_checkout' => false,
-            ],
+            'next' => $isSupply
+                ? [
+                    'merge_into_local_cart' => true,
+                    'place_order' => 'POST …/orders بنفس شكل lines (product_id + quantity بالقطع، boxes اختياري)',
+                    'send_ocr_idempotency_token_on_order' => false,
+                ]
+                : [
+                    'merge_into_local_cart' => true,
+                    'checkout' => 'POST …/pos/checkout بنفس شكل lines (product_id + boxes|quantity)',
+                    'checkout_idempotency_header' => 'Idempotency-Key',
+                    'send_ocr_idempotency_token_on_checkout' => false,
+                ],
         ], 'تم تجهيز '.$approvedCount.' منتج للسلة');
+    }
+
+    protected function defaultPurpose(Request $request): string
+    {
+        $uri = (string) ($request->route()?->uri() ?? $request->path());
+
+        return str_contains($uri, 'orders/ocr')
+            ? OcrBatchContext::PURPOSE_SUPPLY
+            : OcrBatchContext::PURPOSE_POS;
     }
 
     protected function ownedBatch(Request $request, int $batchId): ?OcrBatch

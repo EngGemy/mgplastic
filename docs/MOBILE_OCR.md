@@ -1,24 +1,45 @@
-# POS OCR — دليل مطوّر الموبايل
+# OCR — دليل مطوّر الموبايل (POS + طلب توريد)
 
 > الباك إند جاهز. نفّذ الشاشات حسب هذا الملف ثم اربط الـ API.
 
-**Base (جملة):** `/api/v1/mobile/distributor/pos/ocr`  
-**Base (قطاعي):** `/api/v1/mobile/trader/pos/ocr`  
+## Base paths
+
+| الشاشة | الدور | Base |
+|--------|--------|------|
+| نقطة البيع | جملة | `/api/v1/mobile/distributor/pos/ocr` |
+| نقطة البيع | قطاعي | `/api/v1/mobile/trader/pos/ocr` |
+| طلب توريد | جملة ← مصنع/مخزن | `/api/v1/mobile/distributor/orders/ocr` |
+| طلب توريد | قطاعي ← جملة | `/api/v1/mobile/trader/orders/ocr` |
+| طلب توريد | سباك ← محل | `/api/v1/mobile/plumber/orders/ocr` |
+
 **Auth:** `Authorization: Bearer {token}`  
-**Checkout:** `POST …/pos/checkout` — OCR لا يُصدر فاتورة.
+**OCR لا يخصم مخزون ولا يمنح نقاط** (`affects_inventory=false`, `affects_points=false`).  
+التوريد يُكمَل بـ `POST …/orders`؛ البيع بـ `POST …/pos/checkout`.
 
 مرتبط: [MOBILE_POS_UX.md](./MOBILE_POS_UX.md) · [MOBILE_PENDING_RECEIPTS.md](./MOBILE_PENDING_RECEIPTS.md)
 
 ---
 
-## 0) قرارات العقد (ملخّص)
+## 0) قرارات العقد
+
+| قرار | POS (`purpose=pos`) | طلب توريد (`purpose=supply_order`) |
+|------|---------------------|-------------------------------------|
+| مسار الـ API | `…/pos/ocr` | `…/orders/ocr` |
+| `source` | لا يُرسل | **مطلوب:** `factory` \| `warehouse` \| `wholesale` \| `shop` |
+| هوية المورّد | — | `warehouse_id` / `wholesaler_id` / `retail_trader_id` حسب المصدر |
+| `stock_source` | `seller_pos` | `factory_catalog` / `warehouse_stock` / `wholesaler_stock` / `shop_stock` |
+| مخزون | مخزون بائع نقطة البيع | مخزون **المورّد** في السياق (المصنع: بدون بوابة مخزون) |
+| `in_stock=false` عند apply | يخرج إلى `unavailable_lines` | **يبقى في `cart_lines`** مع الأعلام — البنود المطلوبة للتوريد |
+| دور السباك | ممنوع (422) | مسموح على `…/plumber/orders/ocr` فقط مع `source=shop` |
+| `/current` | دفعات `purpose=pos` فقط | يفلتر بـ `purpose` + `source` + معرف المورّد (مخزن/محل/جملة) |
+| بعد apply | `POST …/pos/checkout` + `Idempotency-Key` | `POST …/orders` بنفس شكل `product_id` + `quantity` (قطع) |
+
+باقي القرارات المشتركة:
 
 | قرار | السلوك |
 |------|--------|
-| مخزون approve/apply | **غير حاجز**. أعلام فقط. البنود `in_stock=false` تخرج من `cart_lines` إلى `unavailable_lines`. `qty_exceeds_stock` يبقى في `cart_lines`. |
-| مصدر `available_qty` | **مخزون POS للبائع** (`stock_source: "seller_pos"`) — جملة أو قطاعي — **ليس** مخزن المصنع. |
-| OCR token → checkout | مرفوض. استخدم هيدر عام `Idempotency-Key` على checkout. |
-| صور OCR | قرص خاص؛ `preview_url` = رابط موقّع 30 د (يُجدَّد مع كل GET). |
+| OCR token → checkout/order | مرفوض. |
+| صور OCR | قرص خاص؛ `preview_url` موقّع 30 د. |
 | الوحدات | `qty_unit` + `qty_unit_source` + `set_unit` + `unit_assumed`. |
 | UI | `ui_action` واحد لكل بند. |
 | ترجمة | `message_code` بجانب كل `message`. |
@@ -26,47 +47,135 @@
 
 ---
 
-## 1) التدفق
+## 1) مصفوفة الأدوار × المصدر
+
+| الدور | `source` | حقول مطلوبة مع `POST /batches` و`GET /current` | `stock_source` | ملاحظات مخزون |
+|-------|----------|-----------------------------------------------|----------------|----------------|
+| جملة | `factory` | — | `factory_catalog` | كتالوج كامل؛ `available_qty=null`؛ لا يُشال بند بسبب المخزون |
+| جملة | `warehouse` | `warehouse_id` | `warehouse_stock` | مخزون ذلك المخزن (user جملة) |
+| قطاعي | `wholesale` | `wholesaler_id` (أو `wholesale_distributor_id` / `supplier_id`) | `wholesaler_stock` | مخزون الموزّع |
+| سباك | `shop` | `retail_trader_id` | `shop_stock` | كتالوج المطابقة كامل؛ الأعلام من مخزون المحل؛ OOS يبقى في `cart_lines` |
+
+---
+
+## 2) التدفق
 
 ```
-GET /current  → gemini_enabled؟ resumable؟
-POST batches → images | paste
+GET /current?…     → gemini_enabled؟ resumable لهذا السياق فقط؟
+POST batches       → purpose + source + ids
+images | paste
 poll GET batches/{id}
 مراجعة (ui_action) → approve / set_unit / set_qty …
-POST apply → cart_lines + unavailable_lines
-ادمج cart_lines → POST pos/checkout (+ Idempotency-Key)
+POST apply         → cart_lines (+ unavailable_lines في POS فقط)
+ادمج cart_lines → POST pos/checkout  أو  POST orders
 ```
 
 ---
 
-## 2) Checklist
+## 3) Checklist
 
+### مشترك
 - [ ] أخفِ OCR لو `gemini_enabled=false` من `/current` حتى مع `batch=null`
-- [ ] اعرض `available_qty` من مخزون **البائع**؛ حذّر عند `qty_exceeds_stock`
-- [ ] بعد apply: ادمج فقط `cart_lines`؛ اعرض `unavailable_lines` للمستخدم
-- [ ] استرجاع: `GET` عند `step=added` أو 409 apply
 - [ ] استخدم `preview_url` الموقّع؛ جدّده عند انتهاء `preview_expires_at`
 - [ ] نفّذ `ui_action` كما يرسله السيرفر
-- [ ] ترجم عبر `message_code` (النص العربي fallback)
-- [ ] checkout: هيدر `Idempotency-Key: {uuid جديد لكل محاولة}`
-- [ ] لا ترسل `idempotency_token` الخاص بـ OCR إلى checkout
+- [ ] ترجم عبر `message_code`
+- [ ] لا ترسل `idempotency_token` الخاص بـ OCR إلى checkout/orders
+
+### نقطة البيع
+- [ ] Base = `…/pos/ocr` — لا تمرّر `purpose=supply_order`
+- [ ] بعد apply: ادمج فقط `cart_lines`؛ اعرض `unavailable_lines`
+- [ ] checkout: هيدر `Idempotency-Key`
+
+### طلب توريد
+- [ ] Base = `…/orders/ocr` (سباك: `…/plumber/orders/ocr`)
+- [ ] مرّر دائماً `source` + معرف المورّد في `POST /batches` و`GET /current`
+- [ ] لا تعتمد على `…/pos/ocr/current` لعرض «متابعة» شاشة الطلب — السياقات منفصلة
+- [ ] عند الموزّع: `source=factory` منفصل عن كل `warehouse_id`
+- [ ] بعد apply: كل البنود المعتمدة في `cart_lines` (حتى `in_stock=false`)؛ أظهر تحذير مخزون في الواجهة إن لزم
+- [ ] أكمل بـ `POST …/orders` — OCR لا يخصم مخزون
 
 ---
 
-## 3) Endpoints
+## 4) Endpoints
 
-نفس جدول المسارات السابق تحت `{base}/…`، مع:
+نفس المسارات تحت `{base}/…`:
 
 | Method | Path | ملاحظة |
 |--------|------|--------|
+| GET | `/current` | استعلام السياق إلزامي لطلب التوريد |
+| POST | `/batches` | جسم السياق أدناه |
+| GET | `/batches/{id}` | poll |
+| POST | `/batches/{id}/images` | multipart |
+| POST | `/batches/{id}/paste` | `{ text }` |
 | PATCH | `/batches/{id}/prefs` | **409** لو `step=added` |
 | PATCH | `/batches/{id}/lines/{lineId}` | أُضيف `set_unit` |
-| POST | `/batches/{id}/apply` | يرجّع `unavailable_lines` أيضاً |
-| POST | `…/pos/checkout` | هيدر اختياري `Idempotency-Key` |
+| POST | `/batches/{id}/approve-ready` | |
+| POST | `/batches/{id}/apply` | يجهّز السلة فقط |
+| POST | `/batches/{id}/abandon` | |
+| POST | `/batches/{id}/reread` | |
 
 ---
 
-## 4) `GET /current`
+## 5) إنشاء دفعة — `POST /batches`
+
+### POS
+
+```http
+POST /api/v1/mobile/distributor/pos/ocr/batches
+{ "customer_user_id": 55, "system_default": "ask" }
+```
+
+`purpose` يُفترض `pos` تلقائياً على مسار `pos/ocr`.
+
+### طلب توريد — أمثلة
+
+```http
+POST /api/v1/mobile/distributor/orders/ocr/batches
+{ "source": "factory" }
+```
+
+```http
+POST /api/v1/mobile/distributor/orders/ocr/batches
+{ "source": "warehouse", "warehouse_id": 88 }
+```
+
+```http
+POST /api/v1/mobile/trader/orders/ocr/batches
+{ "source": "wholesale", "wholesaler_id": 12 }
+```
+
+```http
+POST /api/v1/mobile/plumber/orders/ocr/batches
+{ "source": "shop", "retail_trader_id": 40 }
+```
+
+يمكن إرسال `purpose: "supply_order"` صراحة؛ على مسار `orders/ocr` هو الافتراضي.
+
+Aliases للمورّد عند `wholesale`: `wholesaler_id` | `wholesale_distributor_id` | `supplier_id` | `supplier_user_id`.  
+Aliases عند `warehouse`/`shop`: `supplier_user_id` بدل الحقل المخصّص.
+
+---
+
+## 6) `GET /current` — عزل السياق
+
+### POS
+
+```http
+GET …/pos/ocr/current
+```
+
+يرجع فقط دفعة `purpose=pos`. ورقة طلب توريد **لن** تظهر كـ «متابعة».
+
+### طلب توريد
+
+```http
+GET …/orders/ocr/current?source=factory
+GET …/orders/ocr/current?source=warehouse&warehouse_id=88
+GET …/orders/ocr/current?source=wholesale&wholesaler_id=12
+GET …/orders/ocr/current?source=shop&retail_trader_id=40
+```
+
+بدون `source` (وفي warehouse/wholesale/shop بدون المعرف) → **422**.
 
 ```json
 {
@@ -76,6 +185,9 @@ POST apply → cart_lines + unavailable_lines
   "data": {
     "batch": null,
     "resumable": false,
+    "purpose": "supply_order",
+    "source": "warehouse",
+    "supplier_user_id": 88,
     "gemini_enabled": true
   }
 }
@@ -83,34 +195,40 @@ POST apply → cart_lines + unavailable_lines
 
 ---
 
-## 5) Poll — حقول مهمّة جديدة
+## 7) شكل الدفعة (poll / create)
+
+حقول سياق جديدة على `data.batch`:
 
 ```json
 {
   "batch_id": 12,
   "step": "review",
-  "stock_source": "seller_pos",
-  "images": [
-    {
-      "id": 44,
-      "preview_url": "https://…/ocr-images/44/preview?expires=…&signature=…",
-      "preview_expires_at": "2026-11-08T22:10:00+02:00",
-      "status": "done"
-    }
-  ],
+  "purpose": "supply_order",
+  "source": "shop",
+  "supplier_user_id": 40,
+  "stock_source": "shop_stock",
+  "affects_inventory": false,
+  "affects_points": false,
   "draft": { "lines": [], "excluded": [] },
   "cart_lines": null,
   "unavailable_lines": null,
-  "lexicon_families": [{ "key": "elbow", "label": "كوع" }],
   "gemini_enabled": true
 }
 ```
 
-عند `step=added`: `cart_lines` و`unavailable_lines` مصفوفتان (قد تكون إحداهما فارغة).
+عند `step=added`: `cart_lines` و`unavailable_lines` مصفوفتان.
+
+أعلام البند في `draft.lines[]` / المرشّحين:
+
+| الحقل | POS / مخزن / جملة / محل | مصنع |
+|-------|-------------------------|------|
+| `available_qty` | عدد قطع متاح عند المصدر | `null` |
+| `in_stock` | `available_qty > 0` | `true` إن وُجد منتج |
+| `qty_exceeds_stock` | الكمية المطلوبة > المتاح | دائماً `false` |
 
 ---
 
-## 6) تعديل بند — `set_unit`
+## 8) تعديل بند — `set_unit`
 
 ```http
 PATCH …/batches/12/lines/901
@@ -121,12 +239,34 @@ actions: `approve` | `unapprove` | `select_product` | `set_qty` | **`set_unit`**
 
 ---
 
-## 7) Apply
+## 9) Apply
+
+### POS — تقسيم متاح / غير متاح
+
+```json
+{
+  "cart_lines": [ { "product_id": 42, "quantity": 4, "boxes": null, "pieces_per_box": null, "in_stock": true } ],
+  "unavailable_lines": [ { "product_id": 99, "quantity": 10, "in_stock": false, "reason": "out_of_stock" } ],
+  "next": {
+    "merge_into_local_cart": true,
+    "checkout": "POST …/pos/checkout …",
+    "checkout_idempotency_header": "Idempotency-Key",
+    "send_ocr_idempotency_token_on_checkout": false
+  }
+}
+```
+
+قواعد POS:
+
+- `in_stock=false` → `unavailable_lines` + `reason: "out_of_stock"`
+- `in_stock=true` حتى لو `qty_exceeds_stock=true` → يبقى في `cart_lines`
+
+### طلب توريد — كل المعتمد في `cart_lines`
 
 ```json
 {
   "status": true,
-  "message": "تم تجهيز 3 منتج للسلة",
+  "message": "تم تجهيز 2 منتج للسلة",
   "message_code": "ocr_apply_ok",
   "data": {
     "cart_lines": [
@@ -137,72 +277,58 @@ actions: `approve` | `unapprove` | `select_product` | `set_qty` | **`set_unit`**
         "boxes": null,
         "pieces_per_box": null,
         "qty_unit": "piece",
-        "qty_unit_source": "paper",
-        "available_qty": 120,
-        "in_stock": true,
-        "qty_exceeds_stock": false,
-        "points_per_unit": 2,
-        "image": "…"
-      }
-    ],
-    "unavailable_lines": [
-      {
-        "product_id": 99,
-        "name": "ماسورة …",
-        "quantity": 10,
-        "boxes": 1,
-        "pieces_per_box": 10,
-        "qty_unit": "box",
         "available_qty": 0,
         "in_stock": false,
-        "qty_exceeds_stock": true,
-        "reason": "out_of_stock"
+        "qty_exceeds_stock": true
       }
     ],
-    "approved_count": 3,
+    "unavailable_lines": [],
+    "approved_count": 2,
     "idempotency_token": "uuid…",
+    "affects_inventory": false,
+    "affects_points": false,
+    "purpose": "supply_order",
+    "source": "shop",
+    "supplier_user_id": 40,
+    "stock_source": "shop_stock",
     "next": {
       "merge_into_local_cart": true,
-      "checkout": "POST …/pos/checkout …",
-      "checkout_idempotency_header": "Idempotency-Key",
-      "send_ocr_idempotency_token_on_checkout": false
+      "place_order": "POST …/orders بنفس شكل lines (product_id + quantity بالقطع، boxes اختياري)",
+      "send_ocr_idempotency_token_on_order": false
     }
   }
 }
 ```
 
-قواعد التقسيم:
+السباك/القطاعي/الجملة: اعرض تحذير «غير متوفر عند المورّد» من `in_stock` / `qty_exceeds_stock` داخل `cart_lines` — لا تعتمد على `unavailable_lines` في طلب التوريد.
 
-- `in_stock=false` → `unavailable_lines` + `reason: "out_of_stock"`
-- `in_stock=true` حتى لو `qty_exceeds_stock=true` → يبقى في `cart_lines` (الـ checkout يحرس)
+شكل السطر للدمج مع شاشة الطلب: `product_id`, `quantity` (قطع), `boxes`, `pieces_per_box`.
 
 ---
 
-## 8) Checkout + Idempotency-Key
+## 10) Checkout / Order بعد OCR
+
+### POS
 
 ```http
 POST /api/v1/mobile/distributor/pos/checkout
-Authorization: Bearer …
 Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
-Content-Type: application/json
-
-{
-  "retail_trader_id": 55,
-  "lines": [{ "product_id": 42, "quantity": 4 }]
-}
+{ "retail_trader_id": 55, "lines": [{ "product_id": 42, "quantity": 4 }] }
 ```
 
 | الحالة | النتيجة |
 |--------|---------|
 | بدون الهيدر | سلوك قديم تماماً |
-| نفس المفتاح + نفس الجسم خلال 24س | نفس رد الفاتورة الأصلي (بدون خصم مزدوج) |
-| نفس المفتاح + جسم مختلف | **422** `error_code: IDEMPOTENCY_KEY_REUSED` / `message_code: idempotency_key_reused` |
+| نفس المفتاح + نفس الجسم خلال 24س | نفس رد الفاتورة الأصلي |
+| نفس المفتاح + جسم مختلف | **422** `IDEMPOTENCY_KEY_REUSED` |
 
-أنشئ UUID **جديد لكل محاولة checkout** ناجحة من منظور المستخدم (إعادة إرسال نفس المحاولة = نفس المفتاح).
+### طلب توريد
+
+استخدم عقود الطلب الحالية لكل دور (`POST …/plumber/orders`, `…/trader/orders`, `…/distributor/orders`) مع `lines` من `cart_lines`. OCR لا يغيّر مخزوناً ولا نقاطاً.
 
 ---
 
-## 9) prefs بعد apply
+## 11) prefs بعد apply
 
 ```http
 PATCH …/batches/12/prefs
@@ -212,15 +338,15 @@ PATCH …/batches/12/prefs
 | حالة الدفعة | النتيجة |
 |-------------|---------|
 | `draft` / `reading` / `review` | يحدّث prefs؛ `reenrich` يعيد تصنيف البنود بدون Gemini |
-| `added` (بعد apply) | **409** `OCR_BATCH_LOCKED` — لا يُعاد enrich |
+| `added` (بعد apply) | **409** `OCR_BATCH_LOCKED` |
 
 نفس القفل على `PATCH …/lines/…`.
 
 ---
 
-## 14) قاموس الحقول (JSON كامل)
+## 12) قاموس الحقول (JSON كامل)
 
-### 14.1 بند `draft.lines[]`
+### 12.1 بند `draft.lines[]`
 
 ```json
 {
@@ -248,155 +374,70 @@ PATCH …/batches/12/prefs
     "lexicon_family": "elbow",
     "size_value": 1,
     "size_unit": "in",
-    "system": "us",
-    "mg_brand": true
+    "angle": 90,
+    "system": "us"
   },
-  "pieces_per_box": 10,
-  "points_per_unit": 2,
-  "main_image": "…",
   "available_qty": 120,
   "in_stock": true,
-  "qty_exceeds_stock": false
+  "qty_exceeds_stock": false,
+  "pieces_per_box": 10
 }
 ```
 
-### 14.2 `qty_unit` / `qty_unit_source`
-
-| حقل | قيم | معنى |
-|-----|------|------|
-| `qty_unit` | `box` \| `piece` | وحدة الكمية على الورقة / الافتراض |
-| `qty_unit_source` | `paper` \| `default` | من نص الورقة أو افتراض السيرفر |
-
-كشف من الورقة: كرتونة / صندوق / علبة → `box`؛ قطعة / حبة / دستة → `piece`.  
-لو المصدر `default` و`pieces_per_box > 1` → `needs_review` يتضمن `unit_assumed`.
-
-عند التحويل للسلة: `box` + ppb → `boxes=qty`, `quantity=qty×ppb`؛ `piece` → `quantity=qty`, `boxes=null` (حتى لو المنتج له صناديق).
-
-### 14.3 `ui_action`
-
-| قيمة | متى |
-|------|-----|
-| `choose_family` | `ambiguous_family` / `unknown_word` / `family_candidates` / `family_chips` |
-| `confirm_understanding` | `unconfirmed_term` + وجود `understanding` |
-| `pick_candidate` | يحتاج اختيار ومنتج من `candidates` |
-| `fix_qty` | `unit_assumed` / نقص كمية |
-| `none` | جاهز أو معتمد |
-
-أولوية السيرفر بهذا الترتيب — **لا تعِد حسابها في التطبيق**.
-
-### 14.4 `needs_review` (+ جديد)
-
-| كود | ترجمة مقترحة |
-|-----|----------------|
-| `needs_choice` | يحتاج اختيارك |
-| `ambiguous_family` | حدّد نوع القطعة |
-| `unconfirmed_term` | أكّد الفهم |
-| `unknown_word` | كلمة غير معروفة |
-| `mg_family_unknown_variant` | لا مرشح مطابق |
-| `low_confidence` | قراءة ضعيفة |
-| `qty` / `qty_missing` | راجع الكمية |
-| **`unit_assumed`** | وحدة افترضها النظام — أكّد صندوق/قطعة |
-| `line_math` / `catalog_unmatched` / … | كما السابق |
-
-### 14.5 `review_status` / `match_decision`
-
-بدون تغيير: `needs`|`ready`|`approved`|`excluded`|`added`  
-و`auto`|`alias`|`manual`|`needs_choice`.
-
-### 14.6 `draft.excluded[]`
+### 12.2 صورة
 
 ```json
 {
-  "raw_text": "ماسورة بدون MG",
-  "qty": 2,
-  "reason": "plumbing_without_mg",
-  "exclude_label": "بدون علامة MG",
-  "match_status": "not_mg"
+  "id": 44,
+  "status": "done",
+  "preview_url": "https://…/ocr-images/44/preview?expires=…&signature=…",
+  "preview_expires_at": "2026-11-08T22:10:00+02:00",
+  "error": null,
+  "lines_count": 3
 }
 ```
 
-### 14.7 `merge_suggestions[]`
+### 12.3 `ui_action`
 
-```json
-{
-  "product_id": 42,
-  "size": "1",
-  "qtys": [2, 3],
-  "sum": 5,
-  "line_indexes": [0, 3],
-  "message": "نفس المنتج في أكثر من صورة — ادمج (مجموع 5) أو أبقِ منفصلاً"
-}
-```
+| قيمة | معنى مختصر |
+|------|------------|
+| `none` | جاهز للاعتماد أو معتمد |
+| `choose_system` | اختيار نظام |
+| `choose_family` | اختيار عائلة |
+| `confirm_understanding` | تأكيد الفهم |
+| `select_product` | اختيار منتج من مرشّحين |
+| `set_qty` | ضبط كمية |
+| `set_unit` | ضبط وحدة (قطعة/صندوق) |
+| `review` | مراجعة عامة |
 
-تنبيه اختياري؛ `apply` يدمج نفس `product_id` تلقائياً داخل كل قائمة.
+### 12.4 `message_code` شائع
 
-### 14.8 `candidates[]` item
-
-```json
-{
-  "product_id": 42,
-  "name": "كوع 90 – 1 بوصة MG",
-  "system": "us",
-  "size_value": 1,
-  "size_unit": "in",
-  "pieces_per_box": 10,
-  "points_per_unit": 2,
-  "main_image": "…",
-  "flags": { "family": true, "size": true, "angle": true, "system": true, "variant": true, "size2": true },
-  "rank": 90,
-  "similarity": 0.82,
-  "available_qty": 50,
-  "in_stock": true
-}
-```
-
-### 14.9 `lexicon_families`
-
-من السيرفر في كل batch:  
-`pipe`, `tee`, `y_tee`, `access_tee`, `access_elbow`, `elbow`, `coupling`, `reducer`, `end_cap`, `plug`, `floor_trap`, `odor_trap`, `vent_cap`, `cross`
-
-### 14.10 `unavailable_lines[]`
-
-نفس شكل عنصر `cart_lines` + `reason: "out_of_stock"`.
-
-### 14.11 `message` + `message_code`
-
-كل رد API يحمل الاثنين. أمثلة:
-
-| message_code | استخدام |
-|--------------|---------|
-| `ocr_no_pending_batch` | current فارغ |
+| code | سياق |
+|------|------|
+| `ocr_no_pending_batch` | لا دفعة معلّقة |
 | `ocr_apply_ok` | apply نجح |
-| `ocr_already_applied` / `OCR_ALREADY_APPLIED` | 409 apply |
-| `ocr_batch_locked` / `OCR_BATCH_LOCKED` | prefs/lines بعد added |
-| `ocr_duplicate_image` / `OCR_DUPLICATE_IMAGE` | 409 صورة |
-| `idempotency_key_reused` | 422 checkout |
-| `pos_checkout_pending_retail` | checkout جملة نجح |
+| `ocr_already_applied` | 409 apply مكرّر |
+| `ocr_batch_locked` | 409 prefs/lines بعد added |
+| `ocr_duplicate_image` | 409 صورة مكررة |
+| `idempotency_key_reused` | checkout |
 
 ---
 
-## 15) تخزين الصور
+## 13) أخطاء شائعة
 
-- رفع جديد → قرص `local` (private)
-- `preview_url` = موقّع 30 دقيقة (إعداد `OCR_SIGNED_PREVIEW_MINUTES`)
-- تنظيف: `ocr:prune-uploads` يومياً (افتراضي 30 يوم، `OCR_UPLOAD_RETENTION_DAYS`)
-- ترحيل القديم: انظر أوامر الإنتاج أدناه
+| HTTP | متى |
+|------|-----|
+| 403 | دور غير مصرّح على المسار (مثلاً سباك على `trader/…`) |
+| 422 | `source`/معرف مورّد ناقص أو غير متوافق مع الدور |
+| 409 | صورة مكررة / apply مكرّر / دفعة مقفلة |
+| 503 | `GEMINI_API_KEY` غير مفعّل |
 
 ---
 
-## 16) أوامر الإنتاج
+## 14) تشغيل / صيانة
 
 ```bash
-# 1) ترحيل الملفات العامة → الخاص (معاينة أولاً)
-php artisan ocr:migrate-uploads-private
-php artisan ocr:migrate-uploads-private --apply
-
-# 2) تنظيف يدوي (اختياري)
-php artisan ocr:prune-uploads --dry-run
-php artisan ocr:prune-uploads
-
-# 3) بعد النشر
-php artisan optimize:clear
+php artisan migrate
 # أو: php artisan config:cache && php artisan route:cache
 ```
 
@@ -404,16 +445,13 @@ php artisan optimize:clear
 
 ---
 
-## 17) ملفات تغيّرت / اختبارات
+## 15) ملفات / اختبارات
 
 **كود:**  
-`OcrStorage`, `OcrQtyUnitResolver`, `OcrLineUiAction`, `PosCheckoutIdempotency`,  
+`OcrBatchContext`, migration `purpose/source/supplier_user_id`,  
 `MobileOcrPresenter`, `OcrBatchService`, `PosOcrController`,  
-`Distributor\PosController`, `Trader\PosController`, `ApiResponds`,  
-`OcrImagePreviewController`, `ProcessOcrImageJob`,  
-`CreateWholesaleInvoice` (Filament signed preview),  
-`OcrPruneUploadsCommand`, `OcrMigrateUploadsPrivateCommand`,  
-`config/ocr_uploads.php`, `routes/console.php`, `docs/MOBILE_OCR.md`
+`NetworkInventoryService` (qty maps), `routes/api/mobile.php`,  
+`docs/MOBILE_OCR.md`
 
 **اختبارات:**  
 `php artisan test --filter=MobilePosOcrTest`  
