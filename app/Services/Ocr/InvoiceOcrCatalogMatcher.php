@@ -747,6 +747,24 @@ class InvoiceOcrCatalogMatcher
         }
 
         $query = OcrAlias::query()->where('normalized_text', $normalized);
+
+        // Prefer the acting user's private alias (learned from corrections).
+        $ownerId = auth()->id();
+        if ($ownerId) {
+            $userAlias = (clone $query)
+                ->where('owner_user_id', $ownerId)
+                ->where(function ($q) use ($systemHint) {
+                    $q->where('system_hint', $systemHint)->orWhere('system_hint', '');
+                })
+                ->orderByDesc('hits')
+                ->first();
+            if ($userAlias?->product_id) {
+                $this->touchAlias($userAlias);
+
+                return Product::query()->with('translations')->find($userAlias->product_id);
+            }
+        }
+
         if ($customerUserId) {
             $alias = (clone $query)->where('customer_user_id', $customerUserId)
                 ->where('system_hint', $systemHint)
@@ -758,8 +776,19 @@ class InvoiceOcrCatalogMatcher
             }
         }
 
-        $alias = $query->where('system_hint', $systemHint)->whereNull('customer_user_id')->first()
-            ?? OcrAlias::query()->where('normalized_text', $normalized)->where('system_hint', '')->whereNull('customer_user_id')->first();
+        $alias = (clone $query)->where('system_hint', $systemHint)
+            ->where(function ($q) {
+                $q->whereNull('owner_user_id')->orWhere('scope', 'global');
+            })
+            ->whereNull('customer_user_id')
+            ->first()
+            ?? OcrAlias::query()->where('normalized_text', $normalized)
+                ->where('system_hint', '')
+                ->whereNull('customer_user_id')
+                ->where(function ($q) {
+                    $q->whereNull('owner_user_id')->orWhere('scope', 'global');
+                })
+                ->first();
 
         if (! $alias) {
             return null;

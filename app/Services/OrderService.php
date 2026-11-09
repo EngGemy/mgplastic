@@ -59,6 +59,17 @@ class OrderService
         }
 
         $order = DB::transaction(function () use ($requester, $supplier, $channel, $prepared, $meta) {
+            $ocrBatchId = isset($meta['ocr_batch_id']) ? (int) $meta['ocr_batch_id'] : null;
+            if ($ocrBatchId) {
+                $owned = \App\Models\OcrBatch::query()
+                    ->where('id', $ocrBatchId)
+                    ->where('user_id', $requester->id)
+                    ->exists();
+                if (! $owned) {
+                    $ocrBatchId = null;
+                }
+            }
+
             $order = Order::create([
                 'channel' => $channel,
                 'requester_id' => $requester->id,
@@ -69,6 +80,7 @@ class OrderService
                 'note' => $meta['note'] ?? null,
                 'placed_at' => now(),
                 'created_by' => auth()->id() ?? $requester->id,
+                'ocr_batch_id' => $ocrBatchId ?: null,
             ]);
 
             $order->update([
@@ -321,6 +333,18 @@ class OrderService
     }
 
     // ── internals ──────────────────────────────────────────────
+
+    /**
+     * Public gate used by OCR supply context — same rules as place().
+     *
+     * @param  array{retail_trader_id?:?int, supplier_id?:?int, warehouse_id?:?int, wholesale_distributor_id?:?int}  $meta
+     *
+     * @throws \DomainException
+     */
+    public function assertCanOrderFrom(User $requester, string $channel, array $meta = []): ?User
+    {
+        return $this->resolveSupplier($requester, $channel, $meta);
+    }
 
     /**
      * @param  array{retail_trader_id?:?int, supplier_id?:?int}  $meta

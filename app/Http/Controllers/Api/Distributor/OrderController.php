@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Api\Distributor;
 
 use App\Http\Controllers\Api\Concerns\ApiResponds;
 use App\Http\Controllers\Api\Concerns\InteractsWithOrders;
+use App\Http\Controllers\Api\Trader\ProductCatalogController;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\OrderResource as OrderApiResource;
-use App\Http\Controllers\Api\Trader\ProductCatalogController;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\ApiIdempotency;
 use App\Services\NetworkInventoryService;
 use App\Services\OrderService;
 use App\Support\OrderStatus;
@@ -31,6 +32,7 @@ class OrderController extends Controller
     public function __construct(
         protected OrderService $orders,
         protected NetworkInventoryService $inventory,
+        protected ApiIdempotency $idempotency,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -265,60 +267,64 @@ class OrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $v = Validator::make($request->all(), [
-            'source' => ['nullable', 'string', 'in:factory,warehouse'],
-            'warehouse_id' => ['nullable', 'integer', 'exists:users,id'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
-            'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
-            'note' => ['nullable', 'string', 'max:2000'],
-        ]);
+        return $this->idempotency->handle($request, 'orders:distributor', function () use ($request) {
+            $v = Validator::make($request->all(), [
+                'source' => ['nullable', 'string', 'in:factory,warehouse'],
+                'warehouse_id' => ['nullable', 'integer', 'exists:users,id'],
+                'lines' => ['required', 'array', 'min:1'],
+                'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
+                'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
+                'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
+                'note' => ['nullable', 'string', 'max:2000'],
+                'ocr_batch_id' => ['nullable', 'integer', 'exists:ocr_batches,id'],
+            ]);
 
-        $v->after(function ($validator) use ($request) {
-            foreach ($request->input('lines', []) as $i => $line) {
-                $boxes = $line['boxes'] ?? null;
-                $qty = $line['quantity'] ?? null;
-                if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
-                    $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+            $v->after(function ($validator) use ($request) {
+                foreach ($request->input('lines', []) as $i => $line) {
+                    $boxes = $line['boxes'] ?? null;
+                    $qty = $line['quantity'] ?? null;
+                    if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
+                        $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+                    }
                 }
+
+                $source = $request->input('source', 'factory');
+                if ($source === 'warehouse' && ! $request->filled('warehouse_id')) {
+                    $validator->errors()->add('warehouse_id', 'warehouse_id مطلوب عند source=warehouse');
+                }
+            });
+
+            if ($v->fails()) {
+                return $this->error('بيانات غير صالحة', 422, $v->errors());
             }
 
             $source = $request->input('source', 'factory');
-            if ($source === 'warehouse' && ! $request->filled('warehouse_id')) {
-                $validator->errors()->add('warehouse_id', 'warehouse_id مطلوب عند source=warehouse');
+            $channel = $source === 'warehouse'
+                ? OrderStatus::CHANNEL_WAREHOUSE_TO_WHOLESALE
+                : OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE;
+
+            try {
+                $order = $this->orders->place(
+                    requester: $request->user(),
+                    channel: $channel,
+                    lines: $request->input('lines'),
+                    meta: [
+                        'note' => $request->input('note'),
+                        'warehouse_id' => $request->input('warehouse_id'),
+                        'supplier_id' => $request->input('warehouse_id'),
+                        'ocr_batch_id' => $request->input('ocr_batch_id'),
+                    ],
+                );
+
+                $msg = $source === 'warehouse'
+                    ? 'تم إرسال الطلب للمخزن المركزي'
+                    : 'تم إرسال الطلب للمصنع';
+
+                return $this->created(new OrderApiResource($this->loadedOrder($order)), $msg);
+            } catch (\DomainException $e) {
+                return $this->error($e->getMessage(), 422);
             }
         });
-
-        if ($v->fails()) {
-            return $this->error('بيانات غير صالحة', 422, $v->errors());
-        }
-
-        $source = $request->input('source', 'factory');
-        $channel = $source === 'warehouse'
-            ? OrderStatus::CHANNEL_WAREHOUSE_TO_WHOLESALE
-            : OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE;
-
-        try {
-            $order = $this->orders->place(
-                requester: $request->user(),
-                channel: $channel,
-                lines: $request->input('lines'),
-                meta: [
-                    'note' => $request->input('note'),
-                    'warehouse_id' => $request->input('warehouse_id'),
-                    'supplier_id' => $request->input('warehouse_id'),
-                ],
-            );
-
-            $msg = $source === 'warehouse'
-                ? 'تم إرسال الطلب للمخزن المركزي'
-                : 'تم إرسال الطلب للمصنع';
-
-            return $this->created(new OrderApiResource($this->loadedOrder($order)), $msg);
-        } catch (\DomainException $e) {
-            return $this->error($e->getMessage(), 422);
-        }
     }
 
     public function show(Request $request, Order $order): JsonResponse

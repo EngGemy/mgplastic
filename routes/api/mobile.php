@@ -197,6 +197,7 @@ Route::prefix('v1/mobile')->group(function () {
         // Supply-order OCR — قراءة ورقة → طلب من محل قطاعي (purpose=supply_order, source=shop)
         Route::prefix('orders/ocr')->group(function () {
             Route::get('current', [PosOcrController::class, 'current']);
+            Route::get('meta', [PosOcrController::class, 'meta']);
             Route::post('batches', [PosOcrController::class, 'store']);
             Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
             Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
@@ -261,6 +262,7 @@ Route::prefix('v1/mobile')->group(function () {
         // POS OCR — قراءة ورقة مكتوبة → مراجعة → سلة (ثم checkout)
         Route::prefix('pos/ocr')->group(function () {
             Route::get('current', [PosOcrController::class, 'current']);
+            Route::get('meta', [PosOcrController::class, 'meta']);
             Route::post('batches', [PosOcrController::class, 'store']);
             Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
             Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
@@ -278,6 +280,7 @@ Route::prefix('v1/mobile')->group(function () {
         // Supply-order OCR — قطاعي يطلب من الجملة (purpose=supply_order, source=wholesale)
         Route::prefix('orders/ocr')->group(function () {
             Route::get('current', [PosOcrController::class, 'current']);
+            Route::get('meta', [PosOcrController::class, 'meta']);
             Route::post('batches', [PosOcrController::class, 'store']);
             Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
             Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
@@ -427,6 +430,7 @@ Route::prefix('v1/mobile')->group(function () {
         // POS OCR — قراءة ورقة مكتوبة → مراجعة → سلة (ثم checkout)
         Route::prefix('pos/ocr')->group(function () {
             Route::get('current', [PosOcrController::class, 'current']);
+            Route::get('meta', [PosOcrController::class, 'meta']);
             Route::post('batches', [PosOcrController::class, 'store']);
             Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
             Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');
@@ -444,6 +448,7 @@ Route::prefix('v1/mobile')->group(function () {
         // Supply-order OCR — جملة يطلب من مصنع/مخزن (source=factory|warehouse)
         Route::prefix('orders/ocr')->group(function () {
             Route::get('current', [PosOcrController::class, 'current']);
+            Route::get('meta', [PosOcrController::class, 'meta']);
             Route::post('batches', [PosOcrController::class, 'store']);
             Route::get('batches/{batch}', [PosOcrController::class, 'show'])->whereNumber('batch');
             Route::post('batches/{batch}/images', [PosOcrController::class, 'uploadImage'])->whereNumber('batch');

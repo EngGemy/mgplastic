@@ -4,62 +4,22 @@ namespace App\Services;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
+/**
+ * Backward-compatible wrapper around ApiIdempotency for POS checkout.
+ */
 class PosCheckoutIdempotency
 {
-    public const TTL_HOURS = 24;
+    public const TTL_HOURS = ApiIdempotency::TTL_HOURS;
+
+    public function __construct(protected ApiIdempotency $idempotency) {}
 
     /**
      * @param  callable(): JsonResponse  $execute
      */
     public function handle(Request $request, callable $execute): JsonResponse
     {
-        $key = trim((string) $request->header('Idempotency-Key', ''));
-        if ($key === '') {
-            return $execute();
-        }
-
-        if (strlen($key) > 128) {
-            return response()->json([
-                'status' => false,
-                'message' => 'مفتاح التكرار غير صالح',
-                'message_code' => 'idempotency_key_invalid',
-                'error_code' => 'IDEMPOTENCY_KEY_INVALID',
-            ], 422);
-        }
-
-        $userId = (int) $request->user()->id;
-        $cacheKey = $this->cacheKey($userId, $key);
-        $payloadHash = $this->payloadHash($request->all());
-
-        $cached = Cache::get($cacheKey);
-        if (is_array($cached) && isset($cached['payload_hash'], $cached['body'], $cached['status'])) {
-            if (($cached['payload_hash'] ?? '') !== $payloadHash) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'نفس مفتاح التكرار بجسم طلب مختلف',
-                    'message_code' => 'idempotency_key_reused',
-                    'error_code' => 'IDEMPOTENCY_KEY_REUSED',
-                ], 422);
-            }
-
-            return response()->json($cached['body'], (int) $cached['status']);
-        }
-
-        $response = $execute();
-        $status = $response->getStatusCode();
-
-        // Cache successful checkouts only (invoice already created).
-        if ($status >= 200 && $status < 300) {
-            Cache::put($cacheKey, [
-                'payload_hash' => $payloadHash,
-                'status' => $status,
-                'body' => $response->getData(true),
-            ], now()->addHours(self::TTL_HOURS));
-        }
-
-        return $response;
+        return $this->idempotency->handle($request, 'pos:checkout', $execute);
     }
 
     /**
@@ -67,13 +27,6 @@ class PosCheckoutIdempotency
      */
     public function payloadHash(array $payload): string
     {
-        ksort($payload);
-
-        return hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
-    }
-
-    protected function cacheKey(int $userId, string $key): string
-    {
-        return 'pos:checkout:idempotency:'.$userId.':'.$key;
+        return $this->idempotency->payloadHash($payload);
     }
 }

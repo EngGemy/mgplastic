@@ -33,6 +33,9 @@ class SystemHealthService
             $this->checkFailedJobs24h(),
             $this->checkWhatsAppFailures(),
             $this->checkPushFcm(),
+            $this->checkOcrBacklog(),
+            $this->checkOcrGeminiErrorRate(),
+            $this->checkOcrDailyCap(),
         ];
     }
 
@@ -592,5 +595,85 @@ class SystemHealthService
         }
 
         return $firstLine;
+    }
+
+    protected function checkOcrBacklog(): HealthCheck
+    {
+        $minutes = max(1, (int) config('ocr.reading_stuck_minutes', 5));
+        $oldest = DB::table('ocr_images')
+            ->where('status', 'reading')
+            ->orderBy('started_at')
+            ->value('started_at');
+
+        $ageMinutes = $oldest ? Carbon::parse($oldest)->diffInMinutes(now()) : 0;
+        $status = $oldest && $ageMinutes >= $minutes ? 'critical' : 'ok';
+
+        return HealthCheck::make([
+            'key' => 'ocr_backlog',
+            'label' => 'OCR backlog (reading)',
+            'status' => $status,
+            'value' => ['oldest_age_minutes' => $ageMinutes],
+            'details' => $status === 'critical'
+                ? "صورة OCR في reading منذ {$ageMinutes} دقيقة"
+                : 'لا يوجد backlog OCR حرج',
+        ]);
+    }
+
+    protected function checkOcrGeminiErrorRate(): HealthCheck
+    {
+        if (! DB::getSchemaBuilder()->hasTable('ocr_usage')) {
+            return HealthCheck::make([
+                'key' => 'ocr_gemini_errors',
+                'label' => 'OCR Gemini error rate',
+                'status' => 'ok',
+                'value' => 0,
+                'details' => 'ocr_usage غير متوفر بعد',
+            ]);
+        }
+
+        $rows = DB::table('ocr_usage')
+            ->where('kind', 'gemini')
+            ->where('created_at', '>=', now()->subHour())
+            ->selectRaw('COUNT(*) as total, SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failed')
+            ->first();
+
+        $total = (int) ($rows->total ?? 0);
+        $failed = (int) ($rows->failed ?? 0);
+        $rate = $total > 0 ? $failed / $total : 0.0;
+        $status = match (true) {
+            $total >= 5 && $rate > 0.25 => 'critical',
+            $total >= 5 && $rate > 0.10 => 'warning',
+            default => 'ok',
+        };
+
+        return HealthCheck::make([
+            'key' => 'ocr_gemini_errors',
+            'label' => 'OCR Gemini error rate (1h)',
+            'status' => $status,
+            'value' => ['total' => $total, 'failed' => $failed, 'rate' => round($rate, 3)],
+            'details' => 'نسبة فشل Gemini OCR: '.round($rate * 100, 1).'%',
+        ]);
+    }
+
+    protected function checkOcrDailyCap(): HealthCheck
+    {
+        $cap = max(0, (int) config('ocr.global_gemini_daily_cap', 800));
+        $used = DB::getSchemaBuilder()->hasTable('ocr_usage')
+            ? (int) DB::table('ocr_usage')->where('kind', 'gemini')->whereDate('created_at', now()->toDateString())->count()
+            : 0;
+        $ratio = $cap > 0 ? $used / $cap : 0.0;
+        $status = match (true) {
+            $cap > 0 && $ratio >= 1.0 => 'critical',
+            $cap > 0 && $ratio >= (float) config('ocr.global_gemini_alert_at', 0.8) => 'warning',
+            default => 'ok',
+        };
+
+        return HealthCheck::make([
+            'key' => 'ocr_daily_cap',
+            'label' => 'OCR Gemini daily cap',
+            'status' => $status,
+            'value' => ['used' => $used, 'cap' => $cap, 'ratio' => round($ratio, 3)],
+            'details' => "استهلاك Gemini OCR اليوم: {$used}/{$cap}",
+        ]);
     }
 }

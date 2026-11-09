@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Concerns\InteractsWithOrders;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\OrderResource as OrderApiResource;
 use App\Models\Order;
+use App\Services\ApiIdempotency;
 use App\Services\OrderService;
 use App\Support\OrderStatus;
 use Illuminate\Http\JsonResponse;
@@ -23,7 +24,10 @@ class OrderController extends Controller
     use ApiResponds;
     use InteractsWithOrders;
 
-    public function __construct(protected OrderService $orders) {}
+    public function __construct(
+        protected OrderService $orders,
+        protected ApiIdempotency $idempotency,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -47,46 +51,50 @@ class OrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $v = Validator::make($request->all(), [
-            'supplier_id' => ['nullable', 'integer', 'exists:users,id'],
-            'wholesale_distributor_id' => ['nullable', 'integer', 'exists:users,id'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
-            'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
-            'note' => ['nullable', 'string', 'max:2000'],
-        ]);
+        return $this->idempotency->handle($request, 'orders:trader', function () use ($request) {
+            $v = Validator::make($request->all(), [
+                'supplier_id' => ['nullable', 'integer', 'exists:users,id'],
+                'wholesale_distributor_id' => ['nullable', 'integer', 'exists:users,id'],
+                'lines' => ['required', 'array', 'min:1'],
+                'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
+                'lines.*.boxes' => ['nullable', 'integer', 'min:1'],
+                'lines.*.quantity' => ['nullable', 'integer', 'min:1'],
+                'note' => ['nullable', 'string', 'max:2000'],
+                'ocr_batch_id' => ['nullable', 'integer', 'exists:ocr_batches,id'],
+            ]);
 
-        $v->after(function ($validator) use ($request) {
-            foreach ($request->input('lines', []) as $i => $line) {
-                $boxes = $line['boxes'] ?? null;
-                $qty = $line['quantity'] ?? null;
-                if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
-                    $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+            $v->after(function ($validator) use ($request) {
+                foreach ($request->input('lines', []) as $i => $line) {
+                    $boxes = $line['boxes'] ?? null;
+                    $qty = $line['quantity'] ?? null;
+                    if (($boxes === null || (int) $boxes < 1) && ($qty === null || (int) $qty < 1)) {
+                        $validator->errors()->add("lines.$i", 'أرسل عدد الصناديق (boxes) أو الكمية بالقطع (quantity).');
+                    }
                 }
+            });
+
+            if ($v->fails()) {
+                return $this->error('بيانات غير صالحة', 422, $v->errors());
+            }
+
+            try {
+                $order = $this->orders->place(
+                    requester: $request->user(),
+                    channel: OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL,
+                    lines: $request->input('lines'),
+                    meta: [
+                        'note' => $request->input('note'),
+                        'supplier_id' => $request->input('supplier_id') ?? $request->input('wholesale_distributor_id'),
+                        'wholesale_distributor_id' => $request->input('wholesale_distributor_id') ?? $request->input('supplier_id'),
+                        'ocr_batch_id' => $request->input('ocr_batch_id'),
+                    ],
+                );
+
+                return $this->created(new OrderApiResource($this->loadedOrder($order)), 'تم إرسال الطلب لموزّع الجملة');
+            } catch (\DomainException $e) {
+                return $this->error($e->getMessage(), 422);
             }
         });
-
-        if ($v->fails()) {
-            return $this->error('بيانات غير صالحة', 422, $v->errors());
-        }
-
-        try {
-            $order = $this->orders->place(
-                requester: $request->user(),
-                channel: OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL,
-                lines: $request->input('lines'),
-                meta: [
-                    'note' => $request->input('note'),
-                    'supplier_id' => $request->input('supplier_id') ?? $request->input('wholesale_distributor_id'),
-                    'wholesale_distributor_id' => $request->input('wholesale_distributor_id') ?? $request->input('supplier_id'),
-                ],
-            );
-
-            return $this->created(new OrderApiResource($this->loadedOrder($order)), 'تم إرسال الطلب لموزّع الجملة');
-        } catch (\DomainException $e) {
-            return $this->error($e->getMessage(), 422);
-        }
     }
 
     public function show(Request $request, Order $order): JsonResponse

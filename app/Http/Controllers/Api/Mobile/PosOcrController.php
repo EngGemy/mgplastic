@@ -15,6 +15,8 @@ use App\Services\Ocr\InvoiceOcrPipeline;
 use App\Services\Ocr\MobileOcrPresenter;
 use App\Services\Ocr\OcrBatchContext;
 use App\Services\Ocr\OcrBatchService;
+use App\Services\Ocr\OcrQuotaService;
+use App\Services\Ocr\OcrSupplierNotAllowedException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -37,6 +39,7 @@ class PosOcrController extends Controller
         protected InvoiceOcrCatalogMatcher $matcher,
         protected InvoiceOcrLearningService $learning,
         protected GeminiClient $gemini,
+        protected OcrQuotaService $quotas,
     ) {}
 
     /** GET …/pos/ocr/current  |  GET …/orders/ocr/current */
@@ -48,9 +51,16 @@ class PosOcrController extends Controller
                 $this->defaultPurpose($request),
             );
             $context->assertAllowedFor($request->user());
+        } catch (OcrSupplierNotAllowedException $e) {
+            return $this->error($e->getMessage(), 403, null, 'OCR_SUPPLIER_NOT_ALLOWED', $e->messageCode());
         } catch (ValidationException $e) {
             return $this->error('بيانات غير صالحة', 422, $e->errors());
         }
+
+        $quota = [
+            'quota_remaining' => $this->quotas->quotaRemaining($request->user()),
+            'quota_limit' => $this->quotas->dailyImageLimitFor($request->user()),
+        ];
 
         $batch = $this->batches->findResumableDraft($request->user(), $context);
         if (! $batch) {
@@ -61,6 +71,7 @@ class PosOcrController extends Controller
                 'source' => $context->source,
                 'supplier_user_id' => $context->supplierUserId,
                 'gemini_enabled' => $this->gemini->enabled(),
+                ...$quota,
             ], 'لا توجد دفعة معلّقة');
         }
 
@@ -71,6 +82,7 @@ class PosOcrController extends Controller
             'source' => $context->source,
             'supplier_user_id' => $context->supplierUserId,
             'gemini_enabled' => $this->gemini->enabled(),
+            ...$quota,
         ], 'دفعة OCR معلّقة');
     }
 
@@ -78,7 +90,18 @@ class PosOcrController extends Controller
     public function store(Request $request): JsonResponse
     {
         if (! $this->gemini->enabled()) {
-            return $this->error('قراءة الفواتير غير مفعّلة على السيرفر (GEMINI_API_KEY)', 503);
+            return $this->error('قراءة الفواتير غير مفعّلة على السيرفر (GEMINI_API_KEY)', 503, null, null, 'ocr_gemini_disabled');
+        }
+
+        $capacity = $this->quotas->assertGlobalGeminiCapacity();
+        if (! $capacity['ok']) {
+            return response()->json([
+                'status' => false,
+                'message' => 'تم بلوغ الطاقة اليومية لقراءة الأوراق',
+                'message_code' => 'ocr_capacity_reached',
+                'error_code' => 'OCR_CAPACITY_REACHED',
+                'retry_after' => $capacity['retry_after'],
+            ], 503);
         }
 
         $v = Validator::make($request->all(), [
@@ -104,6 +127,8 @@ class PosOcrController extends Controller
                 $this->defaultPurpose($request),
             );
             $context->assertAllowedFor($request->user());
+        } catch (OcrSupplierNotAllowedException $e) {
+            return $this->error($e->getMessage(), 403, null, 'OCR_SUPPLIER_NOT_ALLOWED', $e->messageCode());
         } catch (ValidationException $e) {
             return $this->error('بيانات غير صالحة', 422, $e->errors());
         }
@@ -113,6 +138,7 @@ class PosOcrController extends Controller
             : null;
 
         $batch = $this->batches->createOrResume($request->user(), $customerId, $context);
+        $batch->touchActivity();
 
         $system = $request->input('system_default', 'ask');
         $this->presenter->putPrefs($batch, [
@@ -123,6 +149,7 @@ class PosOcrController extends Controller
 
         return $this->created([
             'batch' => $this->presenter->present($batch->fresh(), $request->user()),
+            'quota_remaining' => $this->quotas->quotaRemaining($request->user()),
         ], 'دفعة OCR جاهزة');
     }
 
@@ -134,8 +161,42 @@ class PosOcrController extends Controller
             return $this->error('الدفعة غير موجودة', 404);
         }
 
+        $presented = $this->presenter->present($owned, $request->user());
+        $etag = '"ocr-batch-'.$owned->id.'-'.$owned->updated_at?->timestamp.'-'.md5(json_encode($presented['reading'] ?? [])).'"';
+        if ($request->headers->get('If-None-Match') === $etag) {
+            return response()->json(null, 304)->setEtag(trim($etag, '"'));
+        }
+
         return $this->success([
-            'batch' => $this->presenter->present($owned, $request->user()),
+            'batch' => $presented,
+        ])->setEtag(trim($etag, '"'));
+    }
+
+    /** GET …/pos/ocr/meta | …/orders/ocr/meta */
+    public function meta(Request $request): JsonResponse
+    {
+        return $this->success([
+            'contract_version' => (string) config('ocr.contract_version'),
+            'min_app_version' => config('ocr.min_app_version'),
+            'limits' => [
+                'max_images_per_batch' => (int) config('ocr.max_images_per_batch', 10),
+                'max_upload_bytes' => (int) config('ocr.max_upload_bytes'),
+                'max_image_side' => (int) config('ocr.max_image_side', 2000),
+                'daily_image_quota' => $this->quotas->dailyImageLimitFor($request->user()),
+                'quota_remaining' => $this->quotas->quotaRemaining($request->user()),
+            ],
+            'enums' => [
+                'ui_action' => ['none', 'choose_system', 'choose_family', 'confirm_understanding', 'select_product', 'set_qty', 'set_unit', 'review'],
+                'needs_review' => ['low_confidence', 'unit_assumed', 'total_mismatch', 'qty_unusual', 'ambiguous_match'],
+                'review_status' => ['ready', 'needs', 'approved', 'excluded', 'added'],
+                'match_decision' => ['auto', 'needs_choice', 'manual', 'excluded'],
+                'purpose' => ['pos', 'supply_order'],
+                'source' => ['factory', 'warehouse', 'wholesale', 'shop'],
+                'stock_level' => ['none', 'low', 'available'],
+                'lexicon_families' => $this->presenter->lexiconFamiliesCatalog(),
+            ],
+            'message_codes' => $this->ocrMessageCodes(),
+            'supplier_user_id' => 'For source=warehouse this is the central warehouse user id (is_central_warehouse). For wholesale/shop it is the supplier user id.',
         ]);
     }
 
@@ -143,7 +204,7 @@ class PosOcrController extends Controller
     public function uploadImage(Request $request, int $batch): JsonResponse
     {
         if (! $this->gemini->enabled()) {
-            return $this->error('قراءة الفواتير غير مفعّلة على السيرفر (GEMINI_API_KEY)', 503);
+            return $this->error('قراءة الفواتير غير مفعّلة على السيرفر (GEMINI_API_KEY)', 503, null, null, 'ocr_gemini_disabled');
         }
 
         $owned = $this->ownedBatch($request, $batch);
@@ -155,13 +216,35 @@ class PosOcrController extends Controller
             return $this->error('هذه الدفعة مغلقة — أنشئ دفعة جديدة', 422);
         }
 
+        $quota = $this->quotas->assertCanUpload($request->user());
+        if (! $quota['ok']) {
+            $status = ($quota['message_code'] ?? '') === 'ocr_capacity_reached' ? 503 : 429;
+
+            return response()->json([
+                'status' => false,
+                'message' => $status === 429
+                    ? 'بلغت حد الصور اليومي لقراءة الأوراق'
+                    : 'تم بلوغ الطاقة اليومية لقراءة الأوراق',
+                'message_code' => $quota['message_code'],
+                'error_code' => strtoupper((string) $quota['message_code']),
+                'retry_after' => $quota['retry_after'],
+                'quota_remaining' => $quota['remaining'],
+            ], $status);
+        }
+
+        $maxKb = (int) ceil(((int) config('ocr.max_upload_bytes', 8 * 1024 * 1024)) / 1024);
         $v = Validator::make($request->all(), [
-            'image' => ['required_without:file', 'file', 'image', 'max:12288'],
-            'file' => ['required_without:image', 'file', 'image', 'max:12288'],
+            'image' => ['required_without:file', 'file', 'max:'.$maxKb],
+            'file' => ['required_without:image', 'file', 'max:'.$maxKb],
             'force_duplicate' => ['nullable', 'boolean'],
         ]);
         if ($v->fails()) {
-            return $this->error('صورة غير صالحة', 422, $v->errors());
+            $msg = str_contains(json_encode($v->errors()), 'max')
+                ? 'الصورة أكبر من الحد المسموح'
+                : 'صورة غير صالحة';
+            $code = str_contains($msg, 'أكبر') ? 'ocr_image_too_large' : 'ocr_invalid_image';
+
+            return $this->error($msg, $code === 'ocr_image_too_large' ? 413 : 422, $v->errors(), strtoupper($code), $code);
         }
 
         $file = $request->file('image') ?? $request->file('file');
@@ -172,19 +255,27 @@ class PosOcrController extends Controller
         );
 
         if ($result['duplicate'] ?? false) {
+            $img = $result['image'];
+
             return $this->error('الصورة مرفوعة مسبقاً في نفس الدفعة', 409, [
-                'image' => $result['image'] ? $this->presenter->presentImage($result['image']) : null,
+                'image_id' => $img?->id,
+                'image_status' => $img?->status,
+                'image' => $img ? $this->presenter->presentImage($img) : null,
                 'batch' => $this->presenter->present($owned->fresh(), $request->user()),
-            ], 'OCR_DUPLICATE_IMAGE');
+            ], 'OCR_DUPLICATE_IMAGE', 'ocr_duplicate_image');
         }
 
         if (! ($result['ok'] ?? false) || ! $result['image']) {
-            return $this->error((string) ($result['error'] ?? 'تعذّر رفع الصورة'), 422);
+            $http = (int) ($result['http_status'] ?? 422);
+            $code = (string) ($result['message_code'] ?? 'ocr_invalid_image');
+
+            return $this->error((string) ($result['error'] ?? 'تعذّر رفع الصورة'), $http, null, strtoupper($code), $code);
         }
 
         return $this->created([
             'image' => $this->presenter->presentImage($result['image']),
             'batch' => $this->presenter->present($owned->fresh(), $request->user()),
+            'quota_remaining' => $this->quotas->quotaRemaining($request->user()),
         ], 'بدأت قراءة الصورة');
     }
 
@@ -405,6 +496,16 @@ class PosOcrController extends Controller
                         $row->review_status = 'ready';
                         $payload['review_status'] = 'ready';
                     }
+                    $this->learning->rememberCorrection(
+                        (string) ($owned->images()->whereNull('replaced_by_id')->orderByDesc('id')->value('sha256') ?: 'manual'),
+                        (string) ($payload['raw_text'] ?? $row->raw_fragment),
+                        $productId,
+                        isset($payload['qty']) ? (float) $payload['qty'] : ($row->qty ? (float) $row->qty : null),
+                        $request->user(),
+                        (string) ($payload['slots']['system'] ?? $product->system ?? ''),
+                        $prefs['customer_user_id'],
+                        (bool) $prefs['remember_for_customer'],
+                    );
                 }
                 break;
 
@@ -429,6 +530,11 @@ class PosOcrController extends Controller
                     fn ($f) => $f !== 'unit_assumed'
                 ));
                 $payload['needs_review'] = $flags;
+                $this->learning->rememberUnit(
+                    (string) ($payload['raw_text'] ?? $row->raw_fragment),
+                    $unit,
+                    $request->user(),
+                );
                 break;
 
             case 'choose_system':
@@ -677,6 +783,48 @@ class PosOcrController extends Controller
         return str_contains($uri, 'orders/ocr')
             ? OcrBatchContext::PURPOSE_SUPPLY
             : OcrBatchContext::PURPOSE_POS;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function ocrMessageCodes(): array
+    {
+        return [
+            'ocr_no_pending_batch',
+            'ocr_pending_batch',
+            'ocr_batch_ready',
+            'ocr_image_reading',
+            'ocr_paste_started',
+            'ocr_image_retried',
+            'ocr_image_canceled',
+            'ocr_reread_started',
+            'ocr_batch_abandoned',
+            'ocr_prefs_updated',
+            'ocr_line_updated',
+            'ocr_approve_ready_done',
+            'ocr_apply_ok',
+            'ocr_already_applied',
+            'ocr_no_approved_lines',
+            'ocr_batch_not_found',
+            'ocr_image_not_found',
+            'ocr_line_not_found',
+            'ocr_invalid_image',
+            'ocr_duplicate_image',
+            'ocr_gemini_disabled',
+            'ocr_batch_closed',
+            'ocr_batch_locked',
+            'ocr_supplier_not_allowed',
+            'ocr_daily_limit_reached',
+            'ocr_capacity_reached',
+            'ocr_image_too_large',
+            'ocr_image_type_unsupported',
+            'ocr_batch_image_limit',
+            'ocr_reading_timeout',
+            'idempotency_key_invalid',
+            'idempotency_key_reused',
+            'validation_failed',
+        ];
     }
 
     protected function ownedBatch(Request $request, int $batchId): ?OcrBatch

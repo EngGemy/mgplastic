@@ -95,10 +95,12 @@ class MobileOcrPresenter
         if (is_array($draft)) {
             $draft['system_default'] = $prefs['system_default'];
             $draft['customer_user_id'] = $prefs['customer_user_id'];
+            $exposeExact = $this->exposeExactQty($context);
             $draft['lines'] = $this->decorateLines(
                 (array) ($draft['lines'] ?? []),
                 $stockByProduct,
                 $stockMeta['ignore_stock'],
+                $exposeExact,
             );
             $draft['excluded'] = array_values((array) ($draft['excluded'] ?? []));
         }
@@ -145,8 +147,17 @@ class MobileOcrPresenter
             ],
             'lexicon_families' => $this->lexiconFamiliesCatalog(),
             'stock_source' => $stockMeta['stock_source'],
+            'expose_supplier_qty' => $this->exposeExactQty($context),
             'affects_inventory' => false,
             'affects_points' => false,
+            'receipt_total' => $batch->receipt_total !== null ? (float) $batch->receipt_total : null,
+            'computed_total' => $batch->computed_total !== null ? (float) $batch->computed_total : null,
+            'needs_review' => array_values((array) ($batch->batch_flags['needs_review'] ?? [])),
+            'warnings' => array_values((array) ($batch->batch_flags['warnings'] ?? [])),
+            'duplicate_of_batch_id' => $batch->duplicate_of_batch_id ? (int) $batch->duplicate_of_batch_id : null,
+            'poll_after_ms' => $this->pollAfterMs($batch, $pending),
+            'queue_position' => $pending ? $this->queuePosition($batch) : null,
+            'estimated_wait_seconds' => $pending ? $this->estimatedWaitSeconds($batch) : null,
             'images' => $batch->images->map(fn (OcrImage $img) => $this->presentImage($img))->values()->all(),
             'draft' => $draft,
             'merge_suggestions' => $built['merge_suggestions'] ?? [],
@@ -202,7 +213,12 @@ class MobileOcrPresenter
 
             $qtyUnit = (string) ($line['qty_unit'] ?? 'piece');
             $cartLine = $this->cartLineForUnit($product, $qty, $qtyUnit);
-            $cartLine = $this->decorateCartLine($cartLine, $stockByProduct, $ignoreStock);
+            $cartLine = $this->decorateCartLine(
+                $cartLine,
+                $stockByProduct,
+                $ignoreStock,
+                $this->exposeExactQty($context),
+            );
             $cartLine['qty_unit'] = $qtyUnit;
             $cartLine['qty_unit_source'] = $line['qty_unit_source'] ?? 'default';
             $cartLine['ocr_line_id'] = $line['ocr_line_id'] ?? null;
@@ -211,7 +227,13 @@ class MobileOcrPresenter
                 $cartLine['reason'] = 'out_of_stock';
                 $unavailable[$productId] = $this->mergeUnavailable($unavailable[$productId] ?? null, $cartLine);
             } else {
-                $available[$productId] = $this->mergeAvailable($available[$productId] ?? null, $cartLine, $stockByProduct, $ignoreStock);
+                $available[$productId] = $this->mergeAvailable(
+                    $available[$productId] ?? null,
+                    $cartLine,
+                    $stockByProduct,
+                    $ignoreStock,
+                    $this->exposeExactQty($context),
+                );
             }
         }
 
@@ -409,9 +431,9 @@ class MobileOcrPresenter
      * @param  array<int, int>  $stockByProduct
      * @return list<array<string, mixed>>
      */
-    protected function decorateLines(array $lines, array $stockByProduct, bool $ignoreStock = false): array
+    protected function decorateLines(array $lines, array $stockByProduct, bool $ignoreStock = false, bool $exposeExactQty = true): array
     {
-        return array_map(function (array $line) use ($stockByProduct, $ignoreStock) {
+        return array_map(function (array $line) use ($stockByProduct, $ignoreStock, $exposeExactQty) {
             $ppb = (int) ($line['pieces_per_box'] ?? 0);
             if (! isset($line['qty_unit'])) {
                 $line = $this->qtyUnits->apply($line, $ppb > 0 ? $ppb : null);
@@ -424,33 +446,25 @@ class MobileOcrPresenter
                 ? (int) round($qty * $ppb)
                 : (int) round($qty);
 
-            if ($ignoreStock) {
-                $line['available_qty'] = null;
-                $line['in_stock'] = $productId > 0;
-                $line['qty_exceeds_stock'] = false;
-            } else {
-                $available = $productId > 0 ? (int) ($stockByProduct[$productId] ?? 0) : 0;
-                $line['available_qty'] = $available;
-                $line['in_stock'] = $productId > 0 && $available > 0;
-                $line['qty_exceeds_stock'] = $productId > 0 && $requestedPieces > $available;
-            }
+            $flags = $this->stockFlags(
+                $productId > 0 ? (int) ($stockByProduct[$productId] ?? 0) : 0,
+                $requestedPieces,
+                $productId > 0,
+                $ignoreStock,
+                $exposeExactQty,
+            );
+            $line = array_merge($line, $flags);
             $line['ui_action'] = $this->uiAction->for($line);
 
             if (! empty($line['candidates']) && is_array($line['candidates'])) {
-                $line['candidates'] = array_map(function ($c) use ($stockByProduct, $ignoreStock) {
+                $line['candidates'] = array_map(function ($c) use ($stockByProduct, $ignoreStock, $exposeExactQty) {
                     if (! is_array($c)) {
                         return $c;
                     }
                     $pid = (int) ($c['product_id'] ?? 0);
-                    if ($ignoreStock) {
-                        $c['available_qty'] = null;
-                        $c['in_stock'] = $pid > 0;
-                    } else {
-                        $c['available_qty'] = $pid > 0 ? (int) ($stockByProduct[$pid] ?? 0) : 0;
-                        $c['in_stock'] = $pid > 0 && $c['available_qty'] > 0;
-                    }
+                    $avail = $pid > 0 ? (int) ($stockByProduct[$pid] ?? 0) : 0;
 
-                    return $c;
+                    return array_merge($c, $this->stockFlags($avail, 1, $pid > 0, $ignoreStock, $exposeExactQty));
                 }, $line['candidates']);
             }
 
@@ -486,23 +500,17 @@ class MobileOcrPresenter
      * @param  array<int, int>  $stockByProduct
      * @return array<string, mixed>
      */
-    protected function decorateCartLine(array $cartLine, array $stockByProduct, bool $ignoreStock = false): array
-    {
+    protected function decorateCartLine(
+        array $cartLine,
+        array $stockByProduct,
+        bool $ignoreStock = false,
+        bool $exposeExactQty = true,
+    ): array {
         $pid = (int) ($cartLine['product_id'] ?? 0);
-        if ($ignoreStock) {
-            $cartLine['available_qty'] = null;
-            $cartLine['in_stock'] = $pid > 0;
-            $cartLine['qty_exceeds_stock'] = false;
-
-            return $cartLine;
-        }
-
         $available = $pid > 0 ? (int) ($stockByProduct[$pid] ?? 0) : 0;
-        $cartLine['available_qty'] = $available;
-        $cartLine['in_stock'] = $pid > 0 && $available > 0;
-        $cartLine['qty_exceeds_stock'] = $pid > 0 && (int) ($cartLine['quantity'] ?? 0) > $available;
+        $requested = (int) ($cartLine['quantity'] ?? 0);
 
-        return $cartLine;
+        return array_merge($cartLine, $this->stockFlags($available, $requested, $pid > 0, $ignoreStock, $exposeExactQty));
     }
 
     /**
@@ -511,8 +519,13 @@ class MobileOcrPresenter
      * @param  array<int, int>  $stockByProduct
      * @return array<string, mixed>
      */
-    protected function mergeAvailable(?array $existing, array $incoming, array $stockByProduct, bool $ignoreStock = false): array
-    {
+    protected function mergeAvailable(
+        ?array $existing,
+        array $incoming,
+        array $stockByProduct,
+        bool $ignoreStock = false,
+        bool $exposeExactQty = true,
+    ): array {
         if ($existing === null) {
             return $incoming;
         }
@@ -523,7 +536,98 @@ class MobileOcrPresenter
             $existing['quantity'] = (int) $existing['quantity'] + (int) $incoming['quantity'];
         }
 
-        return $this->decorateCartLine($existing, $stockByProduct, $ignoreStock);
+        return $this->decorateCartLine($existing, $stockByProduct, $ignoreStock, $exposeExactQty);
+    }
+
+    /**
+     * @return array{available_qty:?int, in_stock:bool, qty_exceeds_stock:bool, stock_level:string}
+     */
+    public function stockFlags(
+        int $available,
+        int $requestedPieces,
+        bool $hasProduct,
+        bool $ignoreStock = false,
+        bool $exposeExactQty = true,
+    ): array {
+        if ($ignoreStock) {
+            return [
+                'available_qty' => null,
+                'in_stock' => $hasProduct,
+                'qty_exceeds_stock' => false,
+                'stock_level' => $hasProduct ? 'available' : 'none',
+            ];
+        }
+
+        $inStock = $hasProduct && $available > 0;
+        $exceeds = $hasProduct && $requestedPieces > $available;
+        $lowThreshold = max(1, (int) config('ocr.stock_low_threshold_pieces', 10));
+        $level = match (true) {
+            ! $hasProduct, $available <= 0 => 'none',
+            $exceeds || $available <= $lowThreshold => 'low',
+            default => 'available',
+        };
+
+        return [
+            'available_qty' => $exposeExactQty ? $available : null,
+            'in_stock' => $inStock,
+            'qty_exceeds_stock' => $exceeds,
+            'stock_level' => $level,
+        ];
+    }
+
+    public function exposeExactQty(OcrBatchContext $context): bool
+    {
+        if ($context->purpose === OcrBatchContext::PURPOSE_POS) {
+            return true;
+        }
+
+        return (bool) config('ocr.expose_supplier_qty', false);
+    }
+
+    protected function pollAfterMs(OcrBatch $batch, bool $reading): int
+    {
+        if (! $reading) {
+            return (int) config('ocr.poll_interval_ms', 2000);
+        }
+
+        $started = $batch->images
+            ->filter(fn (OcrImage $i) => in_array($i->status, ['queued', 'reading', 'retrying'], true))
+            ->min(fn (OcrImage $i) => optional($i->started_at ?? $i->created_at)?->getTimestamp());
+
+        $elapsedMs = $started ? (int) ((now()->getTimestamp() - (int) $started) * 1000) : 0;
+        $backoffAfter = (int) config('ocr.poll_backoff_after_ms', 20000);
+
+        return $elapsedMs >= $backoffAfter
+            ? (int) config('ocr.poll_backoff_interval_ms', 10000)
+            : (int) config('ocr.poll_interval_ms', 2000);
+    }
+
+    protected function queuePosition(OcrBatch $batch): int
+    {
+        $readingIds = OcrImage::query()
+            ->whereIn('status', ['queued', 'reading', 'retrying'])
+            ->orderBy('id')
+            ->limit(200)
+            ->pluck('id');
+
+        $mine = $batch->images
+            ->filter(fn (OcrImage $i) => in_array($i->status, ['queued', 'reading', 'retrying'], true))
+            ->min('id');
+
+        if (! $mine) {
+            return 0;
+        }
+
+        $pos = $readingIds->search((int) $mine);
+
+        return $pos === false ? 0 : ((int) $pos + 1);
+    }
+
+    protected function estimatedWaitSeconds(OcrBatch $batch): int
+    {
+        $pos = max(1, $this->queuePosition($batch));
+
+        return min(300, $pos * 25);
     }
 
     /**

@@ -28,11 +28,13 @@
 | `source` | لا يُرسل | **مطلوب:** `factory` \| `warehouse` \| `wholesale` \| `shop` |
 | هوية المورّد | — | `warehouse_id` / `wholesaler_id` / `retail_trader_id` حسب المصدر |
 | `stock_source` | `seller_pos` | `factory_catalog` / `warehouse_stock` / `wholesaler_stock` / `shop_stock` |
-| مخزون | مخزون بائع نقطة البيع | مخزون **المورّد** في السياق (المصنع: بدون بوابة مخزون) |
+| مخزون | مخزون بائع نقطة البيع — **`available_qty` ظاهر** | أعلام فقط افتراضياً: `in_stock` + `qty_exceeds_stock` + `stock_level` (`none`\|`low`\|`available`). الكمية الدقيقة خلف `ocr.expose_supplier_qty=false` |
+| مورّد غير مسموح | — | **403** `ocr_supplier_not_allowed` (نفس قواعد `POST …/orders`) |
 | `in_stock=false` عند apply | يخرج إلى `unavailable_lines` | **يبقى في `cart_lines`** مع الأعلام — البنود المطلوبة للتوريد |
 | دور السباك | ممنوع (422) | مسموح على `…/plumber/orders/ocr` فقط مع `source=shop` |
-| `/current` | دفعات `purpose=pos` فقط | يفلتر بـ `purpose` + `source` + معرف المورّد (مخزن/محل/جملة) |
-| بعد apply | `POST …/pos/checkout` + `Idempotency-Key` | `POST …/orders` بنفس شكل `product_id` + `quantity` (قطع) |
+| `/current` | دفعات `purpose=pos` فقط + `quota_remaining` | يفلتر بـ `purpose` + `source` + معرف المورّد + `quota_remaining` |
+| بعد apply | `POST …/pos/checkout` + `Idempotency-Key` | `POST …/orders` + اختياري `Idempotency-Key` و`ocr_batch_id` |
+| حدود يومية | حصة صور حسب الدور؛ سقف Gemini عام | 429 `ocr_daily_limit_reached` / 503 `ocr_capacity_reached` |
 
 باقي القرارات المشتركة:
 
@@ -52,7 +54,7 @@
 | الدور | `source` | حقول مطلوبة مع `POST /batches` و`GET /current` | `stock_source` | ملاحظات مخزون |
 |-------|----------|-----------------------------------------------|----------------|----------------|
 | جملة | `factory` | — | `factory_catalog` | كتالوج كامل؛ `available_qty=null`؛ لا يُشال بند بسبب المخزون |
-| جملة | `warehouse` | `warehouse_id` | `warehouse_stock` | مخزون ذلك المخزن (user جملة) |
+| جملة | `warehouse` | `warehouse_id` (= `supplier_user_id`) | `warehouse_stock` | **مخزن مركزي فقط** (`is_central_warehouse=true`). `supplier_user_id` في الرد = معرف مستخدم المخزن |
 | قطاعي | `wholesale` | `wholesaler_id` (أو `wholesale_distributor_id` / `supplier_id`) | `wholesaler_stock` | مخزون الموزّع |
 | سباك | `shop` | `retail_trader_id` | `shop_stock` | كتالوج المطابقة كامل؛ الأعلام من مخزون المحل؛ OOS يبقى في `cart_lines` |
 
@@ -102,17 +104,18 @@ POST apply         → cart_lines (+ unavailable_lines في POS فقط)
 
 | Method | Path | ملاحظة |
 |--------|------|--------|
-| GET | `/current` | استعلام السياق إلزامي لطلب التوريد |
+| GET | `/current` | استعلام السياق إلزامي لطلب التوريد؛ يرجّع `quota_remaining` |
+| GET | `/meta` | enums + limits + `contract_version` + `min_app_version` + قائمة `message_codes` |
 | POST | `/batches` | جسم السياق أدناه |
-| GET | `/batches/{id}` | poll |
-| POST | `/batches/{id}/images` | multipart |
+| GET | `/batches/{id}` | poll + `poll_after_ms` + ETag / If-None-Match → **304** |
+| POST | `/batches/{id}/images` | multipart jpg/png/webp (heic إن دعم Imagick) |
 | POST | `/batches/{id}/paste` | `{ text }` |
 | PATCH | `/batches/{id}/prefs` | **409** لو `step=added` |
 | PATCH | `/batches/{id}/lines/{lineId}` | أُضيف `set_unit` |
 | POST | `/batches/{id}/approve-ready` | |
 | POST | `/batches/{id}/apply` | يجهّز السلة فقط |
 | POST | `/batches/{id}/abandon` | |
-| POST | `/batches/{id}/reread` | |
+| POST | `/batches/{id}/reread` | بعد `ocr_reading_timeout` |
 
 ---
 
@@ -380,7 +383,31 @@ PATCH …/batches/12/prefs
   "available_qty": 120,
   "in_stock": true,
   "qty_exceeds_stock": false,
+  "stock_level": "available",
   "pieces_per_box": 10
+}
+```
+
+في طلب التوريد مع `expose_supplier_qty=false`: `available_qty` يكون `null` ويبقى `stock_level` / `in_stock` / `qty_exceeds_stock`.
+
+### 12.1b مثال `cart_lines` كامل (POS)
+
+```json
+{
+  "product_id": 42,
+  "name": "كوع 90 – 1 بوصة MG",
+  "quantity": 4,
+  "boxes": null,
+  "pieces_per_box": null,
+  "qty_unit": "piece",
+  "qty_unit_source": "paper",
+  "available_qty": 120,
+  "in_stock": true,
+  "qty_exceeds_stock": false,
+  "stock_level": "available",
+  "points_per_unit": 2,
+  "image": "https://…/products/42.jpg",
+  "ocr_line_id": 901
 }
 ```
 
@@ -410,16 +437,45 @@ PATCH …/batches/12/prefs
 | `set_unit` | ضبط وحدة (قطعة/صندوق) |
 | `review` | مراجعة عامة |
 
-### 12.4 `message_code` شائع
+### 12.4 قائمة `message_code` كاملة
 
-| code | سياق |
-|------|------|
-| `ocr_no_pending_batch` | لا دفعة معلّقة |
-| `ocr_apply_ok` | apply نجح |
-| `ocr_already_applied` | 409 apply مكرّر |
-| `ocr_batch_locked` | 409 prefs/lines بعد added |
-| `ocr_duplicate_image` | 409 صورة مكررة |
-| `idempotency_key_reused` | checkout |
+| code | HTTP | معنى |
+|------|------|------|
+| `ocr_no_pending_batch` | 200 | لا دفعة معلّقة |
+| `ocr_pending_batch` | 200 | دفعة معلّقة |
+| `ocr_batch_ready` | 201 | دفعة جاهزة |
+| `ocr_image_reading` | 201 | بدأت القراءة |
+| `ocr_paste_started` | 201 | بدأ تحليل النص |
+| `ocr_image_retried` | 200 | إعادة محاولة |
+| `ocr_image_canceled` | 200 | أُلغيت الصورة |
+| `ocr_reread_started` | 200 | بدأت إعادة القراءة |
+| `ocr_batch_abandoned` | 200 | تم التجاهل |
+| `ocr_prefs_updated` | 200 | تحديث prefs |
+| `ocr_line_updated` | 200 | تحديث بند |
+| `ocr_approve_ready_done` | 200 | اعتماد الجاهز |
+| `ocr_apply_ok` | 200 | apply نجح |
+| `ocr_already_applied` | 409 | apply مكرّر |
+| `ocr_no_approved_lines` | 422 | لا بنود معتمدة |
+| `ocr_batch_not_found` | 404 | دفعة غير موجودة/ليست ملكك |
+| `ocr_image_not_found` | 404 | صورة غير موجودة |
+| `ocr_line_not_found` | 404 | بند غير موجود |
+| `ocr_invalid_image` | 422 | صورة غير صالحة |
+| `ocr_duplicate_image` | 409 | صورة مكررة — الجسم فيه `image_id` + `image_status` |
+| `ocr_gemini_disabled` | 503 | لا يوجد `GEMINI_API_KEY` |
+| `ocr_batch_closed` | 422 | دفعة مغلقة |
+| `ocr_batch_locked` | 409 | بعد apply |
+| `ocr_supplier_not_allowed` | 403 | مورّد خارج قواعد الطلبات |
+| `ocr_daily_limit_reached` | 429 | حصة المستخدم اليومية |
+| `ocr_capacity_reached` | 503 | سقف Gemini العام |
+| `ocr_image_too_large` | 413 | أكبر من 8MB |
+| `ocr_image_type_unsupported` | 415 | نوع غير مدعوم / HEIC بدون Imagick |
+| `ocr_batch_image_limit` | 422 | أكثر من 10 صور |
+| `ocr_reading_timeout` | — | صورة `reading` > 5 دقائق → `failed` (استدعِ `/reread`) |
+| `idempotency_key_invalid` | 422 | مفتاح تكرار غير صالح |
+| `idempotency_key_reused` | 422 | نفس المفتاح بجسم مختلف |
+| `validation_failed` | 422 | تحقق عام |
+
+`GET …/meta` يرجّع نفس القائمة تحت `data.message_codes`.
 
 ---
 
@@ -427,34 +483,85 @@ PATCH …/batches/12/prefs
 
 | HTTP | متى |
 |------|-----|
-| 403 | دور غير مصرّح على المسار (مثلاً سباك على `trader/…`) |
-| 422 | `source`/معرف مورّد ناقص أو غير متوافق مع الدور |
+| 403 | دور غير مصرّح **أو** `ocr_supplier_not_allowed` |
+| 404 | دفعة/صورة/بند ليست للمستخدم الحالي |
+| 413 | `ocr_image_too_large` |
+| 415 | `ocr_image_type_unsupported` |
+| 422 | تحقق / حد صور الدفعة / IDEMPOTENCY_KEY_REUSED |
+| 429 | `ocr_daily_limit_reached` (+ `retry_after`) |
 | 409 | صورة مكررة / apply مكرّر / دفعة مقفلة |
-| 503 | `GEMINI_API_KEY` غير مفعّل |
+| 503 | Gemini معطّل أو `ocr_capacity_reached` |
+
+عند 409 duplicate: استمر على `errors.image_id` / `errors.image_status` بدل رفع جديد.
 
 ---
 
-## 14) تشغيل / صيانة
+## 14) تشغيل / صيانة (إنتاج — إلزامي بالترتيب)
 
 ```bash
-php artisan migrate
-# أو: php artisan config:cache && php artisan route:cache
+# 1) Migrations (إلزامي)
+php artisan migrate --force
+
+# 2) نقل صور OCR القديمة للقرص الخاص (جرّب dry-run أولاً)
+php artisan ocr:migrate-uploads-private --dry-run
+php artisan ocr:migrate-uploads-private
+
+# 3) مسح الكاش وإعادة تحميل الإعدادات
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# 4) إعادة تشغيل عمّال الطوابير (cPanel)
+php artisan queue:restart
+# Worker A: whatsapp,default  --timeout=60
+# Worker B: ocr              --timeout=180
+# DB_QUEUE_RETRY_AFTER=300
 ```
 
-الجدولة موجودة: `ocr:prune-uploads` يومياً 03:50 (Africa/Tripoli).
+**Cron / Schedule**
+
+| الأمر | التكرار |
+|-------|---------|
+| `ocr:maintain` | كل 5 دقائق — فشل `reading` العالق + abandon بعد 7 أيام |
+| `ocr:prune-uploads` | يومياً 03:50 — احتفاظ 90 يوم للمرتبط بطلب/فاتورة، 7 أيام لغير المطبّق |
+| `health:monitor` (إن وُجد) | يتضمن فحوصات OCR backlog / error rate / daily cap |
+
+**متغيرات بيئة جديدة (اختياري — لها افتراضيات في `config/ocr.php`)**
+
+| Key | افتراضي |
+|-----|---------|
+| `OCR_EXPOSE_SUPPLIER_QTY` | `false` |
+| `OCR_DAILY_QUOTA_PLUMBER` | `20` |
+| `OCR_DAILY_QUOTA_TRADER` | `50` |
+| `OCR_DAILY_QUOTA_DISTRIBUTOR` | `100` |
+| `OCR_GLOBAL_GEMINI_DAILY_CAP` | `800` |
+| `OCR_JOB_TIMEOUT` | `150` |
+| `OCR_MAX_UPLOAD_BYTES` | `8388608` |
+| `OCR_MAX_IMAGE_SIDE` | `2000` |
+| `OCR_MIN_APP_VERSION` | null |
+| `OCR_ACCEPT_HEIC` | `true` |
+
+لا تغيّر قيم WAHA في `.env`. لا Redis/Horizon — `QUEUE_CONNECTION=database` و`CACHE_STORE=file`.
+
+**ملاحظات تشغيلية**
+
+- طابور OCR مستقل: `ocr` (timeout job=150 < worker=180 < `DB_QUEUE_RETRY_AFTER`=300).
+- إعادة المحاولة لا تستدعي Gemini مرتين إن وُجد `result_json` على الصورة.
+- `supplier_user_id` عند `source=warehouse` = معرف مستخدم المخزن المركزي (ليس صف مخزون منفصل).
 
 ---
 
 ## 15) ملفات / اختبارات
 
-**كود:**  
-`OcrBatchContext`, migration `purpose/source/supplier_user_id`,  
-`MobileOcrPresenter`, `OcrBatchService`, `PosOcrController`,  
-`NetworkInventoryService` (qty maps), `routes/api/mobile.php`,  
-`docs/MOBILE_OCR.md`
+**كود أساسي:**  
+`config/ocr.php`, `OcrBatchContext`, `OcrQuotaService`, `OcrImageIngest`, `ApiIdempotency`,  
+`OcrBatchInsights`, `ProcessOcrImageJob` (queue `ocr`), `OcrMaintainCommand`,  
+`SystemHealthService` (فحوصات OCR), Filament `OcrKpis`,  
+migrations `ocr_usage` + أعمدة hardening، `docs/MOBILE_OCR.md`
 
 **اختبارات:**  
 `php artisan test --filter=MobilePosOcrTest`  
+`php artisan test --filter=MobileOcrHardeningTest`  
 `php artisan test --filter=PosCheckoutIdempotencyTest`  
-`php artisan test --filter=OcrBatchResilienceTest`  
-`php artisan test --filter=InvoiceOcrPosCartTest`
+`php artisan ocr:eval` (golden set في `tests/Fixtures/ocr-golden`)

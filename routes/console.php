@@ -63,6 +63,11 @@ Schedule::command('ai:prune-message-cache')
     ->timezone($tz)
     ->withoutOverlapping();
 
+Schedule::command('ocr:maintain')
+    ->everyFiveMinutes()
+    ->timezone($tz)
+    ->withoutOverlapping();
+
 Schedule::command('ocr:prune-uploads')
     ->dailyAt('03:50')
     ->timezone($tz)

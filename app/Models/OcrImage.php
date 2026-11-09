@@ -13,6 +13,7 @@ class OcrImage extends Model
         'position',
         'path',
         'sha256',
+        'phash',
         'width',
         'height',
         'status',
@@ -26,6 +27,7 @@ class OcrImage extends Model
         'quality_warning',
         'started_at',
         'finished_at',
+        'result_json',
     ];
 
     protected function casts(): array
@@ -35,6 +37,7 @@ class OcrImage extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
             'quality_warning' => 'boolean',
+            'result_json' => 'array',
         ];
     }
 

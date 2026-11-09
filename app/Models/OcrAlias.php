@@ -12,12 +12,17 @@ class OcrAlias extends Model
         'system_hint',
         'product_id',
         'customer_user_id',
+        'owner_user_id',
+        'qty_unit',
+        'scope',
+        'confirming_users',
         'hits',
         'last_used_at',
     ];
 
     protected $casts = [
         'hits' => 'integer',
+        'confirming_users' => 'integer',
         'last_used_at' => 'datetime',
     ];
 

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Concerns\InteractsWithOrders;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\OrderResource as OrderApiResource;
 use App\Models\Order;
+use App\Services\ApiIdempotency;
 use App\Services\OrderService;
 use App\Support\OrderStatus;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +22,10 @@ class OrderController extends Controller
     use ApiResponds;
     use InteractsWithOrders;
 
-    public function __construct(protected OrderService $orders) {}
+    public function __construct(
+        protected OrderService $orders,
+        protected ApiIdempotency $idempotency,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -40,49 +44,53 @@ class OrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $v = Validator::make($request->all(), [
-            'retail_trader_id' => ['required', 'integer', 'exists:users,id'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
-            // Plumbers order by the piece only — reject box counts from the client.
-            'lines.*.boxes' => ['prohibited'],
-            'lines.*.order_unit' => ['nullable', 'in:piece'],
-            'note' => ['nullable', 'string', 'max:2000'],
-        ], [
-            'lines.*.boxes.prohibited' => 'طلبات السبّاك بالقطعة فقط — لا ترسل عدد صناديق.',
-            'lines.*.order_unit.in' => 'طلبات السبّاك بالقطعة فقط.',
-        ]);
+        return $this->idempotency->handle($request, 'orders:plumber', function () use ($request) {
+            $v = Validator::make($request->all(), [
+                'retail_trader_id' => ['required', 'integer', 'exists:users,id'],
+                'lines' => ['required', 'array', 'min:1'],
+                'lines.*.product_id' => ['required', 'integer', 'exists:products,id'],
+                'lines.*.quantity' => ['required', 'integer', 'min:1'],
+                // Plumbers order by the piece only — reject box counts from the client.
+                'lines.*.boxes' => ['prohibited'],
+                'lines.*.order_unit' => ['nullable', 'in:piece'],
+                'note' => ['nullable', 'string', 'max:2000'],
+                'ocr_batch_id' => ['nullable', 'integer', 'exists:ocr_batches,id'],
+            ], [
+                'lines.*.boxes.prohibited' => 'طلبات السبّاك بالقطعة فقط — لا ترسل عدد صناديق.',
+                'lines.*.order_unit.in' => 'طلبات السبّاك بالقطعة فقط.',
+            ]);
 
-        if ($v->fails()) {
-            return $this->error('بيانات غير صالحة', 422, $v->errors());
-        }
+            if ($v->fails()) {
+                return $this->error('بيانات غير صالحة', 422, $v->errors());
+            }
 
-        try {
-            $lines = collect($request->input('lines', []))->map(function (array $line) {
-                unset($line['boxes']);
+            try {
+                $lines = collect($request->input('lines', []))->map(function (array $line) {
+                    unset($line['boxes']);
 
-                return $line;
-            })->all();
+                    return $line;
+                })->all();
 
-            $order = $this->orders->place(
-                requester: $request->user(),
-                channel: OrderStatus::CHANNEL_RETAIL_TO_PLUMBER,
-                lines: $lines,
-                meta: [
-                    'note' => $request->input('note'),
-                    'retail_trader_id' => (int) $request->input('retail_trader_id'),
-                    'order_unit' => 'piece',
-                ],
-            );
+                $order = $this->orders->place(
+                    requester: $request->user(),
+                    channel: OrderStatus::CHANNEL_RETAIL_TO_PLUMBER,
+                    lines: $lines,
+                    meta: [
+                        'note' => $request->input('note'),
+                        'retail_trader_id' => (int) $request->input('retail_trader_id'),
+                        'order_unit' => 'piece',
+                        'ocr_batch_id' => $request->input('ocr_batch_id'),
+                    ],
+                );
 
-            return $this->created(
-                new OrderApiResource($this->loadedOrder($order)),
-                'تم إرسال الطلب للتاجر القطاعي',
-            );
-        } catch (\DomainException $e) {
-            return $this->error($e->getMessage(), 422);
-        }
+                return $this->created(
+                    new OrderApiResource($this->loadedOrder($order)),
+                    'تم إرسال الطلب للتاجر القطاعي',
+                );
+            } catch (\DomainException $e) {
+                return $this->error($e->getMessage(), 422);
+            }
+        });
     }
 
     public function show(Request $request, Order $order): JsonResponse
