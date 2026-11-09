@@ -801,9 +801,16 @@ class InvoiceOcrCatalogMatcher
 
     protected function touchAlias(OcrAlias $alias): void
     {
-        $alias->forceFill([
-            'hits' => (int) $alias->hits + 1,
-            'last_used_at' => now(),
-        ])->save();
+        // Bump every alias row for this text→product (user + global siblings)
+        // so learning stats stay consistent when value('hits') / aggregates are read.
+        OcrAlias::query()
+            ->where('normalized_text', $alias->normalized_text)
+            ->where('product_id', $alias->product_id)
+            ->update([
+                'hits' => \Illuminate\Support\Facades\DB::raw('hits + 1'),
+                'last_used_at' => now(),
+            ]);
+
+        $alias->refresh();
     }
 }
