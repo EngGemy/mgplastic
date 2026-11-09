@@ -19,12 +19,21 @@ class OcrBatch extends Model
         'status',
         'idempotency_token',
         'cart_added_at',
+        'receipt_total',
+        'computed_total',
+        'batch_flags',
+        'duplicate_of_batch_id',
+        'last_activity_at',
     ];
 
     protected function casts(): array
     {
         return [
             'cart_added_at' => 'datetime',
+            'last_activity_at' => 'datetime',
+            'receipt_total' => 'decimal:2',
+            'computed_total' => 'decimal:2',
+            'batch_flags' => 'array',
         ];
     }
 
@@ -41,6 +50,11 @@ class OcrBatch extends Model
     public function lines(): HasManyThrough
     {
         return $this->hasManyThrough(OcrImageLine::class, OcrImage::class, 'batch_id', 'image_id');
+    }
+
+    public function touchActivity(): void
+    {
+        $this->forceFill(['last_activity_at' => now()])->save();
     }
 
     public function ensureIdempotencyToken(): string

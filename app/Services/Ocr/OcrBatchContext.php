@@ -3,6 +3,8 @@
 namespace App\Services\Ocr;
 
 use App\Models\User;
+use App\Services\OrderService;
+use App\Support\OrderStatus;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -155,21 +157,49 @@ class OcrBatchContext
             default => throw ValidationException::withMessages(['source' => 'source غير صالح']),
         };
 
-        if ($this->supplierUserId) {
-            $supplier = User::query()->find($this->supplierUserId);
-            if (! $supplier) {
-                throw ValidationException::withMessages(['supplier_user_id' => 'المورّد غير موجود']);
+        // Same visibility rules as POST …/orders (OrderService::resolveSupplier).
+        try {
+            $channel = $this->orderChannel();
+            if ($channel === null) {
+                return;
             }
-            if ($this->source === self::SOURCE_WAREHOUSE && ! $supplier->isWholesaleDistributor()) {
-                throw ValidationException::withMessages(['warehouse_id' => 'المخزن غير صالح']);
-            }
-            if ($this->source === self::SOURCE_WHOLESALE && ! $supplier->isWholesaleDistributor()) {
-                throw ValidationException::withMessages(['wholesaler_id' => 'الموزّع غير صالح']);
-            }
-            if ($this->source === self::SOURCE_SHOP && ! $supplier->isRetailTrader()) {
-                throw ValidationException::withMessages(['retail_trader_id' => 'المحل غير صالح']);
-            }
+            app(OrderService::class)->assertCanOrderFrom($user, $channel, $this->orderMeta());
+        } catch (\DomainException $e) {
+            throw new OcrSupplierNotAllowedException($e->getMessage());
         }
+    }
+
+    public function orderChannel(): ?string
+    {
+        return match ($this->source) {
+            self::SOURCE_FACTORY => OrderStatus::CHANNEL_FACTORY_TO_WHOLESALE,
+            self::SOURCE_WAREHOUSE => OrderStatus::CHANNEL_WAREHOUSE_TO_WHOLESALE,
+            self::SOURCE_WHOLESALE => OrderStatus::CHANNEL_WHOLESALE_TO_RETAIL,
+            self::SOURCE_SHOP => OrderStatus::CHANNEL_RETAIL_TO_PLUMBER,
+            default => null,
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function orderMeta(): array
+    {
+        return match ($this->source) {
+            self::SOURCE_WAREHOUSE => [
+                'warehouse_id' => $this->supplierUserId,
+                'supplier_id' => $this->supplierUserId,
+            ],
+            self::SOURCE_WHOLESALE => [
+                'wholesale_distributor_id' => $this->supplierUserId,
+                'supplier_id' => $this->supplierUserId,
+            ],
+            self::SOURCE_SHOP => [
+                'retail_trader_id' => $this->supplierUserId,
+                'supplier_id' => $this->supplierUserId,
+            ],
+            default => [],
+        };
     }
 
     /**

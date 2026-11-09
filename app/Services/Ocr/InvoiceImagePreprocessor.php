@@ -53,7 +53,8 @@ class InvoiceImagePreprocessor
         $width = imagesx($src);
         $height = imagesy($src);
 
-        $maxSide = max(400, (int) config('services.ocr.max_image_side', 1600));
+        // Prefer config/ocr.php; fall back to legacy services.ocr.*
+        $maxSide = max(400, (int) config('ocr.max_image_side', config('services.ocr.max_image_side', 2000)));
         $scale = 1.0;
         $longest = max($width, $height);
         if ($longest > $maxSide) {
@@ -79,7 +80,8 @@ class InvoiceImagePreprocessor
             mkdir($dir, 0755, true);
         }
         $outPath = $dir.'/'.uniqid('ocr_', true).'.jpg';
-        $quality = max(60, min(92, (int) config('services.ocr.jpeg_quality', 80)));
+        $quality = max(60, min(92, (int) config('ocr.jpeg_quality', config('services.ocr.jpeg_quality', 85))));
+        // Re-encode JPEG → strips EXIF / GPS before storage and Gemini.
         imagejpeg($dst, $outPath, $quality);
         imagedestroy($dst);
 

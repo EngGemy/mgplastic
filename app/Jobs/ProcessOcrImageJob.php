@@ -10,6 +10,7 @@ use App\Services\Ocr\InvoiceOcrValidator;
 use App\Services\Ocr\OcrAttemptPolicy;
 use App\Services\Ocr\OcrBatchService;
 use App\Services\Ocr\OcrCircuitBreaker;
+use App\Services\Ocr\OcrQuotaService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -24,14 +25,15 @@ class ProcessOcrImageJob implements ShouldQueue
 
     public int $tries = 1; // retries via release() — not Laravel attempts
 
-    public int $timeout;
+    /** Explicit timeout below cPanel OCR worker (180) and DB_QUEUE_RETRY_AFTER (300). */
+    public int $timeout = 150;
 
     public function __construct(
         public int $ocrImageId,
         public bool $isPasteText = false,
     ) {
-        $this->timeout = max(20, (int) config('ocr_resilience.job_timeout_seconds', 50));
-        $this->onQueue('default');
+        $this->timeout = max(60, (int) config('ocr.job_timeout_seconds', config('ocr_resilience.job_timeout_seconds', 150)));
+        $this->onQueue('ocr');
     }
 
     public function handle(
@@ -102,11 +104,24 @@ class ProcessOcrImageJob implements ShouldQueue
 
         $absolute = app(\App\Services\Ocr\OcrStorage::class)->absolutePath($image->path);
         $started = microtime(true);
+        $fromStored = false;
 
-        if ($this->isPasteText || str_ends_with(strtolower($image->path), '.txt')) {
+        // Idempotent Gemini: never call the model twice for the same stored result.
+        if (is_array($image->result_json) && ($image->result_json['ok'] ?? false) && is_array($image->result_json['draft'] ?? null)) {
+            $result = $image->result_json;
+            $fromStored = true;
+        } elseif ($this->isPasteText || str_ends_with(strtolower($image->path), '.txt')) {
             $result = $this->runPasteText($absolute, $batches, $image);
         } else {
-            $result = $pipeline->run($absolute, $model, skipCache: $attemptIndex > 0);
+            $capacity = app(OcrQuotaService::class)->assertGlobalGeminiCapacity();
+            if (! $capacity['ok']) {
+                $this->failImage($image, 'OCR-BUSY');
+                $this->kickNext($batches, $image);
+
+                return;
+            }
+            // Prefer SHA cache on retries too — skipCache only when no prior result.
+            $result = $pipeline->run($absolute, $model, skipCache: false);
         }
 
         $elapsed = (int) round((microtime(true) - $started) * 1000);
@@ -118,8 +133,22 @@ class ProcessOcrImageJob implements ShouldQueue
             'model' => $result['model'] ?? $model,
             'http_status' => $httpStatus,
             'duration_ms' => $elapsed,
+            'from_stored' => $fromStored,
             'error_code' => ($result['ok'] ?? false) ? null : ($result['code'] ?? 'failed'),
         ]);
+
+        if (! $fromStored && ! ($this->isPasteText || str_ends_with(strtolower($image->path), '.txt'))) {
+            app(OcrQuotaService::class)->recordGemini(
+                user: $image->batch?->user,
+                batchId: $image->batch_id,
+                imageId: $image->id,
+                model: $result['model'] ?? $model,
+                success: (bool) ($result['ok'] ?? false),
+                durationMs: $elapsed,
+                inputTokens: isset($result['input_tokens']) ? (int) $result['input_tokens'] : null,
+                outputTokens: isset($result['output_tokens']) ? (int) $result['output_tokens'] : null,
+            );
+        }
 
         if ($result['ok'] ?? false) {
             $draft = $result['draft'] ?? ['lines' => []];
@@ -128,12 +157,20 @@ class ProcessOcrImageJob implements ShouldQueue
             $image->model_used = $result['model'] ?? $model;
             $image->width = $result['width'] ?? $image->width;
             $image->height = $result['height'] ?? $image->height;
+            $image->result_json = [
+                'ok' => true,
+                'draft' => $draft,
+                'model' => $result['model'] ?? $model,
+                'width' => $image->width,
+                'height' => $image->height,
+            ];
             $image->status = $lineCount === 0 ? 'empty' : 'done';
             $image->last_error_code = null;
             $image->finished_at = now();
             $image->save();
             $breaker->recordSuccess();
             $image->batch?->refreshStatusFromImages();
+            $image->batch?->touchActivity();
             $this->kickNext($batches, $image);
 
             return;

@@ -464,8 +464,18 @@ class MobilePosOcrTest extends TestCase
     public function test_warehouse_current_scoped_by_warehouse_id(): void
     {
         $user = $this->distributor();
-        $whA = $this->distributor();
-        $whB = $this->distributor();
+        $whA = User::factory()->create([
+            'role' => 'wholesale_distributor',
+            'is_approved' => true,
+            'is_active' => true,
+            'is_central_warehouse' => true,
+        ]);
+        $whB = User::factory()->create([
+            'role' => 'wholesale_distributor',
+            'is_approved' => true,
+            'is_active' => true,
+            'is_central_warehouse' => true,
+        ]);
         Sanctum::actingAs($user);
 
         $this->postJson('/api/v1/mobile/distributor/orders/ocr/batches', [

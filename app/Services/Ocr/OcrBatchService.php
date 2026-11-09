@@ -69,37 +69,78 @@ class OcrBatchService
                 ? ($distributorId ?? $context->customerUserId)
                 : null,
             'status' => 'draft',
+            'last_activity_at' => now(),
         ]);
     }
 
     /**
-     * @return array{ok:bool, image:?OcrImage, duplicate:bool, error:?string}
+     * @return array{ok:bool, image:?OcrImage, duplicate:bool, error:?string, message_code:?string, http_status:int}
      */
     public function addUploadedImage(OcrBatch $batch, UploadedFile|string $file, bool $forceDuplicate = false): array
     {
-        $max = max(1, (int) config('ocr_resilience.max_images_per_batch', 10));
+        $max = max(1, (int) config('ocr.max_images_per_batch', config('ocr_resilience.max_images_per_batch', 10)));
         if ($batch->images()->whereNull('replaced_by_id')->count() >= $max) {
-            return ['ok' => false, 'image' => null, 'duplicate' => false, 'error' => 'الحد الأقصى '.$max.' صور لكل دفعة'];
+            return [
+                'ok' => false,
+                'image' => null,
+                'duplicate' => false,
+                'error' => 'الحد الأقصى '.$max.' صور لكل دفعة',
+                'message_code' => 'ocr_batch_image_limit',
+                'http_status' => 422,
+            ];
         }
 
         $diskName = (string) config('ocr_uploads.disk', OcrStorage::DISK_PRIVATE);
-        if ($file instanceof UploadedFile) {
-            $stored = $file->store('ocr-uploads/'.date('Y/m/d'), $diskName);
-        } else {
-            $stored = $file;
+        $sourceAbsolute = null;
+
+        try {
+            if ($file instanceof UploadedFile) {
+                $accepted = app(OcrImageIngest::class)->accept($file);
+                $sourceAbsolute = $accepted['path'];
+                $stored = 'ocr-uploads/'.date('Y/m/d').'/'.uniqid('up_', true).'.bin';
+                Storage::disk($diskName)->put($stored, (string) file_get_contents($sourceAbsolute));
+            } else {
+                $stored = $file;
+            }
+        } catch (OcrImageIngestException $e) {
+            return [
+                'ok' => false,
+                'image' => null,
+                'duplicate' => false,
+                'error' => $e->getMessage(),
+                'message_code' => $e->messageCode,
+                'http_status' => $e->httpStatus,
+            ];
         }
 
-        $absolute = Storage::disk($diskName)->path($stored);
+        $absolute = $sourceAbsolute && is_readable($sourceAbsolute)
+            ? $sourceAbsolute
+            : Storage::disk($diskName)->path($stored);
+
         try {
             $prepared = $this->preprocessor->prepare($absolute);
         } catch (\Throwable $e) {
-            return ['ok' => false, 'image' => null, 'duplicate' => false, 'error' => $e->getMessage()];
+            return [
+                'ok' => false,
+                'image' => null,
+                'duplicate' => false,
+                'error' => $e->getMessage(),
+                'message_code' => 'ocr_invalid_image',
+                'http_status' => 422,
+            ];
         }
 
         $sha = $prepared['sha256'];
         $existing = $batch->images()->where('sha256', $sha)->whereNull('replaced_by_id')->first();
         if ($existing && ! $forceDuplicate) {
-            return ['ok' => false, 'image' => $existing, 'duplicate' => true, 'error' => 'already uploaded'];
+            return [
+                'ok' => false,
+                'image' => $existing,
+                'duplicate' => true,
+                'error' => 'already uploaded',
+                'message_code' => 'ocr_duplicate_image',
+                'http_status' => 409,
+            ];
         }
 
         // Persist prepared JPEG onto the private OCR disk (preprocessor may write ocr-tmp).
@@ -112,6 +153,7 @@ class OcrBatchService
             'position' => $position,
             'path' => $relative,
             'sha256' => $sha,
+            'phash' => $this->perceptualHashFromPrepared($prepared['path']),
             'width' => $prepared['width'] ?? null,
             'height' => $prepared['height'] ?? null,
             'status' => 'queued',
@@ -119,11 +161,95 @@ class OcrBatchService
         ]);
 
         $batch->status = 'reading';
+        $batch->last_activity_at = now();
         $batch->save();
 
-        $this->dispatchIfCapacity($image);
+        app(OcrQuotaService::class)->recordUpload($batch->user, $batch->id, $image->id);
 
-        return ['ok' => true, 'image' => $image, 'duplicate' => false, 'error' => null];
+        $this->dispatchIfCapacity($image);
+        $this->flagPossibleDuplicateBatch($batch);
+
+        return [
+            'ok' => true,
+            'image' => $image,
+            'duplicate' => false,
+            'error' => null,
+            'message_code' => null,
+            'http_status' => 201,
+        ];
+    }
+
+    protected function perceptualHashFromPrepared(string $absolutePath): ?string
+    {
+        if (! function_exists('imagecreatefromjpeg') || ! is_readable($absolutePath)) {
+            return null;
+        }
+        $img = @imagecreatefromjpeg($absolutePath);
+        if (! $img) {
+            return null;
+        }
+        $tiny = imagecreatetruecolor(8, 8);
+        imagecopyresampled($tiny, $img, 0, 0, 0, 0, 8, 8, imagesx($img), imagesy($img));
+        imagedestroy($img);
+        $sum = 0;
+        $vals = [];
+        for ($y = 0; $y < 8; $y++) {
+            for ($x = 0; $x < 8; $x++) {
+                $rgb = imagecolorat($tiny, $x, $y);
+                $gray = (($rgb >> 16) & 0xFF) + (($rgb >> 8) & 0xFF) + ($rgb & 0xFF);
+                $vals[] = $gray;
+                $sum += $gray;
+            }
+        }
+        imagedestroy($tiny);
+        $avg = $sum / 64;
+        $bits = '';
+        foreach ($vals as $v) {
+            $bits .= $v >= $avg ? '1' : '0';
+        }
+
+        return $bits;
+    }
+
+    protected function flagPossibleDuplicateBatch(OcrBatch $batch): void
+    {
+        $hours = max(1, (int) config('ocr.duplicate_batch_window_hours', 48));
+        $phashes = $batch->images()->whereNotNull('phash')->pluck('phash')->filter()->values();
+        if ($phashes->isEmpty()) {
+            return;
+        }
+
+        $prior = OcrBatch::query()
+            ->where('user_id', $batch->user_id)
+            ->where('id', '!=', $batch->id)
+            ->where('purpose', $batch->purpose)
+            ->where('source', $batch->source)
+            ->when($batch->supplier_user_id, fn ($q) => $q->where('supplier_user_id', $batch->supplier_user_id))
+            ->when($batch->distributor_id, fn ($q) => $q->where('distributor_id', $batch->distributor_id))
+            ->where('status', 'added')
+            ->where('cart_added_at', '>=', now()->subHours($hours))
+            ->latest('id')
+            ->first();
+
+        if (! $prior) {
+            return;
+        }
+
+        $priorHashes = $prior->images()->whereNotNull('phash')->pluck('phash');
+        $overlap = $phashes->intersect($priorHashes)->count();
+        if ($overlap < 1) {
+            return;
+        }
+
+        $flags = (array) ($batch->batch_flags ?? []);
+        $warnings = array_values(array_unique(array_merge(
+            (array) ($flags['warnings'] ?? []),
+            ['possible_duplicate_batch'],
+        )));
+        $flags['warnings'] = $warnings;
+        $batch->batch_flags = $flags;
+        $batch->duplicate_of_batch_id = $prior->id;
+        $batch->save();
     }
 
     public function dispatchIfCapacity(OcrImage $image): void
@@ -286,6 +412,14 @@ class OcrBatchService
         $image->read_version = $newVersion;
         $image->lines_count = $image->lines()->where('version', $newVersion)->where('review_status', '!=', 'excluded')->count();
         $image->save();
+
+        if ($image->batch) {
+            try {
+                app(OcrBatchInsights::class)->annotateDraft($image->batch, $draft, $image->batch->user);
+            } catch (\Throwable) {
+                // non-fatal analytics
+            }
+        }
     }
 
     /**

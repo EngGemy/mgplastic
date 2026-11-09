@@ -37,6 +37,7 @@ class Order extends Model
         'created_by',
         'delivered_invoice_id',
         'delivered_reference',
+        'ocr_batch_id',
     ];
 
     protected function casts(): array
