@@ -12,6 +12,9 @@ class OcrBatch extends Model
 {
     protected $fillable = [
         'user_id',
+        'purpose',
+        'source',
+        'supplier_user_id',
         'distributor_id',
         'status',
         'idempotency_token',

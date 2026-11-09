@@ -191,6 +191,30 @@ class NetworkInventoryService
     }
 
     /**
+     * Fast map product_id → available_qty for a wholesaler / central warehouse.
+     *
+     * @return Collection<int, int> keyed by product_id
+     */
+    public function stockQtyByProductForWholesaler(User $wholesaler): Collection
+    {
+        if (! $wholesaler->isWholesaleDistributor()) {
+            return collect();
+        }
+
+        $cacheKey = 'inv:wholesale_qty:v1:'.(int) $wholesaler->id;
+
+        return Cache::remember($cacheKey, 90, function () use ($wholesaler) {
+            $rows = $this->aggregateAvailableQtyByProduct(
+                holderUserId: (int) $wholesaler->id,
+                parentTier: 1,
+                outboundTier: 2,
+            );
+
+            return collect($rows);
+        });
+    }
+
+    /**
      * Lean stock builder: one SQL for available lots, then load products only for those rows.
      *
      * @return Collection<int, array<string, mixed>>
