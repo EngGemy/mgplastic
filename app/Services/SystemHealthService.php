@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class SystemHealthService
 {
@@ -33,6 +34,7 @@ class SystemHealthService
             $this->checkFailedJobs24h(),
             $this->checkWhatsAppFailures(),
             $this->checkPushFcm(),
+            $this->checkPushTokenCoverage(),
             $this->checkOcrBacklog(),
             $this->checkOcrGeminiErrorRate(),
             $this->checkOcrDailyCap(),
@@ -253,9 +255,11 @@ class SystemHealthService
 
     public function checkQueueWorker(): HealthCheck
     {
-        $key = (string) config('monitoring.queue_heartbeat_key', 'monitoring:queue_worker_heartbeat');
-        $heartbeat = Cache::get($key);
+        $cacheKey = (string) config('monitoring.queue_heartbeat_key', 'monitoring:queue_worker_heartbeat');
+        $heartbeat = \App\Models\SystemHealthState::getString(\App\Models\SystemHealthState::KEY_QUEUE_HEARTBEAT)
+            ?: Cache::get($cacheKey);
         $staleAfter = max(60, (int) config('monitoring.queue_heartbeat_stale_seconds', 300));
+        $graceSeconds = max(30, (int) config('monitoring.queue_restart_grace_seconds', 180));
         $oldestCritical = max(60, (int) config('monitoring.queue_oldest_pending_critical_seconds', 600));
 
         $heartbeatAge = null;
@@ -266,6 +270,17 @@ class SystemHealthService
                 $heartbeatOk = $heartbeatAge <= $staleAfter;
             } catch (\Throwable) {
                 $heartbeatOk = false;
+            }
+        }
+
+        $inRestartGrace = false;
+        $restartedAt = \App\Models\SystemHealthState::getString(\App\Models\SystemHealthState::KEY_QUEUE_RESTARTED_AT);
+        if (is_string($restartedAt) && $restartedAt !== '') {
+            try {
+                $restartAge = Carbon::parse($restartedAt)->diffInSeconds(now());
+                $inRestartGrace = $restartAge <= $graceSeconds;
+            } catch (\Throwable) {
+                $inRestartGrace = false;
             }
         }
 
@@ -283,7 +298,9 @@ class SystemHealthService
         $status = 'ok';
         $details = [];
 
-        if (! $heartbeatOk) {
+        if (! $heartbeatOk && $inRestartGrace) {
+            $details[] = 'فترة سماح بعد queue:restart ('.($graceSeconds).'ث)';
+        } elseif (! $heartbeatOk) {
             $status = 'critical';
             $details[] = $heartbeat
                 ? 'آخر نبضة منذ '.($heartbeatAge ?? '?').' ثانية'
@@ -309,6 +326,7 @@ class SystemHealthService
                 'heartbeat_at' => $heartbeat,
                 'heartbeat_age_seconds' => $heartbeatAge,
                 'oldest_pending_seconds' => $oldestPendingSeconds,
+                'restart_grace' => $inRestartGrace,
             ],
             'details' => implode(' — ', $details),
         ]);
@@ -513,6 +531,78 @@ class SystemHealthService
             ],
             'details' => "معلّق حقيقي >{$staleMinutes}د: {$staleQueued} — فشل {$failedWindow}س: {$failed24h}",
         ]);
+    }
+
+    public function checkPushTokenCoverage(): HealthCheck
+    {
+        try {
+            if (! Schema::hasTable('users') || ! Schema::hasTable('push_tokens')) {
+                return HealthCheck::make([
+                    'key' => 'push_token_coverage',
+                    'label' => 'تغطية توكنات الدفع',
+                    'status' => 'warning',
+                    'value' => null,
+                    'details' => 'جداول المستخدمين/التوكنات غير جاهزة',
+                ]);
+            }
+
+            $roles = ['plumber', 'retail_trader', 'wholesale_distributor'];
+            $activeUsers = (int) DB::table('users')
+                ->whereIn('role', $roles)
+                ->where('is_active', true)
+                ->where('is_approved', true)
+                ->count();
+
+            $withToken = (int) DB::table('users')
+                ->whereIn('users.role', $roles)
+                ->where('users.is_active', true)
+                ->where('users.is_approved', true)
+                ->whereExists(function ($q) {
+                    $q->select(DB::raw(1))
+                        ->from('push_tokens')
+                        ->whereColumn('push_tokens.user_id', 'users.id');
+                    if (Schema::hasColumn('push_tokens', 'is_active')) {
+                        $q->where('push_tokens.is_active', true);
+                    }
+                })
+                ->count();
+
+            $skippedNoToken24h = Schema::hasTable('notification_logs')
+                ? (int) DB::table('notification_logs')
+                    ->where('status', 'skipped_no_token')
+                    ->where('created_at', '>=', now()->subDay())
+                    ->count()
+                : 0;
+
+            $pct = $activeUsers > 0 ? round(($withToken / $activeUsers) * 100, 1) : 100.0;
+            $status = match (true) {
+                $activeUsers >= 10 && $pct < 40 => 'critical',
+                $activeUsers >= 10 && $pct < 70 => 'warning',
+                $skippedNoToken24h >= 50 => 'warning',
+                default => 'ok',
+            };
+
+            return HealthCheck::make([
+                'key' => 'push_token_coverage',
+                'label' => 'تغطية توكنات الدفع',
+                'status' => $status,
+                'value' => [
+                    'active_users' => $activeUsers,
+                    'with_token' => $withToken,
+                    'coverage_pct' => $pct,
+                    'skipped_no_token_24h' => $skippedNoToken24h,
+                ],
+                'details' => "تغطية {$pct}% ({$withToken}/{$activeUsers}) — بدون توكن 24س: {$skippedNoToken24h}",
+            ]);
+        } catch (\Throwable $e) {
+            return HealthCheck::make([
+                'key' => 'push_token_coverage',
+                'label' => 'تغطية توكنات الدفع',
+                'status' => 'warning',
+                'value' => null,
+                'details' => 'تعذر القراءة: '.$e->getMessage(),
+            ]);
+        }
     }
 
     /**

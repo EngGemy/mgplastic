@@ -506,8 +506,12 @@ php artisan migrate --force
 php artisan ocr:migrate-uploads-private --dry-run
 php artisan ocr:migrate-uploads-private
 
-# 3) مسح الكاش وإعادة تحميل الإعدادات
-php artisan optimize:clear
+# 3) إعادة بناء الكاش — لا تستخدم optimize:clear في الإنتاج
+# (يمسح نبض الطابور وتنبيهات المراقبة وقاطع واتساب وحصص OCR اليومية)
+php artisan config:clear
+php artisan route:clear
+php artisan view:clear
+php artisan event:clear
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
@@ -517,6 +521,7 @@ php artisan queue:restart
 # Worker A: whatsapp,default  --timeout=60
 # Worker B: ocr              --timeout=180
 # DB_QUEUE_RETRY_AFTER=300
+# فترة سماح 3 دقائق بعد restart قبل اعتبار غياب النبض CRITICAL
 ```
 
 **Cron / Schedule**

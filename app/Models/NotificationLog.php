@@ -17,6 +17,9 @@ class NotificationLog extends Model
 
     public const STATUS_EXPIRED = 'expired';
 
+    /** User has no registered device token — not an FCM transport failure. */
+    public const STATUS_SKIPPED_NO_TOKEN = 'skipped_no_token';
+
     /** @return list<string> */
     public static function finalStatuses(): array
     {
@@ -25,6 +28,7 @@ class NotificationLog extends Model
             self::STATUS_FAILED,
             self::STATUS_UNREGISTERED,
             self::STATUS_EXPIRED,
+            self::STATUS_SKIPPED_NO_TOKEN,
         ];
     }
 

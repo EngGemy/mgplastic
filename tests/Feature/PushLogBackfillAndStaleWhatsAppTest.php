@@ -299,6 +299,10 @@ class PushLogBackfillAndStaleWhatsAppTest extends TestCase
         Http::fake([
             'https://waha.test/api/sessions/session_test' => Http::response(['status' => 'WORKING'], 200),
         ]);
+        \App\Models\SystemHealthState::putString(
+            \App\Models\SystemHealthState::KEY_QUEUE_HEARTBEAT,
+            now()->toIso8601String(),
+        );
         Cache::put(config('monitoring.queue_heartbeat_key'), now()->toIso8601String(), 3600);
 
         $checks = app(SystemHealthService::class)->refreshAndStoreSnapshot();

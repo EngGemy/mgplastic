@@ -124,5 +124,9 @@ class AppServiceProvider extends ServiceProvider
 
         Event::listen(Looping::class, \App\Listeners\RecordQueueWorkerHeartbeat::class);
         Event::listen(JobProcessed::class, \App\Listeners\RecordQueueWorkerHeartbeat::class);
+        Event::listen(
+            \Illuminate\Console\Events\CommandStarting::class,
+            \App\Listeners\NoteQueueRestart::class,
+        );
     }
 }

@@ -21,8 +21,11 @@ composer install --no-dev --optimize-autoloader --no-interaction
 echo "==> migrate"
 "$PHP_BIN" artisan migrate --force
 
-echo "==> caches"
-"$PHP_BIN" artisan optimize:clear
+echo "==> caches (no optimize:clear — preserves monitoring / WAHA / OCR counters)"
+"$PHP_BIN" artisan config:clear
+"$PHP_BIN" artisan route:clear 2>/dev/null || true
+"$PHP_BIN" artisan view:clear
+"$PHP_BIN" artisan event:clear 2>/dev/null || true
 "$PHP_BIN" artisan config:cache
 "$PHP_BIN" artisan route:cache 2>/dev/null || echo "==> route:cache skipped (closures)"
 "$PHP_BIN" artisan view:cache

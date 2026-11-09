@@ -21,8 +21,15 @@ class BackfillPushNotificationLogsCommand extends Command
 
         $beforeQueued = NotificationLog::query()->where('status', NotificationLog::STATUS_QUEUED)->count();
         $beforeFinal = NotificationLog::query()->whereIn('status', NotificationLog::finalStatuses())->count();
+        $noTokenFailed = NotificationLog::query()
+            ->where('status', NotificationLog::STATUS_FAILED)
+            ->where(function ($q) {
+                $q->where('error', 'like', '%No active device tokens%')
+                    ->orWhere('error', 'like', '%no device tokens%');
+            })
+            ->count();
 
-        $this->info(($apply ? 'APPLY' : 'DRY-RUN')." — queued={$beforeQueued}, finals={$beforeFinal}");
+        $this->info(($apply ? 'APPLY' : 'DRY-RUN')." — queued={$beforeQueued}, finals={$beforeFinal}, failed_no_token={$noTokenFailed}");
 
         $deleteIds = [];
         $expireIds = [];
@@ -56,19 +63,34 @@ class BackfillPushNotificationLogsCommand extends Command
                     'updated_at' => now(),
                 ]);
             }
+            if ($noTokenFailed > 0) {
+                NotificationLog::query()
+                    ->where('status', NotificationLog::STATUS_FAILED)
+                    ->where(function ($q) {
+                        $q->where('error', 'like', '%No active device tokens%')
+                            ->orWhere('error', 'like', '%no device tokens%');
+                    })
+                    ->update([
+                        'status' => NotificationLog::STATUS_SKIPPED_NO_TOKEN,
+                        'updated_at' => now(),
+                    ]);
+            }
         }
 
         $afterQueued = NotificationLog::query()->where('status', NotificationLog::STATUS_QUEUED)->count();
         $afterExpired = NotificationLog::query()->where('status', NotificationLog::STATUS_EXPIRED)->count();
+        $afterSkipped = NotificationLog::query()->where('status', NotificationLog::STATUS_SKIPPED_NO_TOKEN)->count();
 
         $this->table(
             ['metric', 'count'],
             [
                 ['queued_with_sibling_final', $withSibling],
                 ['orphan_queued_to_expire', $expired],
+                ['failed_to_skipped_no_token', $noTokenFailed],
                 ['queued_before', $beforeQueued],
                 ['queued_after'.($apply ? '' : ' (unchanged in dry-run)'), $apply ? $afterQueued : $beforeQueued],
                 ['expired_total', $afterExpired],
+                ['skipped_no_token_total', $afterSkipped],
             ]
         );
 
