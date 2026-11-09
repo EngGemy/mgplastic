@@ -3,9 +3,9 @@
 namespace App\Services;
 
 use App\Mail\SystemHealthAlertMail;
+use App\Models\SystemHealthState;
 use App\Support\AdminPanelPath;
 use App\Support\HealthCheck;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -32,11 +32,9 @@ class HealthAlertService
         $repeatForMail = [];
 
         $repeatHours = max(1, (int) config('monitoring.alert_repeat_hours', 6));
-        $ttlDays = max(1, (int) config('monitoring.alert_state_cache_ttl_days', 14));
 
         foreach ($checks as $check) {
-            $stateKey = $this->stateCacheKey($check->key);
-            $previous = Cache::get($stateKey);
+            $previous = $this->readAlertState($check->key);
             $prevStatus = is_array($previous) ? (string) ($previous['status'] ?? 'ok') : 'ok';
             $lastAlertedAt = is_array($previous) ? ($previous['last_alerted_at'] ?? null) : null;
 
@@ -64,12 +62,12 @@ class HealthAlertService
                 $lastAlerted = now()->toIso8601String();
             }
 
-            Cache::put($stateKey, [
+            $this->writeAlertState($check->key, [
                 'status' => $nextStatus,
                 'last_alerted_at' => $lastAlerted,
                 'updated_at' => now()->toIso8601String(),
                 'details' => $check->details,
-            ], now()->addDays($ttlDays));
+            ]);
 
             if ($shouldAlertNew) {
                 $alerted[] = $check->key;
@@ -129,9 +127,22 @@ class HealthAlertService
         }
     }
 
-    protected function stateCacheKey(string $checkKey): string
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function readAlertState(string $checkKey): ?array
     {
-        return 'monitoring:alert_state:'.$checkKey;
+        $payload = SystemHealthState::getPayload(SystemHealthState::alertStateKey($checkKey));
+
+        return is_array($payload) ? $payload : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     */
+    protected function writeAlertState(string $checkKey, array $state): void
+    {
+        SystemHealthState::putPayload(SystemHealthState::alertStateKey($checkKey), $state);
     }
 
     protected function notifyAdminsInbox(HealthCheck $check, string $kind): void
@@ -179,21 +190,19 @@ class HealthAlertService
     }
 
     /**
-     * @param  list<array{key: string, label: string, status: string, value: mixed, details: ?string}>  $checks
+     * @param  list<array<string, mixed>>  $checks
      */
     protected function mail(array $checks, string $kind): void
     {
         $emails = (array) config('services.waha.alert_emails', []);
         if ($emails === []) {
-            Log::warning('[HealthAlert] no WHATSAPP_ALERT_EMAILS configured');
-
             return;
         }
 
         try {
             Mail::to($emails)->send(new SystemHealthAlertMail($kind, $checks));
         } catch (\Throwable $e) {
-            Log::warning('[HealthAlert] mail failed', ['error' => $e->getMessage()]);
+            Log::warning('[HealthAlert] mail failed', ['error' => $e->getMessage(), 'kind' => $kind]);
         }
     }
 }

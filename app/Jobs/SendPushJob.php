@@ -75,14 +75,14 @@ class SendPushJob implements ShouldBeUnique, ShouldQueue
         $tokens = $tokensQuery->get();
 
         if ($tokens->isEmpty()) {
-            Log::warning('[FCM] no device tokens for user', [
+            Log::info('[FCM] skipped_no_token', [
                 'user_id' => $user->id,
                 'inbox_id' => $inbox->id,
             ]);
             $this->finalizeQueuedLog(
                 notificationId: $inbox->id,
                 deviceTokenId: null,
-                status: NotificationLog::STATUS_FAILED,
+                status: NotificationLog::STATUS_SKIPPED_NO_TOKEN,
                 attrs: [
                     'error' => 'No active device tokens — app must POST /mobile/devices/push-token after login',
                     'attempts' => $this->attempts(),

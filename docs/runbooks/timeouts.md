@@ -51,7 +51,7 @@ pgrep -af queue:work || echo 'NO WORKER'
 
 ### After any .env / config change
 ```bash
-php artisan optimize:clear && php artisan config:cache
+php artisan config:clear && php artisan route:clear && php artisan view:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache
 php artisan queue:restart
 pkill -u "$USER" -f 'queue:work' || true
 ```

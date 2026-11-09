@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\SendWhatsAppNotification;
 use App\Mail\SystemHealthAlertMail;
+use App\Models\SystemHealthState;
 use App\Services\HealthAlertService;
 use App\Services\SystemHealthService;
 use App\Services\WhatsAppNotifier;
@@ -113,6 +114,7 @@ class SystemHealthMonitoringTest extends TestCase
         ]);
 
         // Seed other checks toward ok where possible.
+        SystemHealthState::putString(SystemHealthState::KEY_QUEUE_HEARTBEAT, now()->toIso8601String());
         Cache::put(config('monitoring.queue_heartbeat_key'), now()->toIso8601String(), 3600);
 
         $service = app(HealthAlertService::class);
@@ -130,6 +132,7 @@ class SystemHealthMonitoringTest extends TestCase
     public function test_alert_sends_recovered_when_returning_to_ok(): void
     {
         Mail::fake();
+        SystemHealthState::putString(SystemHealthState::KEY_QUEUE_HEARTBEAT, now()->toIso8601String());
         Cache::put(config('monitoring.queue_heartbeat_key'), now()->toIso8601String(), 3600);
 
         Http::fake([
@@ -167,6 +170,7 @@ class SystemHealthMonitoringTest extends TestCase
         Http::fake([
             'https://waha.test/api/sessions/session_test' => Http::response(['status' => 'WORKING'], 200),
         ]);
+        SystemHealthState::putString(SystemHealthState::KEY_QUEUE_HEARTBEAT, now()->toIso8601String());
         Cache::put(config('monitoring.queue_heartbeat_key'), now()->toIso8601String(), 3600);
         Mail::fake();
 

@@ -14,6 +14,9 @@ return [
 
     'queue_heartbeat_stale_seconds' => max(60, (int) env('MONITOR_QUEUE_HEARTBEAT_STALE', 300)),
 
+    /** After `queue:restart`, treat missing/stale heartbeat as OK for this many seconds. */
+    'queue_restart_grace_seconds' => max(30, (int) env('MONITOR_QUEUE_RESTART_GRACE', 180)),
+
     'queue_oldest_pending_critical_seconds' => max(60, (int) env('MONITOR_QUEUE_OLDEST_PENDING', 600)),
 
     'failed_jobs_warning' => max(1, (int) env('MONITOR_FAILED_JOBS_WARNING', 1)),

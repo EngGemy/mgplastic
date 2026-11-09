@@ -33,11 +33,16 @@ trap cleanup EXIT
 echo "==> Running migrations"
 php artisan migrate --force
 
-echo "==> Rebuilding caches"
+echo "==> Rebuilding caches (no optimize:clear / cache:clear)"
+php artisan config:clear
+php artisan route:clear 2>/dev/null || true
+php artisan view:clear
+php artisan event:clear 2>/dev/null || true
 php artisan config:cache
 # Closure routes in routes/api.php — route:cache may fail; do not abort deploy
 php artisan route:cache 2>/dev/null || echo "==> route:cache skipped (closure routes)"
 php artisan view:cache
+php artisan event:cache 2>/dev/null || true
 
 echo "==> Linking public storage → ${PUBLIC_PATH}/storage"
 # Split cPanel layout: app has no public/ (assets live in public_html).

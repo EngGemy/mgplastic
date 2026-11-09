@@ -339,7 +339,7 @@ class SendNotification extends Page implements HasForms
     }
 
     /**
-     * @return array{fcm_ready: bool, tokens: int, queue: string, table: bool, summary: string}
+     * @return array{fcm_ready: bool, tokens: int, queue: string, table: bool, coverage_pct: float|null, summary: string}
      */
     public function pushDiagnostics(): array
     {
@@ -348,9 +348,29 @@ class SendNotification extends Page implements HasForms
         $fcmReady = app(FcmPushService::class)->enabled();
         $queue = (string) config('notifications.queue', 'default');
 
+        $coveragePct = null;
+        if ($table && Schema::hasTable('users')) {
+            $roles = ['plumber', 'retail_trader', 'wholesale_distributor'];
+            $active = (int) \App\Models\User::query()
+                ->whereIn('role', $roles)
+                ->where('is_active', true)
+                ->where('is_approved', true)
+                ->count();
+            $withToken = (int) \App\Models\User::query()
+                ->whereIn('role', $roles)
+                ->where('is_active', true)
+                ->where('is_approved', true)
+                ->whereHas('pushTokens')
+                ->count();
+            $coveragePct = $active > 0 ? round(($withToken / $active) * 100, 1) : 100.0;
+        }
+
         $parts = [];
         $parts[] = $fcmReady ? 'FCM جاهز' : 'FCM غير مُعدّ (FIREBASE_CREDENTIALS)';
         $parts[] = $table ? "توكنات محفوظة: {$tokens}" : 'جدول push_tokens مفقود — php artisan fcm:ensure-table';
+        if ($coveragePct !== null) {
+            $parts[] = "تغطية الأجهزة: {$coveragePct}%";
+        }
         $parts[] = "طابور: {$queue}";
 
         return [
@@ -358,6 +378,7 @@ class SendNotification extends Page implements HasForms
             'tokens' => $tokens,
             'queue' => $queue,
             'table' => $table,
+            'coverage_pct' => $coveragePct,
             'summary' => implode(' · ', $parts),
         ];
     }
